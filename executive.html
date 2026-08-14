@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AUDAC Rep Portal — Executive View</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --audac-gold: #d9a653;
+    --audac-black: #000000;
+    --audac-white: #ffffff;
+    --audac-section-bg: #f8f8f8;
+    --audac-text: #737373;
+    --green: #2e7d32; --green-bg: #e8f5e9;
+    --amber: #b8860b; --amber-bg: #fff6e0;
+    --red: #b3261e; --red-bg: #fdeaea;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Montserrat', sans-serif; background: var(--audac-white); color: var(--audac-text); }
+  header.audac-header {
+    background: var(--audac-black); color: #fff; padding: 16px 28px;
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+  }
+  header.audac-header .brand { display: flex; align-items: center; gap: 12px; }
+  header.audac-header img.logo { height: 30px; }
+  header.audac-header .wordmark { font-weight: 700; font-size: 18px; letter-spacing: 3px; color: #fff; display: none; }
+  header.audac-header h1 { font-size: 14px; font-weight: 400; margin: 0; color: var(--audac-gold); letter-spacing: 1px; text-transform: uppercase; }
+  .user-box { display: flex; align-items: center; gap: 14px; font-size: 13px; color: #ccc; }
+  .signout-btn { background: transparent; border: 1px solid #555; color: #fff; padding: 7px 14px; border-radius: 3px; cursor: pointer; font-family: inherit; font-size: 12px; }
+  main { max-width: 1200px; margin: 0 auto; padding: 28px 20px 100px; }
+  .toolbar { display: flex; align-items: center; margin-bottom: 20px; }
+  .toolbar label { font-size: 13px; font-weight: 500; color: var(--audac-black); margin-right: 8px; }
+  input[type="month"] { font-family: 'Montserrat', sans-serif; font-size: 14px; padding: 9px 12px; border: 1px solid #ddd; border-radius: 3px; background: #fff; color: var(--audac-black); }
+
+  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 12px; }
+  .kpi-tile { background: var(--audac-section-bg); border-radius: 4px; padding: 20px; }
+  .kpi-tile .kpi-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #999; }
+  .kpi-tile .kpi-value { font-size: 28px; font-weight: 700; color: var(--audac-black); margin-top: 8px; }
+  .kpi-tile .kpi-sub { font-size: 12px; color: #999; margin-top: 4px; }
+
+  h2.section-title { font-size: 15px; font-weight: 700; color: var(--audac-black); text-transform: uppercase; letter-spacing: .5px; margin: 36px 0 14px; }
+
+  table.scorecard { width: 100%; border-collapse: collapse; background: #fff; }
+  table.scorecard th, table.scorecard td { padding: 12px 14px; text-align: left; font-size: 13px; border-bottom: 1px solid #eee; }
+  table.scorecard th { background: var(--audac-section-bg); color: var(--audac-black); font-weight: 700; text-transform: uppercase; font-size: 11px; letter-spacing: .5px; }
+  .rag-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; }
+  .rag-green { background: var(--green-bg); color: var(--green); }
+  .rag-amber { background: var(--amber-bg); color: var(--amber); }
+  .rag-red { background: var(--red-bg); color: var(--red); }
+  .mom-up { color: var(--green); font-weight: 700; }
+  .mom-down { color: var(--red); font-weight: 700; }
+  .mom-flat { color: #999; }
+
+  .charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; }
+  .chart-card { background: var(--audac-section-bg); border-radius: 4px; padding: 18px; }
+  .chart-card h3 { font-size: 12.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--audac-black); margin: 0 0 12px; }
+  .chart-card canvas { max-height: 220px; }
+
+  .exceptions { background: var(--red-bg); border-radius: 4px; padding: 18px 22px; }
+  .exceptions h3 { margin: 0 0 10px; font-size: 13px; color: var(--red); text-transform: uppercase; letter-spacing: .4px; }
+  .exceptions ul { margin: 0; padding-left: 18px; font-size: 13px; color: #7a1f1a; }
+  .exceptions .none { color: var(--green); font-size: 13px; }
+
+  #loading-note { font-size: 13px; color: #aaa; padding: 20px 0; }
+</style>
+</head>
+<body>
+
+<header class="audac-header">
+  <div class="brand">
+    <img class="logo" src="https://audac.eu/images/AUDAC-logo.webp" alt="AUDAC"
+         onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
+    <span class="wordmark">AUDAC</span>
+    <h1>Executive View</h1>
+  </div>
+  <div class="user-box">
+    <span id="user-email"></span>
+    <button class="signout-btn" id="signout-btn">Sign Out</button>
+  </div>
+</header>
+
+<main>
+  <div class="toolbar">
+    <label for="month-select">Reporting Month</label>
+    <input type="month" id="month-select">
+  </div>
+
+  <div id="loading-note">Loading…</div>
+
+  <div id="content" style="display:none;">
+    <div class="kpi-grid" id="kpi-grid"></div>
+
+    <h2 class="section-title">Rep Scorecard</h2>
+    <table class="scorecard">
+      <thead><tr>
+        <th>Firm</th><th>Activities</th><th>Demo Gear Used</th><th>Pipeline Entries</th>
+        <th>Education Certs</th><th>Sell-out MoM</th><th>RAG</th>
+      </tr></thead>
+      <tbody id="scorecard-body"></tbody>
+    </table>
+
+    <h2 class="section-title">Exceptions</h2>
+    <div class="exceptions" id="exceptions-box"></div>
+
+    <h2 class="section-title">6-Month Trends</h2>
+    <div class="charts-grid">
+      <div class="chart-card"><h3>Activities</h3><canvas id="chart-activities"></canvas></div>
+      <div class="chart-card"><h3>Pipeline Value</h3><canvas id="chart-pipeline"></canvas></div>
+      <div class="chart-card"><h3>Sell-out Revenue</h3><canvas id="chart-sellout"></canvas></div>
+    </div>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script>
+  const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
+  const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  const monthInput = document.getElementById('month-select');
+
+  function currentMonthValue() { return new Date().toISOString().slice(0, 7); }
+  function fmtMoney(n) { return '$' + Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 }); }
+  function ragClass(status) { return status === 'Green' ? 'rag-green' : status === 'Amber' ? 'rag-amber' : 'rag-red'; }
+  function priorMonth(month, back) {
+    const [y, m] = month.split('-').map(Number);
+    const d = new Date(y, m - 1 - back, 1);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  }
+
+  async function guard() {
+    const { data: { session } } = await client.auth.getSession();
+    if (!session) { window.location.href = '/login'; return null; }
+    const { data: profile } = await client.from('profiles').select('role, email').eq('id', session.user.id).maybeSingle();
+    if (!profile) { window.location.href = '/login'; return null; }
+    if (profile.role === 'manager') { window.location.href = '/dashboard'; return null; }
+    if (profile.role !== 'executive') { window.location.href = '/login'; return null; }
+    return { user: session.user, profile };
+  }
+
+  document.getElementById('signout-btn').addEventListener('click', async () => {
+    await client.auth.signOut();
+    window.location.href = '/login';
+  });
+
+  function momCell(row) {
+    const cur = Number(row.sellout_revenue || 0);
+    const prior = Number(row.prior_sellout_revenue || 0);
+    if (prior === 0 && cur === 0) return '<span class="mom-flat">—</span>';
+    if (prior === 0) return '<span class="mom-up">New</span>';
+    const pct = ((cur - prior) / prior) * 100;
+    const cls = pct > 0 ? 'mom-up' : pct < 0 ? 'mom-down' : 'mom-flat';
+    const sign = pct > 0 ? '+' : '';
+    return `<span class="${cls}">${sign}${pct.toFixed(0)}%</span>`;
+  }
+
+  function renderKpis(rows, month) {
+    const totalActivities = rows.reduce((s, r) => s + Number(r.activity_count), 0);
+    const activeReps = rows.filter(r => Number(r.activity_count) > 0).length;
+    const totalPipelineValue = rows.reduce((s, r) => s + Number(r.pipeline_value_usd || 0), 0);
+    const curSellout = rows.reduce((s, r) => s + Number(r.sellout_revenue || 0), 0);
+    const priorSellout = rows.reduce((s, r) => s + Number(r.prior_sellout_revenue || 0), 0);
+    const momPct = priorSellout === 0 ? null : ((curSellout - priorSellout) / priorSellout) * 100;
+
+    document.getElementById('kpi-grid').innerHTML = `
+      <div class="kpi-tile"><div class="kpi-label">Total Activities</div><div class="kpi-value">${totalActivities}</div><div class="kpi-sub">${month}</div></div>
+      <div class="kpi-tile"><div class="kpi-label">Active Reps</div><div class="kpi-value">${activeReps} / ${rows.length}</div><div class="kpi-sub">firms with activity this month</div></div>
+      <div class="kpi-tile"><div class="kpi-label">Total Pipeline Value</div><div class="kpi-value">${fmtMoney(totalPipelineValue)}</div><div class="kpi-sub">${month}</div></div>
+      <div class="kpi-tile"><div class="kpi-label">Sell-out MoM</div><div class="kpi-value">${momPct === null ? '—' : (momPct > 0 ? '+' : '') + momPct.toFixed(1) + '%'}</div><div class="kpi-sub">${fmtMoney(curSellout)} vs ${fmtMoney(priorSellout)}</div></div>
+    `;
+  }
+
+  function renderScorecard(rows) {
+    document.getElementById('scorecard-body').innerHTML = rows.map(row => `
+      <tr>
+        <td>${row.firm_name}</td>
+        <td>${row.activity_count}</td>
+        <td>${row.demo_gear_count}</td>
+        <td>${row.pipeline_count} (${fmtMoney(row.pipeline_value_usd)})</td>
+        <td>${row.education_count}</td>
+        <td>${momCell(row)}</td>
+        <td><span class="rag-badge ${ragClass(row.rag_status)}">${row.rag_status}</span></td>
+      </tr>
+    `).join('');
+  }
+
+  function renderExceptions(rows) {
+    const flagged = rows.filter(r => r.rag_status === 'Red' || Number(r.activity_count) === 0);
+    const box = document.getElementById('exceptions-box');
+    if (!flagged.length) {
+      box.innerHTML = '<div class="none">No exceptions — all reps on track.</div>';
+      return;
+    }
+    box.innerHTML = `<h3>Needs Attention</h3><ul>${flagged.map(r =>
+      `<li><strong>${r.firm_name}</strong> — ${Number(r.activity_count) === 0 ? 'no activity submitted' : r.activity_count + ' activities'}, RAG: ${r.rag_status}</li>`
+    ).join('')}</ul>`;
+  }
+
+  let charts = {};
+  function renderCharts(months, seriesByMonth) {
+    const labels = months;
+    const activityData = months.map(m => seriesByMonth[m].reduce((s, r) => s + Number(r.activity_count), 0));
+    const pipelineData = months.map(m => seriesByMonth[m].reduce((s, r) => s + Number(r.pipeline_value_usd || 0), 0));
+    const selloutData = months.map(m => seriesByMonth[m].reduce((s, r) => s + Number(r.sellout_revenue || 0), 0));
+
+    const commonOpts = { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } };
+
+    ['chart-activities', 'chart-pipeline', 'chart-sellout'].forEach(id => { if (charts[id]) charts[id].destroy(); });
+
+    charts['chart-activities'] = new Chart(document.getElementById('chart-activities'), {
+      type: 'line', data: { labels, datasets: [{ data: activityData, borderColor: '#d9a653', backgroundColor: '#d9a65333', fill: true, tension: .3 }] }, options: commonOpts,
+    });
+    charts['chart-pipeline'] = new Chart(document.getElementById('chart-pipeline'), {
+      type: 'bar', data: { labels, datasets: [{ data: pipelineData, backgroundColor: '#000000' }] }, options: commonOpts,
+    });
+    charts['chart-sellout'] = new Chart(document.getElementById('chart-sellout'), {
+      type: 'line', data: { labels, datasets: [{ data: selloutData, borderColor: '#2e7d32', backgroundColor: '#2e7d3233', fill: true, tension: .3 }] }, options: commonOpts,
+    });
+  }
+
+  async function loadAll() {
+    document.getElementById('loading-note').style.display = 'block';
+    document.getElementById('content').style.display = 'none';
+    const month = monthInput.value;
+
+    const { data: rows, error } = await client.rpc('get_rag_scorecard', { p_month: month });
+    if (error) {
+      document.getElementById('loading-note').textContent = 'Failed to load: ' + error.message;
+      return;
+    }
+
+    renderKpis(rows, month);
+    renderScorecard(rows);
+    renderExceptions(rows);
+
+    const months = [];
+    for (let i = 5; i >= 0; i--) months.push(priorMonth(month, i));
+    const seriesByMonth = {};
+    await Promise.all(months.map(async m => {
+      const { data } = await client.rpc('get_rag_scorecard', { p_month: m });
+      seriesByMonth[m] = data || [];
+    }));
+    renderCharts(months, seriesByMonth);
+
+    document.getElementById('loading-note').style.display = 'none';
+    document.getElementById('content').style.display = 'block';
+  }
+
+  (async function init() {
+    const g = await guard();
+    if (!g) return;
+    document.getElementById('user-email').textContent = g.profile.email;
+    monthInput.value = currentMonthValue();
+    await loadAll();
+    monthInput.addEventListener('change', loadAll);
+  })();
+</script>
+</body>
+</html>

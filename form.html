@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AUDAC Rep Portal — Activity Submission</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --audac-gold: #d9a653;
+    --audac-black: #000000;
+    --audac-white: #ffffff;
+    --audac-section-bg: #f8f8f8;
+    --audac-text: #737373;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: 'Montserrat', sans-serif;
+    background: var(--audac-white);
+    color: var(--audac-text);
+  }
+  header.audac-header {
+    background: var(--audac-black);
+    color: #fff;
+    padding: 18px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  header.audac-header .brand { display: flex; align-items: center; gap: 12px; }
+  header.audac-header img.logo { height: 32px; }
+  header.audac-header .wordmark {
+    font-weight: 700; font-size: 20px; letter-spacing: 3px; color: #fff; display: none;
+  }
+  header.audac-header h1 {
+    font-size: 15px; font-weight: 400; margin: 0; color: var(--audac-gold);
+    letter-spacing: 1px; text-transform: uppercase;
+  }
+  main { max-width: 780px; margin: 0 auto; padding: 32px 20px 80px; }
+  .card {
+    background: var(--audac-section-bg);
+    border-radius: 4px;
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+  h2 { font-size: 16px; font-weight: 700; color: var(--audac-black); margin: 0 0 16px; text-transform: uppercase; letter-spacing: .5px; }
+  label { display: block; font-size: 13px; font-weight: 500; color: var(--audac-black); margin-bottom: 6px; }
+  .field { margin-bottom: 16px; }
+  input, select, textarea {
+    width: 100%;
+    font-family: 'Montserrat', sans-serif;
+    font-size: 14px;
+    padding: 10px 12px;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    background: #fff;
+    color: var(--audac-black);
+  }
+  textarea { min-height: 64px; resize: vertical; }
+  .row { display: flex; gap: 16px; flex-wrap: wrap; }
+  .row .field { flex: 1; min-width: 200px; }
+  .checkbox-field { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+  .checkbox-field input { width: auto; }
+  .checkbox-field label { margin: 0; }
+  .activity-entry {
+    background: #fff;
+    border: 1px solid #e5e5e5;
+    border-radius: 4px;
+    padding: 20px;
+    margin-bottom: 16px;
+    position: relative;
+  }
+  .activity-entry .entry-title { font-weight: 700; color: var(--audac-black); font-size: 13px; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 14px; }
+  .remove-entry {
+    position: absolute; top: 16px; right: 16px;
+    background: none; border: none; color: #b33; font-size: 13px; cursor: pointer; font-weight: 500;
+  }
+  button.audac-btn {
+    background: var(--audac-gold);
+    color: #000;
+    border: none;
+    padding: 13px 28px;
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: .5px;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-radius: 3px;
+  }
+  button.audac-btn:hover { opacity: .88; }
+  button.audac-btn:disabled { opacity: .5; cursor: not-allowed; }
+  button.audac-btn-outline {
+    background: transparent;
+    color: var(--audac-black);
+    border: 1.5px solid var(--audac-black);
+    padding: 11px 24px;
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 500;
+    font-size: 13px;
+    letter-spacing: .5px;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-radius: 3px;
+  }
+  .actions { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
+  #error-banner {
+    display: none;
+    background: #fdeaea; color: #a33; border: 1px solid #e0b4b4;
+    padding: 12px 16px; border-radius: 3px; margin-bottom: 16px; font-size: 13px;
+  }
+  #confirmation {
+    display: none;
+    text-align: center;
+    padding: 60px 20px;
+  }
+  #confirmation .check {
+    width: 56px; height: 56px; border-radius: 50%;
+    background: var(--audac-gold); color: #000;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px; margin: 0 auto 20px;
+  }
+  #confirmation h2 { text-align: center; }
+  #confirmation p { color: var(--audac-text); font-size: 14px; }
+  select.firm-locked { background: #eee; color: #555; }
+  .hint { font-size: 12px; color: #999; margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<header class="audac-header">
+  <div class="brand">
+    <img class="logo" src="https://audac.eu/images/AUDAC-logo.webp" alt="AUDAC"
+         onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
+    <span class="wordmark">AUDAC</span>
+  </div>
+  <h1>Rep Activity Submission</h1>
+</header>
+
+<main>
+  <div id="error-banner"></div>
+
+  <form id="activity-form">
+    <div class="card">
+      <h2>Firm &amp; Reporting Period</h2>
+      <div class="row">
+        <div class="field">
+          <label for="firm-select">Rep Firm</label>
+          <select id="firm-select" required></select>
+        </div>
+        <div class="field">
+          <label for="reporting-month">Reporting Month</label>
+          <input type="month" id="reporting-month" required>
+        </div>
+      </div>
+    </div>
+
+    <h2 style="padding-left:4px;">Activity Entries</h2>
+    <div id="entries-container"></div>
+
+    <button type="button" class="audac-btn-outline" id="add-entry-btn">+ Add Another Activity</button>
+
+    <div class="actions" style="margin-top:28px;">
+      <span class="hint" id="entry-count-hint"></span>
+      <button type="submit" class="audac-btn" id="submit-btn">Submit Activities</button>
+    </div>
+  </form>
+
+  <div id="confirmation">
+    <div class="check">&#10003;</div>
+    <h2 id="confirmation-title">Submitted</h2>
+    <p id="confirmation-detail"></p>
+    <button type="button" class="audac-btn-outline" id="submit-more-btn">Submit More Activities</button>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
+  const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  const CONTACT_TYPES = ['Dealer', 'Consultant', 'End User'];
+  const ACTIVITY_TYPES = [
+    'Brand Introduction', 'Demo', 'Follow Up', 'Lunch & Learn',
+    'Online Demo', 'Dealer Training', 'Other'
+  ];
+
+  let entryCounter = 0;
+  const entriesContainer = document.getElementById('entries-container');
+  const firmSelect = document.getElementById('firm-select');
+  const monthInput = document.getElementById('reporting-month');
+  const errorBanner = document.getElementById('error-banner');
+
+  function showError(msg) {
+    errorBanner.textContent = msg;
+    errorBanner.style.display = 'block';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  function clearError() {
+    errorBanner.style.display = 'none';
+  }
+
+  function todayISO() {
+    const d = new Date();
+    return d.toISOString().slice(0, 10);
+  }
+  function currentMonthValue() {
+    const d = new Date();
+    return d.toISOString().slice(0, 7);
+  }
+
+  function buildOptions(values, placeholder) {
+    let html = `<option value="" disabled selected>${placeholder}</option>`;
+    for (const v of values) html += `<option value="${v}">${v}</option>`;
+    return html;
+  }
+
+  function addEntry() {
+    entryCounter += 1;
+    const idx = entryCounter;
+    const wrap = document.createElement('div');
+    wrap.className = 'activity-entry';
+    wrap.dataset.idx = idx;
+    wrap.innerHTML = `
+      <button type="button" class="remove-entry" data-remove="${idx}">Remove</button>
+      <div class="entry-title">Activity #<span class="entry-num">${idx}</span></div>
+      <div class="row">
+        <div class="field">
+          <label>Entry Date</label>
+          <input type="date" name="entry_date" value="${todayISO()}" required>
+        </div>
+        <div class="field">
+          <label>Account Name</label>
+          <input type="text" name="account_name" placeholder="e.g. Guitar Center - Downtown" required>
+        </div>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label>Contact Type</label>
+          <select name="contact_type" required>${buildOptions(CONTACT_TYPES, 'Select contact type')}</select>
+        </div>
+        <div class="field">
+          <label>Activity Type</label>
+          <select name="activity_type" required>${buildOptions(ACTIVITY_TYPES, 'Select activity type')}</select>
+        </div>
+      </div>
+      <div class="checkbox-field">
+        <input type="checkbox" name="demo_gear_used" id="demo-gear-${idx}">
+        <label for="demo-gear-${idx}">Demo gear used during this activity</label>
+      </div>
+      <div class="field">
+        <label>Topic / Opportunity</label>
+        <textarea name="topic_opportunity" placeholder="What was discussed or the opportunity identified"></textarea>
+      </div>
+      <div class="field">
+        <label>Solution Feedback</label>
+        <textarea name="solution_feedback" placeholder="Feedback on AUDAC solutions"></textarea>
+      </div>
+      <div class="field">
+        <label>Competitive Feedback</label>
+        <textarea name="competitive_feedback" placeholder="Competitor mentions or positioning notes"></textarea>
+      </div>
+      <div class="field">
+        <label>Additional Comments</label>
+        <textarea name="additional_comments"></textarea>
+      </div>
+    `;
+    entriesContainer.appendChild(wrap);
+    updateEntryHint();
+  }
+
+  function removeEntry(idx) {
+    const el = entriesContainer.querySelector(`.activity-entry[data-idx="${idx}"]`);
+    if (!el) return;
+    if (entriesContainer.children.length <= 1) {
+      showError('At least one activity entry is required.');
+      return;
+    }
+    el.remove();
+    updateEntryHint();
+  }
+
+  function updateEntryHint() {
+    const n = entriesContainer.children.length;
+    document.getElementById('entry-count-hint').textContent = `${n} activity ${n === 1 ? 'entry' : 'entries'}`;
+  }
+
+  entriesContainer.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-remove]');
+    if (btn) removeEntry(btn.dataset.remove);
+  });
+  document.getElementById('add-entry-btn').addEventListener('click', addEntry);
+
+  async function loadFirms() {
+    const params = new URLSearchParams(window.location.search);
+    const presetFirmId = params.get('firm');
+
+    const { data, error } = await client
+      .from('rep_firms')
+      .select('id, name, territory')
+      .eq('status', 'active')
+      .order('name');
+
+    if (error) {
+      showError('Could not load rep firms: ' + error.message);
+      return;
+    }
+
+    if (presetFirmId) {
+      const match = data.find(f => f.id === presetFirmId);
+      if (match) {
+        firmSelect.innerHTML = `<option value="${match.id}" selected>${match.name} — ${match.territory}</option>`;
+        firmSelect.disabled = true;
+        firmSelect.classList.add('firm-locked');
+        return;
+      }
+    }
+
+    firmSelect.innerHTML = `<option value="" disabled selected>Select your firm</option>` +
+      data.map(f => `<option value="${f.id}">${f.name} — ${f.territory}</option>`).join('');
+  }
+
+  function collectEntries() {
+    const blocks = [...entriesContainer.querySelectorAll('.activity-entry')];
+    return blocks.map(block => {
+      const get = (name) => block.querySelector(`[name="${name}"]`);
+      return {
+        entry_date: get('entry_date').value,
+        account_name: get('account_name').value.trim(),
+        contact_type: get('contact_type').value,
+        activity_type: get('activity_type').value,
+        demo_gear_used: get('demo_gear_used').checked,
+        topic_opportunity: get('topic_opportunity').value.trim() || null,
+        solution_feedback: get('solution_feedback').value.trim() || null,
+        competitive_feedback: get('competitive_feedback').value.trim() || null,
+        additional_comments: get('additional_comments').value.trim() || null,
+      };
+    });
+  }
+
+  function validate(firmId, month, entries) {
+    if (!firmId) return 'Please select your rep firm.';
+    if (!month) return 'Please select the reporting month.';
+    for (const [i, e] of entries.entries()) {
+      if (!e.entry_date || !e.account_name || !e.contact_type || !e.activity_type) {
+        return `Activity #${i + 1} is missing a required field.`;
+      }
+    }
+    return null;
+  }
+
+  document.getElementById('activity-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    clearError();
+
+    const firmId = firmSelect.value;
+    const month = monthInput.value;
+    const entries = collectEntries();
+
+    const validationError = validate(firmId, month, entries);
+    if (validationError) {
+      showError(validationError);
+      return;
+    }
+
+    const submitBtn = document.getElementById('submit-btn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Submitting…';
+
+    const rows = entries.map(e => ({
+      rep_firm_id: firmId,
+      reporting_month: month,
+      ...e,
+    }));
+
+    const { error } = await client.from('activity_entries').insert(rows);
+
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Submit Activities';
+
+    if (error) {
+      showError('Submission failed: ' + error.message);
+      return;
+    }
+
+    const firmLabel = firmSelect.selectedOptions[0]?.textContent || '';
+    document.getElementById('confirmation-detail').textContent =
+      `${entries.length} activity ${entries.length === 1 ? 'entry' : 'entries'} submitted for ${firmLabel} — ${month}.`;
+    document.getElementById('activity-form').style.display = 'none';
+    document.getElementById('confirmation').style.display = 'block';
+  });
+
+  document.getElementById('submit-more-btn').addEventListener('click', () => {
+    entriesContainer.innerHTML = '';
+    addEntry();
+    document.getElementById('confirmation').style.display = 'none';
+    document.getElementById('activity-form').style.display = 'block';
+  });
+
+  monthInput.value = currentMonthValue();
+  addEntry();
+  loadFirms();
+</script>
+</body>
+</html>

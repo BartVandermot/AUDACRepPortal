@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AUDAC Rep Portal — Sign In</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --audac-gold: #d9a653;
+    --audac-black: #000000;
+    --audac-white: #ffffff;
+    --audac-section-bg: #f8f8f8;
+    --audac-text: #737373;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%;
+    font-family: 'Montserrat', sans-serif;
+    background: var(--audac-black);
+    color: var(--audac-text);
+  }
+  .wrap {
+    min-height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .card {
+    background: var(--audac-white);
+    border-radius: 4px;
+    padding: 40px 36px;
+    width: 100%;
+    max-width: 380px;
+  }
+  .brand { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 28px; }
+  .brand img.logo { height: 34px; }
+  .brand .wordmark { font-weight: 700; font-size: 22px; letter-spacing: 3px; color: var(--audac-black); display: none; }
+  h1 { font-size: 13px; font-weight: 500; text-transform: uppercase; letter-spacing: 1px; color: var(--audac-black); text-align: center; margin: 0 0 24px; }
+  label { display: block; font-size: 13px; font-weight: 500; color: var(--audac-black); margin-bottom: 6px; }
+  .field { margin-bottom: 16px; }
+  input {
+    width: 100%;
+    font-family: 'Montserrat', sans-serif;
+    font-size: 14px;
+    padding: 11px 12px;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    background: #fff;
+    color: var(--audac-black);
+  }
+  button.audac-btn {
+    width: 100%;
+    background: var(--audac-gold);
+    color: #000;
+    border: none;
+    padding: 13px 0;
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: .5px;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-radius: 3px;
+    margin-top: 8px;
+  }
+  button.audac-btn:disabled { opacity: .5; cursor: not-allowed; }
+  #error-msg {
+    display: none;
+    background: #fdeaea; color: #a33; border: 1px solid #e0b4b4;
+    padding: 10px 14px; border-radius: 3px; margin-bottom: 16px; font-size: 13px;
+  }
+  .footnote { text-align: center; font-size: 12px; color: #aaa; margin-top: 20px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div class="brand">
+      <img class="logo" src="https://audac.eu/images/AUDAC-logo.webp" alt="AUDAC"
+           onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
+      <span class="wordmark">AUDAC</span>
+    </div>
+    <h1>Rep Portal — Sign In</h1>
+    <div id="error-msg"></div>
+    <form id="login-form">
+      <div class="field">
+        <label for="email">Email</label>
+        <input type="email" id="email" autocomplete="username" required>
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input type="password" id="password" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="audac-btn" id="login-btn">Sign In</button>
+    </form>
+    <div class="footnote">Manager &amp; executive access only</div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
+  const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  const errorMsg = document.getElementById('error-msg');
+  function showError(msg) {
+    errorMsg.textContent = msg;
+    errorMsg.style.display = 'block';
+  }
+
+  async function redirectForRole() {
+    const { data: { user } } = await client.auth.getUser();
+    if (!user) return;
+    const { data: profile, error } = await client
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    if (error || !profile) {
+      showError('No portal role is assigned to this account. Contact the AUDAC administrator.');
+      await client.auth.signOut();
+      return;
+    }
+    if (profile.role === 'manager') {
+      window.location.href = '/dashboard';
+    } else if (profile.role === 'executive') {
+      window.location.href = '/executive';
+    } else {
+      showError('This account does not have manager or executive access.');
+      await client.auth.signOut();
+    }
+  }
+
+  document.getElementById('login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errorMsg.style.display = 'none';
+    const email = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+    const btn = document.getElementById('login-btn');
+    btn.disabled = true;
+    btn.textContent = 'Signing In…';
+
+    const { error } = await client.auth.signInWithPassword({ email, password });
+
+    if (error) {
+      btn.disabled = false;
+      btn.textContent = 'Sign In';
+      showError(error.message);
+      return;
+    }
+    await redirectForRole();
+    btn.disabled = false;
+    btn.textContent = 'Sign In';
+  });
+
+  // If already signed in, skip straight to the right view.
+  client.auth.getSession().then(({ data: { session } }) => {
+    if (session) redirectForRole();
+  });
+</script>
+</body>
+</html>

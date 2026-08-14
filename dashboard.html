@@ -1,0 +1,645 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AUDAC Rep Portal — Manager Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --audac-gold: #d9a653;
+    --audac-black: #000000;
+    --audac-white: #ffffff;
+    --audac-section-bg: #f8f8f8;
+    --audac-text: #737373;
+    --green: #2e7d32; --green-bg: #e8f5e9;
+    --amber: #b8860b; --amber-bg: #fff6e0;
+    --red: #b3261e; --red-bg: #fdeaea;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Montserrat', sans-serif; background: var(--audac-white); color: var(--audac-text); }
+  header.audac-header {
+    background: var(--audac-black); color: #fff; padding: 16px 28px;
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+  }
+  header.audac-header .brand { display: flex; align-items: center; gap: 12px; }
+  header.audac-header img.logo { height: 30px; }
+  header.audac-header .wordmark { font-weight: 700; font-size: 18px; letter-spacing: 3px; color: #fff; display: none; }
+  header.audac-header h1 { font-size: 14px; font-weight: 400; margin: 0; color: var(--audac-gold); letter-spacing: 1px; text-transform: uppercase; }
+  .user-box { display: flex; align-items: center; gap: 14px; font-size: 13px; color: #ccc; }
+  .signout-btn { background: transparent; border: 1px solid #555; color: #fff; padding: 7px 14px; border-radius: 3px; cursor: pointer; font-family: inherit; font-size: 12px; }
+  main { max-width: 1200px; margin: 0 auto; padding: 28px 20px 100px; }
+  .toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+  .toolbar label { font-size: 13px; font-weight: 500; color: var(--audac-black); margin-right: 8px; }
+  input[type="month"] {
+    font-family: 'Montserrat', sans-serif; font-size: 14px; padding: 9px 12px;
+    border: 1px solid #ddd; border-radius: 3px; background: #fff; color: var(--audac-black);
+  }
+  h2.section-title { font-size: 15px; font-weight: 700; color: var(--audac-black); text-transform: uppercase; letter-spacing: .5px; margin: 32px 0 14px; }
+  table.scorecard { width: 100%; border-collapse: collapse; background: #fff; }
+  table.scorecard th, table.scorecard td { padding: 12px 14px; text-align: left; font-size: 13px; border-bottom: 1px solid #eee; }
+  table.scorecard th { background: var(--audac-section-bg); color: var(--audac-black); font-weight: 700; text-transform: uppercase; font-size: 11px; letter-spacing: .5px; }
+  table.scorecard tbody tr { cursor: pointer; }
+  table.scorecard tbody tr:hover { background: #fbf7ee; }
+  table.scorecard tbody tr.selected { background: #f6ecd8; }
+  .rag-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; }
+  .rag-green { background: var(--green-bg); color: var(--green); }
+  .rag-amber { background: var(--amber-bg); color: var(--amber); }
+  .rag-red { background: var(--red-bg); color: var(--red); }
+  .mom-up { color: var(--green); font-weight: 700; }
+  .mom-down { color: var(--red); font-weight: 700; }
+  .mom-flat { color: #999; }
+
+  #drilldown { display: none; background: var(--audac-section-bg); border-radius: 4px; padding: 22px; margin-top: 18px; }
+  #drilldown .dd-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
+  #drilldown .dd-header h3 { margin: 0; color: var(--audac-black); font-size: 16px; }
+  .dd-sub-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--audac-black); margin: 18px 0 8px; }
+  table.detail { width: 100%; border-collapse: collapse; background: #fff; font-size: 12.5px; }
+  table.detail th, table.detail td { padding: 8px 10px; border-bottom: 1px solid #eee; text-align: left; }
+  table.detail th { background: #f1f1f1; }
+  .empty-note { font-size: 12.5px; color: #aaa; padding: 10px 2px; }
+
+  button.audac-btn {
+    background: var(--audac-gold); color: #000; border: none; padding: 11px 20px;
+    font-family: 'Montserrat', sans-serif; font-weight: 700; font-size: 12.5px; letter-spacing: .4px;
+    text-transform: uppercase; cursor: pointer; border-radius: 3px;
+  }
+  button.audac-btn:disabled { opacity: .5; cursor: not-allowed; }
+  button.audac-btn-outline {
+    background: transparent; color: var(--audac-black); border: 1.5px solid var(--audac-black);
+    padding: 9px 16px; font-family: 'Montserrat', sans-serif; font-weight: 500; font-size: 12.5px;
+    letter-spacing: .4px; text-transform: uppercase; cursor: pointer; border-radius: 3px;
+  }
+
+  details.upload-panel { background: var(--audac-section-bg); border-radius: 4px; margin-bottom: 14px; padding: 4px 20px 18px; }
+  details.upload-panel summary { cursor: pointer; padding: 16px 0; font-weight: 700; color: var(--audac-black); font-size: 13.5px; text-transform: uppercase; letter-spacing: .4px; list-style: none; }
+  details.upload-panel summary::-webkit-details-marker { display: none; }
+  details.upload-panel summary::before { content: '▸ '; color: var(--audac-gold); }
+  details.upload-panel[open] summary::before { content: '▾ '; }
+  .upload-hint { font-size: 12px; color: #999; margin: -6px 0 14px; }
+  .mapping-grid { display: grid; grid-template-columns: 160px 1fr; gap: 10px 14px; align-items: center; margin: 14px 0; max-width: 520px; }
+  .mapping-grid label { font-size: 12.5px; font-weight: 500; color: var(--audac-black); }
+  .mapping-grid select { font-family: 'Montserrat', sans-serif; font-size: 13px; padding: 7px 10px; border: 1px solid #ddd; border-radius: 3px; }
+  .upload-status { font-size: 12.5px; margin-top: 10px; padding: 10px 12px; border-radius: 3px; }
+  .upload-status.ok { background: var(--green-bg); color: var(--green); }
+  .upload-status.warn { background: var(--amber-bg); color: var(--amber); }
+  .upload-status.err { background: var(--red-bg); color: var(--red); }
+  input[type="file"] { font-family: 'Montserrat', sans-serif; font-size: 13px; }
+  .action-row { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+  #loading-note, #empty-note { font-size: 13px; color: #aaa; padding: 20px 0; }
+</style>
+</head>
+<body>
+
+<header class="audac-header">
+  <div class="brand">
+    <img class="logo" src="https://audac.eu/images/AUDAC-logo.webp" alt="AUDAC"
+         onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
+    <span class="wordmark">AUDAC</span>
+    <h1>Manager Dashboard</h1>
+  </div>
+  <div class="user-box">
+    <span id="user-email"></span>
+    <button class="signout-btn" id="signout-btn">Sign Out</button>
+  </div>
+</header>
+
+<main>
+  <div class="toolbar">
+    <div>
+      <label for="month-select">Reporting Month</label>
+      <input type="month" id="month-select">
+    </div>
+  </div>
+
+  <div id="loading-note">Loading scorecard…</div>
+  <table class="scorecard" id="scorecard-table" style="display:none;">
+    <thead>
+      <tr>
+        <th>Firm</th><th>Activities</th><th>Demo Gear Used</th><th>Pipeline Entries</th>
+        <th>Education Certs</th><th>Sell-out MoM</th><th>RAG</th>
+      </tr>
+    </thead>
+    <tbody id="scorecard-body"></tbody>
+  </table>
+
+  <div id="drilldown">
+    <div class="dd-header">
+      <h3 id="dd-firm-name"></h3>
+      <div class="action-row" style="margin-top:0;">
+        <button class="audac-btn" id="generate-agenda-btn">Generate Monthly Review Agenda</button>
+        <button class="audac-btn-outline" id="close-drilldown-btn">Close</button>
+      </div>
+    </div>
+
+    <div class="dd-sub-title">Activity Log</div>
+    <div id="dd-activity"></div>
+
+    <div class="dd-sub-title">Pipeline</div>
+    <div id="dd-pipeline"></div>
+
+    <div class="dd-sub-title">Education</div>
+    <div id="dd-education"></div>
+  </div>
+
+  <h2 class="section-title">CSV Uploads</h2>
+  <div id="upload-panels"></div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
+  const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  let currentUser = null;
+  let firmsCache = [];
+  let scorecardCache = [];
+  let selectedFirmId = null;
+
+  const monthInput = document.getElementById('month-select');
+
+  function currentMonthValue() {
+    return new Date().toISOString().slice(0, 7);
+  }
+  function fmtMoney(n) {
+    return '$' + Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
+  }
+  function ragClass(status) {
+    return status === 'Green' ? 'rag-green' : status === 'Amber' ? 'rag-amber' : 'rag-red';
+  }
+
+  // ---------- Auth guard ----------
+  async function guard() {
+    const { data: { session } } = await client.auth.getSession();
+    if (!session) { window.location.href = '/login'; return null; }
+    const { data: profile } = await client.from('profiles').select('role, email').eq('id', session.user.id).maybeSingle();
+    if (!profile) { window.location.href = '/login'; return null; }
+    if (profile.role === 'executive') { window.location.href = '/executive'; return null; }
+    if (profile.role !== 'manager') { window.location.href = '/login'; return null; }
+    return { user: session.user, profile };
+  }
+
+  document.getElementById('signout-btn').addEventListener('click', async () => {
+    await client.auth.signOut();
+    window.location.href = '/login';
+  });
+
+  // ---------- Scorecard ----------
+  async function loadFirms() {
+    const { data } = await client.from('rep_firms').select('id, name, territory').eq('status', 'active').order('name');
+    firmsCache = data || [];
+  }
+
+  async function loadScorecard() {
+    document.getElementById('loading-note').style.display = 'block';
+    document.getElementById('scorecard-table').style.display = 'none';
+    const month = monthInput.value;
+    const { data, error } = await client.rpc('get_rag_scorecard', { p_month: month });
+    if (error) {
+      document.getElementById('loading-note').textContent = 'Failed to load scorecard: ' + error.message;
+      return;
+    }
+    scorecardCache = data || [];
+    renderScorecard();
+    document.getElementById('loading-note').style.display = 'none';
+    document.getElementById('scorecard-table').style.display = 'table';
+    if (selectedFirmId) {
+      const stillThere = scorecardCache.find(r => r.rep_firm_id === selectedFirmId);
+      if (stillThere) openDrilldown(selectedFirmId); else closeDrilldown();
+    }
+  }
+
+  function momCell(row) {
+    const cur = Number(row.sellout_revenue || 0);
+    const prior = Number(row.prior_sellout_revenue || 0);
+    if (prior === 0 && cur === 0) return '<span class="mom-flat">—</span>';
+    if (prior === 0) return '<span class="mom-up">New</span>';
+    const pct = ((cur - prior) / prior) * 100;
+    const cls = pct > 0 ? 'mom-up' : pct < 0 ? 'mom-down' : 'mom-flat';
+    const sign = pct > 0 ? '+' : '';
+    return `<span class="${cls}">${sign}${pct.toFixed(0)}%</span>`;
+  }
+
+  function renderScorecard() {
+    const tbody = document.getElementById('scorecard-body');
+    tbody.innerHTML = scorecardCache.map(row => `
+      <tr data-firm="${row.rep_firm_id}" class="${row.rep_firm_id === selectedFirmId ? 'selected' : ''}">
+        <td>${row.firm_name}</td>
+        <td>${row.activity_count}</td>
+        <td>${row.demo_gear_count}</td>
+        <td>${row.pipeline_count} (${fmtMoney(row.pipeline_value_usd)})</td>
+        <td>${row.education_count}</td>
+        <td>${momCell(row)}</td>
+        <td><span class="rag-badge ${ragClass(row.rag_status)}">${row.rag_status}</span></td>
+      </tr>
+    `).join('');
+    tbody.querySelectorAll('tr').forEach(tr => {
+      tr.addEventListener('click', () => openDrilldown(tr.dataset.firm));
+    });
+  }
+
+  // ---------- Drilldown ----------
+  async function openDrilldown(firmId) {
+    selectedFirmId = firmId;
+    renderScorecard();
+    const row = scorecardCache.find(r => r.rep_firm_id === firmId);
+    if (!row) return;
+    const month = monthInput.value;
+    document.getElementById('drilldown').style.display = 'block';
+    document.getElementById('dd-firm-name').textContent = `${row.firm_name} — ${month}`;
+
+    const [acts, pipe, edu] = await Promise.all([
+      client.from('activity_entries').select('*').eq('rep_firm_id', firmId).eq('reporting_month', month).order('entry_date'),
+      client.from('pipeline_entries').select('*').eq('rep_firm_id', firmId).eq('reporting_month', month).order('created_date'),
+      client.from('education_records').select('*').eq('rep_firm_id', firmId).eq('reporting_month', month).order('completion_date'),
+    ]);
+
+    document.getElementById('dd-activity').innerHTML = renderActivityTable(acts.data || []);
+    document.getElementById('dd-pipeline').innerHTML = renderPipelineTable(pipe.data || []);
+    document.getElementById('dd-education').innerHTML = renderEducationTable(edu.data || []);
+  }
+
+  function closeDrilldown() {
+    selectedFirmId = null;
+    document.getElementById('drilldown').style.display = 'none';
+    renderScorecard();
+  }
+  document.getElementById('close-drilldown-btn').addEventListener('click', closeDrilldown);
+
+  function renderActivityTable(rows) {
+    if (!rows.length) return '<div class="empty-note">No activity entries for this period.</div>';
+    return `<table class="detail"><thead><tr>
+      <th>Date</th><th>Account</th><th>Contact Type</th><th>Activity Type</th><th>Demo Gear</th><th>Topic / Opportunity</th>
+    </tr></thead><tbody>${rows.map(r => `
+      <tr><td>${r.entry_date}</td><td>${escapeHtml(r.account_name)}</td><td>${r.contact_type}</td>
+      <td>${r.activity_type}</td><td>${r.demo_gear_used ? 'Yes' : 'No'}</td><td>${escapeHtml(r.topic_opportunity || '')}</td></tr>
+    `).join('')}</tbody></table>`;
+  }
+  function renderPipelineTable(rows) {
+    if (!rows.length) return '<div class="empty-note">No pipeline entries for this period.</div>';
+    return `<table class="detail"><thead><tr>
+      <th>Account</th><th>Project</th><th>Stage</th><th>Value</th><th>Expected Close</th>
+    </tr></thead><tbody>${rows.map(r => `
+      <tr><td>${escapeHtml(r.account_name)}</td><td>${escapeHtml(r.project_name || '')}</td><td>${escapeHtml(r.stage || '')}</td>
+      <td>${fmtMoney(r.value_usd)}</td><td>${r.expected_close_date || ''}</td></tr>
+    `).join('')}</tbody></table>`;
+  }
+  function renderEducationTable(rows) {
+    if (!rows.length) return '<div class="empty-note">No education records for this period.</div>';
+    return `<table class="detail"><thead><tr>
+      <th>Person</th><th>Course</th><th>Completed</th><th>Certificate</th>
+    </tr></thead><tbody>${rows.map(r => `
+      <tr><td>${escapeHtml(r.person_name)}</td><td>${escapeHtml(r.course_name)}</td><td>${r.completion_date || ''}</td>
+      <td>${r.certificate_url ? `<a href="${escapeHtml(r.certificate_url)}" target="_blank" rel="noopener">View</a>` : ''}</td></tr>
+    `).join('')}</tbody></table>`;
+  }
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  }
+
+  // ---------- Monthly review agenda ----------
+  document.getElementById('generate-agenda-btn').addEventListener('click', async () => {
+    if (!selectedFirmId) return;
+    const row = scorecardCache.find(r => r.rep_firm_id === selectedFirmId);
+    const month = monthInput.value;
+    const btn = document.getElementById('generate-agenda-btn');
+    btn.disabled = true;
+    btn.textContent = 'Generating…';
+
+    const [acts, pipe, edu] = await Promise.all([
+      client.from('activity_entries').select('*').eq('rep_firm_id', selectedFirmId).eq('reporting_month', month),
+      client.from('pipeline_entries').select('*').eq('rep_firm_id', selectedFirmId).eq('reporting_month', month),
+      client.from('education_records').select('*').eq('rep_firm_id', selectedFirmId).eq('reporting_month', month),
+    ]);
+
+    const { data: existingReview } = await client
+      .from('monthly_reviews').select('*')
+      .eq('rep_firm_id', selectedFirmId).eq('reporting_month', month).maybeSingle();
+
+    const nowIso = new Date().toISOString();
+    if (existingReview) {
+      await client.from('monthly_reviews').update({
+        rag_status: row.rag_status, agenda_generated_at: nowIso,
+      }).eq('id', existingReview.id);
+    } else {
+      await client.from('monthly_reviews').insert({
+        rep_firm_id: selectedFirmId, reporting_month: month,
+        rag_status: row.rag_status, agenda_generated_at: nowIso, created_by: currentUser.id,
+      });
+    }
+
+    openAgendaWindow(row, month, acts.data || [], pipe.data || [], edu.data || [], existingReview ? existingReview.notes : '');
+
+    btn.disabled = false;
+    btn.textContent = 'Generate Monthly Review Agenda';
+  });
+
+  function openAgendaWindow(row, month, activities, pipeline, education, existingNotes) {
+    const byType = {};
+    activities.forEach(a => { byType[a.activity_type] = (byType[a.activity_type] || 0) + 1; });
+    const typeRows = Object.entries(byType).map(([t, c]) => `<tr><td>${t}</td><td>${c}</td></tr>`).join('')
+      || '<tr><td colspan="2" style="color:#999;">No activity recorded</td></tr>';
+
+    const pipelineRows = pipeline.map(p => `<tr><td>${escapeHtml(p.account_name)}</td><td>${escapeHtml(p.project_name||'')}</td><td>${escapeHtml(p.stage||'')}</td><td>${fmtMoney(p.value_usd)}</td></tr>`).join('')
+      || '<tr><td colspan="4" style="color:#999;">No pipeline entries</td></tr>';
+    const pipelineTotal = pipeline.reduce((s, p) => s + Number(p.value_usd || 0), 0);
+
+    const eduRows = education.map(e => `<tr><td>${escapeHtml(e.person_name)}</td><td>${escapeHtml(e.course_name)}</td><td>${e.completion_date||''}</td></tr>`).join('')
+      || '<tr><td colspan="3" style="color:#999;">No education records</td></tr>';
+
+    const cur = Number(row.sellout_revenue || 0), prior = Number(row.prior_sellout_revenue || 0);
+    const momText = prior === 0 ? (cur === 0 ? 'No sell-out data' : 'New — no prior month data') :
+      `${(((cur - prior) / prior) * 100).toFixed(1)}% vs prior month (${fmtMoney(prior)} → ${fmtMoney(cur)})`;
+
+    const ragColor = row.rag_status === 'Green' ? '#2e7d32' : row.rag_status === 'Amber' ? '#b8860b' : '#b3261e';
+
+    const win = window.open('', '_blank');
+    win.document.write(`<!doctype html><html><head><meta charset="utf-8">
+      <title>Review Agenda — ${escapeHtml(row.firm_name)} — ${month}</title>
+      <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap" rel="stylesheet">
+      <style>
+        body{font-family:'Montserrat',sans-serif;color:#333;max-width:760px;margin:40px auto;padding:0 20px;}
+        h1{font-size:20px;margin-bottom:2px;} .sub{color:#888;font-size:13px;margin-bottom:24px;}
+        h2{font-size:14px;text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid #d9a653;padding-bottom:6px;margin-top:32px;}
+        table{width:100%;border-collapse:collapse;font-size:13px;margin-top:10px;}
+        th,td{padding:7px 10px;border-bottom:1px solid #eee;text-align:left;}
+        th{background:#f8f8f8;}
+        .rag{display:inline-block;padding:4px 14px;border-radius:20px;color:#fff;font-weight:700;font-size:12px;background:${ragColor};}
+        textarea{width:100%;min-height:140px;font-family:'Montserrat',sans-serif;font-size:13px;padding:10px;border:1px solid #ddd;border-radius:3px;}
+        .btn{background:#d9a653;border:none;padding:10px 20px;font-weight:700;font-size:12px;text-transform:uppercase;border-radius:3px;cursor:pointer;margin-right:8px;}
+        @media print { .no-print { display:none; } }
+      </style></head><body>
+      <h1>Monthly Review Agenda</h1>
+      <div class="sub">${escapeHtml(row.firm_name)} — ${row.territory} — ${month}</div>
+      <span class="rag">${row.rag_status}</span>
+
+      <h2>Activity Summary</h2>
+      <table><thead><tr><th>Activity Type</th><th>Count</th></tr></thead><tbody>${typeRows}</tbody></table>
+      <p>Total activities: ${activities.length}. Demo gear used in ${row.demo_gear_count} of ${row.activity_count}.</p>
+
+      <h2>Education Status</h2>
+      <table><thead><tr><th>Person</th><th>Course</th><th>Completed</th></tr></thead><tbody>${eduRows}</tbody></table>
+
+      <h2>Pipeline Summary</h2>
+      <table><thead><tr><th>Account</th><th>Project</th><th>Stage</th><th>Value</th></tr></thead><tbody>${pipelineRows}</tbody></table>
+      <p>Total pipeline value: ${fmtMoney(pipelineTotal)}</p>
+
+      <h2>Sell-out vs. Prior Month</h2>
+      <p>${momText}</p>
+
+      <h2>Manager Notes</h2>
+      <textarea id="notes">${escapeHtml(existingNotes || '')}</textarea>
+      <div class="no-print" style="margin-top:14px;">
+        <button class="btn" id="save-btn">Save Notes</button>
+        <button class="btn" onclick="window.print()" style="background:transparent;border:1.5px solid #000;">Print / Save as PDF</button>
+        <span id="save-status" style="font-size:12px;color:#2e7d32;margin-left:8px;"></span>
+      </div>
+
+      <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"><\/script>
+      <script>
+        const c = supabase.createClient('${SUPABASE_URL}', '${SUPABASE_ANON_KEY}');
+        document.getElementById('save-btn').addEventListener('click', async () => {
+          const notes = document.getElementById('notes').value;
+          const { error } = await c.from('monthly_reviews')
+            .update({ notes })
+            .eq('rep_firm_id', '${row.rep_firm_id}')
+            .eq('reporting_month', '${month}');
+          document.getElementById('save-status').textContent = error ? ('Error: ' + error.message) : 'Saved.';
+        });
+      <\/script>
+      </body></html>`);
+    win.document.close();
+  }
+
+  // ---------- CSV upload + column mapping ----------
+  const SOURCES = [
+    {
+      source: 'education', label: 'Education Records', hint: 'education.audac.eu export', table: 'education_records',
+      fields: [
+        { key: 'firm', label: 'Rep Firm', required: true },
+        { key: 'person_name', label: 'Person Name', required: true },
+        { key: 'course_name', label: 'Course Name', required: true },
+        { key: 'completion_date', label: 'Completion Date', required: false, type: 'date' },
+        { key: 'certificate_url', label: 'Certificate URL', required: false },
+      ],
+    },
+    {
+      source: 'pipeline', label: 'Pipeline', hint: 'D365 export', table: 'pipeline_entries',
+      fields: [
+        { key: 'firm', label: 'Rep Firm', required: true },
+        { key: 'account_name', label: 'Account Name', required: true },
+        { key: 'project_name', label: 'Project Name', required: false },
+        { key: 'stage', label: 'Stage', required: false },
+        { key: 'value_usd', label: 'Value (USD)', required: false, type: 'number' },
+        { key: 'created_date', label: 'Created Date', required: false, type: 'date' },
+        { key: 'expected_close_date', label: 'Expected Close Date', required: false, type: 'date' },
+        { key: 'crm_id', label: 'CRM ID', required: false },
+      ],
+    },
+    {
+      source: 'sellout', label: 'Sell-out', hint: 'AVL sell-out export', table: 'sellout_records',
+      fields: [
+        { key: 'firm', label: 'Rep Firm', required: true },
+        { key: 'dealer_name', label: 'Dealer Name', required: false },
+        { key: 'product_sku', label: 'Product SKU', required: false },
+        { key: 'quantity', label: 'Quantity', required: false, type: 'number' },
+        { key: 'revenue_usd', label: 'Revenue (USD)', required: false, type: 'number' },
+      ],
+    },
+  ];
+
+  const uploadState = {};
+
+  function parseCSV(text) {
+    text = text.replace(/^﻿/, '');
+    const rows = [];
+    let row = [], field = '', inQuotes = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i], next = text[i + 1];
+      if (inQuotes) {
+        if (c === '"' && next === '"') { field += '"'; i++; }
+        else if (c === '"') { inQuotes = false; }
+        else { field += c; }
+      } else {
+        if (c === '"') inQuotes = true;
+        else if (c === ',') { row.push(field); field = ''; }
+        else if (c === '\r') { /* skip */ }
+        else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+        else field += c;
+      }
+    }
+    if (field.length || row.length) { row.push(field); rows.push(row); }
+    const nonEmpty = rows.filter(r => r.some(f => f.trim() !== ''));
+    const headers = (nonEmpty.shift() || []).map(h => h.trim());
+    return { headers, rows: nonEmpty };
+  }
+
+  function normalize(s) { return s.toLowerCase().replace(/[^a-z0-9]/g, ''); }
+
+  function guessMapping(fields, headers) {
+    const guess = {};
+    for (const f of fields) {
+      const target = normalize(f.label + f.key);
+      let best = null;
+      for (const h of headers) {
+        const nh = normalize(h);
+        if (nh === normalize(f.key) || nh === normalize(f.label) || nh.includes(normalize(f.key)) || target.includes(nh)) {
+          best = h; break;
+        }
+      }
+      guess[f.key] = best;
+    }
+    return guess;
+  }
+
+  function typeConvert(value, type) {
+    if (value === undefined || value === null || String(value).trim() === '') return null;
+    value = String(value).trim();
+    if (type === 'number') {
+      const n = parseFloat(value.replace(/[^0-9.\-]/g, ''));
+      return isNaN(n) ? null : n;
+    }
+    if (type === 'date') {
+      const d = new Date(value);
+      if (isNaN(d.getTime())) return null;
+      return d.toISOString().slice(0, 10);
+    }
+    return value;
+  }
+
+  async function loadSavedMapping(source) {
+    const { data } = await client.from('csv_column_mappings').select('mapping').eq('source', source).maybeSingle();
+    return data ? data.mapping : null;
+  }
+
+  function renderUploadPanels() {
+    const container = document.getElementById('upload-panels');
+    container.innerHTML = SOURCES.map(s => `
+      <details class="upload-panel" id="panel-${s.source}">
+        <summary>${s.label}</summary>
+        <div class="upload-hint">${s.hint}</div>
+        <input type="file" accept=".csv" id="file-${s.source}">
+        <div id="mapping-area-${s.source}"></div>
+        <div id="status-${s.source}"></div>
+      </details>
+    `).join('');
+    SOURCES.forEach(s => {
+      document.getElementById(`file-${s.source}`).addEventListener('change', (e) => handleFile(s, e.target.files[0]));
+    });
+  }
+
+  async function handleFile(sourceConfig, file) {
+    if (!file) return;
+    const text = await file.text();
+    const { headers, rows } = parseCSV(text);
+    uploadState[sourceConfig.source] = { headers, rows };
+    const saved = await loadSavedMapping(sourceConfig.source);
+    const savedUsable = saved && Object.values(saved).every(v => v === null || headers.includes(v));
+    renderMappingUI(sourceConfig, headers, savedUsable ? saved : guessMapping(sourceConfig.fields, headers), savedUsable);
+  }
+
+  function renderMappingUI(sourceConfig, headers, mapping, isSaved) {
+    const area = document.getElementById(`mapping-area-${sourceConfig.source}`);
+    const headerOptions = ['<option value="">-- do not map --</option>']
+      .concat(headers.map(h => `<option value="${escapeHtml(h)}">${escapeHtml(h)}</option>`)).join('');
+
+    area.innerHTML = `
+      <div class="mapping-grid">
+        ${sourceConfig.fields.map(f => `
+          <label>${f.label}${f.required ? ' *' : ''}</label>
+          <select data-key="${f.key}">${headerOptions}</select>
+        `).join('')}
+      </div>
+      <div class="action-row">
+        <button class="audac-btn" data-action="import">${isSaved ? 'Import with Saved Mapping' : 'Save Mapping & Import'}</button>
+        ${isSaved ? '<button class="audac-btn-outline" data-action="remap">Change Mapping</button>' : ''}
+      </div>
+    `;
+    sourceConfig.fields.forEach(f => {
+      const sel = area.querySelector(`select[data-key="${f.key}"]`);
+      if (mapping && mapping[f.key]) sel.value = mapping[f.key];
+    });
+
+    area.querySelector('[data-action="import"]').addEventListener('click', () => runImport(sourceConfig, area, isSaved));
+    const remapBtn = area.querySelector('[data-action="remap"]');
+    if (remapBtn) remapBtn.addEventListener('click', () => renderMappingUI(sourceConfig, headers, guessMapping(sourceConfig.fields, headers), false));
+  }
+
+  async function runImport(sourceConfig, area, mappingAlreadySaved) {
+    const mapping = {};
+    sourceConfig.fields.forEach(f => {
+      mapping[f.key] = area.querySelector(`select[data-key="${f.key}"]`).value || null;
+    });
+    const missingRequired = sourceConfig.fields.filter(f => f.required && !mapping[f.key]);
+    const statusEl = document.getElementById(`status-${sourceConfig.source}`);
+    if (missingRequired.length) {
+      statusEl.className = 'upload-status err';
+      statusEl.textContent = 'Please map required fields: ' + missingRequired.map(f => f.label).join(', ');
+      return;
+    }
+
+    if (!mappingAlreadySaved) {
+      await client.from('csv_column_mappings').upsert(
+        { source: sourceConfig.source, mapping, updated_by: currentUser.id, updated_at: new Date().toISOString() },
+        { onConflict: 'source' }
+      );
+    }
+
+    const { headers, rows } = uploadState[sourceConfig.source];
+    const idx = {};
+    Object.entries(mapping).forEach(([k, h]) => { idx[k] = h ? headers.indexOf(h) : -1; });
+
+    const month = monthInput.value;
+    const toInsert = [];
+    let skipped = 0;
+    const unmatchedFirms = new Set();
+
+    for (const r of rows) {
+      const firmRaw = idx.firm >= 0 ? (r[idx.firm] || '').trim() : '';
+      const firm = firmsCache.find(f => f.name.toLowerCase() === firmRaw.toLowerCase());
+      if (!firm) { skipped++; if (firmRaw) unmatchedFirms.add(firmRaw); continue; }
+
+      const record = { rep_firm_id: firm.id, reporting_month: month };
+      for (const f of sourceConfig.fields) {
+        if (f.key === 'firm') continue;
+        const colIdx = idx[f.key];
+        record[f.key] = colIdx >= 0 ? typeConvert(r[colIdx], f.type) : null;
+      }
+      toInsert.push(record);
+    }
+
+    if (!toInsert.length) {
+      statusEl.className = 'upload-status err';
+      statusEl.textContent = `No rows imported. ${skipped} skipped (firm not recognized: ${[...unmatchedFirms].join(', ') || 'n/a'}).`;
+      return;
+    }
+
+    const { error } = await client.from(sourceConfig.table).insert(toInsert);
+    if (error) {
+      statusEl.className = 'upload-status err';
+      statusEl.textContent = 'Import failed: ' + error.message;
+      return;
+    }
+    statusEl.className = 'upload-status ' + (skipped ? 'warn' : 'ok');
+    statusEl.textContent = `Imported ${toInsert.length} row(s) for ${month}.` +
+      (skipped ? ` ${skipped} skipped (unrecognized firm: ${[...unmatchedFirms].join(', ')}).` : '');
+    loadScorecard();
+  }
+
+  // ---------- Init ----------
+  (async function init() {
+    const g = await guard();
+    if (!g) return;
+    currentUser = g.user;
+    document.getElementById('user-email').textContent = g.profile.email;
+    monthInput.value = currentMonthValue();
+    await loadFirms();
+    renderUploadPanels();
+    await loadScorecard();
+    monthInput.addEventListener('change', loadScorecard);
+  })();
+</script>
+</body>
+</html>

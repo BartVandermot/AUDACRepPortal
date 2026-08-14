@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AUDAC Rep Portal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root { --audac-gold: #d9a653; --audac-black: #000000; --audac-text: #737373; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; font-family: 'Montserrat', sans-serif; background: var(--audac-black); color: #fff; }
+  .wrap { min-height: 100%; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .card { text-align: center; max-width: 420px; }
+  .brand { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 24px; }
+  .brand img.logo { height: 40px; }
+  .brand .wordmark { font-weight: 700; font-size: 26px; letter-spacing: 4px; color: #fff; display: none; }
+  p { color: #aaa; font-size: 14px; line-height: 1.6; }
+  a.audac-btn {
+    display: inline-block; background: var(--audac-gold); color: #000; text-decoration: none;
+    padding: 13px 28px; font-weight: 700; font-size: 13px; letter-spacing: .5px;
+    text-transform: uppercase; border-radius: 3px; margin-top: 16px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div class="brand">
+      <img class="logo" src="https://audac.eu/images/AUDAC-logo.webp" alt="AUDAC"
+           onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
+      <span class="wordmark">AUDAC</span>
+    </div>
+    <p>Rep performance tracking for AUDAC North America.<br>Reps: use the activity submission link provided by your manager.</p>
+    <a class="audac-btn" href="/login">Manager / Executive Sign In</a>
+  </div>
+</div>
+</body>
+</html>
