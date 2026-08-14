@@ -148,6 +148,7 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
   const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
@@ -413,22 +414,25 @@
     win.document.close();
   }
 
-  // ---------- CSV upload + column mapping ----------
+  // ---------- CSV/XLSX upload + column mapping ----------
+  // Real exports (education.audac.eu, D365, AVL) list end-customer/dealer company
+  // names, not rep_firms.name directly, so company -> rep firm is resolved through
+  // a saved alias table (rep_firm_aliases) rather than a direct name match.
   const SOURCES = [
     {
-      source: 'education', label: 'Education Records', hint: 'education.audac.eu export', table: 'education_records',
+      source: 'education', label: 'Education Records', hint: 'education.audac.eu export (.xlsx or .csv)', table: 'education_records',
       fields: [
-        { key: 'firm', label: 'Rep Firm', required: true },
-        { key: 'person_name', label: 'Person Name', required: true },
+        { key: 'company', label: 'Company / Dealer Name', required: true },
+        { key: 'person_name', label: 'Person Name', required: true, parts: [{ key: 'first', label: 'First Name' }, { key: 'last', label: 'Last Name' }] },
         { key: 'course_name', label: 'Course Name', required: true },
         { key: 'completion_date', label: 'Completion Date', required: false, type: 'date' },
         { key: 'certificate_url', label: 'Certificate URL', required: false },
       ],
     },
     {
-      source: 'pipeline', label: 'Pipeline', hint: 'D365 export', table: 'pipeline_entries',
+      source: 'pipeline', label: 'Pipeline', hint: 'D365 export (.xlsx or .csv)', table: 'pipeline_entries',
       fields: [
-        { key: 'firm', label: 'Rep Firm', required: true },
+        { key: 'company', label: 'Company / Dealer Name', required: true },
         { key: 'account_name', label: 'Account Name', required: true },
         { key: 'project_name', label: 'Project Name', required: false },
         { key: 'stage', label: 'Stage', required: false },
@@ -439,9 +443,9 @@
       ],
     },
     {
-      source: 'sellout', label: 'Sell-out', hint: 'AVL sell-out export', table: 'sellout_records',
+      source: 'sellout', label: 'Sell-out', hint: 'AVL sell-out export (.xlsx or .csv)', table: 'sellout_records',
       fields: [
-        { key: 'firm', label: 'Rep Firm', required: true },
+        { key: 'company', label: 'Company / Dealer Name', required: true },
         { key: 'dealer_name', label: 'Dealer Name', required: false },
         { key: 'product_sku', label: 'Product SKU', required: false },
         { key: 'quantity', label: 'Quantity', required: false, type: 'number' },
@@ -451,6 +455,7 @@
   ];
 
   const uploadState = {};
+  const aliasCache = { loaded: false, byKey: new Map() };
 
   function parseCSV(text) {
     text = text.replace(/^﻿/, '');
@@ -471,31 +476,67 @@
       }
     }
     if (field.length || row.length) { row.push(field); rows.push(row); }
-    const nonEmpty = rows.filter(r => r.some(f => f.trim() !== ''));
-    const headers = (nonEmpty.shift() || []).map(h => h.trim());
+    const nonEmpty = rows.filter(r => r.some(f => String(f).trim() !== ''));
+    const headers = (nonEmpty.shift() || []).map(h => String(h).trim());
     return { headers, rows: nonEmpty };
   }
 
-  function normalize(s) { return s.toLowerCase().replace(/[^a-z0-9]/g, ''); }
+  function parseSpreadsheet(workbook) {
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+    const nonEmpty = rows.filter(r => r.some(f => String(f).trim() !== ''));
+    const headers = (nonEmpty.shift() || []).map(h => String(h).trim());
+    return { headers, rows: nonEmpty };
+  }
+
+  async function parseFile(file) {
+    const isExcel = /\.xlsx?$/i.test(file.name);
+    if (isExcel) {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+      return parseSpreadsheet(wb);
+    }
+    return parseCSV(await file.text());
+  }
+
+  function normalize(s) { return String(s).toLowerCase().replace(/[^a-z0-9]/g, ''); }
+  function normalizeCompany(s) { return String(s || '').trim().toLowerCase(); }
+
+  function allMappingFields(fields) {
+    // Flattens compound fields (e.g. person_name -> first/last) into individually mappable leaves.
+    const leaves = [];
+    for (const f of fields) {
+      if (f.parts) f.parts.forEach(p => leaves.push({ fieldKey: f.key, partKey: p.key, label: `${f.label} — ${p.label}`, required: f.required }));
+      else leaves.push({ fieldKey: f.key, partKey: null, label: f.label, required: f.required });
+    }
+    return leaves;
+  }
 
   function guessMapping(fields, headers) {
     const guess = {};
-    for (const f of fields) {
-      const target = normalize(f.label + f.key);
+    for (const leaf of allMappingFields(fields)) {
+      const target = normalize(leaf.label);
       let best = null;
       for (const h of headers) {
         const nh = normalize(h);
-        if (nh === normalize(f.key) || nh === normalize(f.label) || nh.includes(normalize(f.key)) || target.includes(nh)) {
+        if (!nh) continue;
+        if (nh === normalize(leaf.partKey || leaf.fieldKey) || target.includes(nh) || nh.includes(normalize(leaf.partKey || leaf.fieldKey))) {
           best = h; break;
         }
       }
-      guess[f.key] = best;
+      if (leaf.partKey) {
+        guess[leaf.fieldKey] = guess[leaf.fieldKey] || {};
+        guess[leaf.fieldKey][leaf.partKey] = best;
+      } else {
+        guess[leaf.fieldKey] = best;
+      }
     }
     return guess;
   }
 
   function typeConvert(value, type) {
     if (value === undefined || value === null || String(value).trim() === '') return null;
+    if (value instanceof Date) return isNaN(value.getTime()) ? null : value.toISOString().slice(0, 10);
     value = String(value).trim();
     if (type === 'number') {
       const n = parseFloat(value.replace(/[^0-9.\-]/g, ''));
@@ -514,13 +555,21 @@
     return data ? data.mapping : null;
   }
 
+  async function loadAliases(force) {
+    if (aliasCache.loaded && !force) return aliasCache.byKey;
+    const { data } = await client.from('rep_firm_aliases').select('alias_key, rep_firm_id');
+    aliasCache.byKey = new Map((data || []).map(r => [r.alias_key, r.rep_firm_id]));
+    aliasCache.loaded = true;
+    return aliasCache.byKey;
+  }
+
   function renderUploadPanels() {
     const container = document.getElementById('upload-panels');
     container.innerHTML = SOURCES.map(s => `
       <details class="upload-panel" id="panel-${s.source}">
         <summary>${s.label}</summary>
         <div class="upload-hint">${s.hint}</div>
-        <input type="file" accept=".csv" id="file-${s.source}">
+        <input type="file" accept=".csv,.xlsx,.xls" id="file-${s.source}">
         <div id="mapping-area-${s.source}"></div>
         <div id="status-${s.source}"></div>
       </details>
@@ -532,12 +581,24 @@
 
   async function handleFile(sourceConfig, file) {
     if (!file) return;
-    const text = await file.text();
-    const { headers, rows } = parseCSV(text);
-    uploadState[sourceConfig.source] = { headers, rows };
+    const statusEl = document.getElementById(`status-${sourceConfig.source}`);
+    statusEl.className = '';
+    statusEl.textContent = '';
+    let parsed;
+    try {
+      parsed = await parseFile(file);
+    } catch (err) {
+      statusEl.className = 'upload-status err';
+      statusEl.textContent = 'Could not read file: ' + err.message;
+      return;
+    }
+    uploadState[sourceConfig.source] = parsed;
     const saved = await loadSavedMapping(sourceConfig.source);
-    const savedUsable = saved && Object.values(saved).every(v => v === null || headers.includes(v));
-    renderMappingUI(sourceConfig, headers, savedUsable ? saved : guessMapping(sourceConfig.fields, headers), savedUsable);
+    const savedUsable = saved && allMappingFields(sourceConfig.fields).every(leaf => {
+      const v = leaf.partKey ? (saved[leaf.fieldKey] || {})[leaf.partKey] : saved[leaf.fieldKey];
+      return !v || parsed.headers.includes(v);
+    });
+    renderMappingUI(sourceConfig, parsed.headers, savedUsable ? saved : guessMapping(sourceConfig.fields, parsed.headers), savedUsable);
   }
 
   function renderMappingUI(sourceConfig, headers, mapping, isSaved) {
@@ -547,36 +608,68 @@
 
     area.innerHTML = `
       <div class="mapping-grid">
-        ${sourceConfig.fields.map(f => `
-          <label>${f.label}${f.required ? ' *' : ''}</label>
-          <select data-key="${f.key}">${headerOptions}</select>
+        ${allMappingFields(sourceConfig.fields).map(leaf => `
+          <label>${leaf.label}${leaf.required ? ' *' : ''}</label>
+          <select data-field="${leaf.fieldKey}" ${leaf.partKey ? `data-part="${leaf.partKey}"` : ''}>${headerOptions}</select>
         `).join('')}
       </div>
       <div class="action-row">
         <button class="audac-btn" data-action="import">${isSaved ? 'Import with Saved Mapping' : 'Save Mapping & Import'}</button>
         ${isSaved ? '<button class="audac-btn-outline" data-action="remap">Change Mapping</button>' : ''}
       </div>
+      <div id="alias-area-${sourceConfig.source}"></div>
     `;
-    sourceConfig.fields.forEach(f => {
-      const sel = area.querySelector(`select[data-key="${f.key}"]`);
-      if (mapping && mapping[f.key]) sel.value = mapping[f.key];
+    allMappingFields(sourceConfig.fields).forEach(leaf => {
+      const sel = area.querySelector(leaf.partKey ? `select[data-field="${leaf.fieldKey}"][data-part="${leaf.partKey}"]` : `select[data-field="${leaf.fieldKey}"]:not([data-part])`);
+      const v = leaf.partKey ? (mapping && mapping[leaf.fieldKey] && mapping[leaf.fieldKey][leaf.partKey]) : (mapping && mapping[leaf.fieldKey]);
+      if (v) sel.value = v;
     });
 
-    area.querySelector('[data-action="import"]').addEventListener('click', () => runImport(sourceConfig, area, isSaved));
+    area.querySelector('[data-action="import"]').addEventListener('click', () => beginImport(sourceConfig, area, isSaved));
     const remapBtn = area.querySelector('[data-action="remap"]');
     if (remapBtn) remapBtn.addEventListener('click', () => renderMappingUI(sourceConfig, headers, guessMapping(sourceConfig.fields, headers), false));
   }
 
-  async function runImport(sourceConfig, area, mappingAlreadySaved) {
+  function readMappingFromUI(sourceConfig, area) {
     const mapping = {};
-    sourceConfig.fields.forEach(f => {
-      mapping[f.key] = area.querySelector(`select[data-key="${f.key}"]`).value || null;
+    allMappingFields(sourceConfig.fields).forEach(leaf => {
+      const sel = area.querySelector(leaf.partKey ? `select[data-field="${leaf.fieldKey}"][data-part="${leaf.partKey}"]` : `select[data-field="${leaf.fieldKey}"]:not([data-part])`);
+      const v = sel.value || null;
+      if (leaf.partKey) {
+        mapping[leaf.fieldKey] = mapping[leaf.fieldKey] || {};
+        mapping[leaf.fieldKey][leaf.partKey] = v;
+      } else {
+        mapping[leaf.fieldKey] = v;
+      }
     });
-    const missingRequired = sourceConfig.fields.filter(f => f.required && !mapping[f.key]);
+    return mapping;
+  }
+
+  function buildFieldValue(field, mapping, headers, row) {
+    if (field.parts) {
+      const vals = field.parts.map(p => {
+        const h = (mapping[field.key] || {})[p.key];
+        const idx = h ? headers.indexOf(h) : -1;
+        return idx >= 0 ? String(row[idx] || '').trim() : '';
+      });
+      const joined = vals.filter(Boolean).join(' ').trim();
+      return joined || null;
+    }
+    const h = mapping[field.key];
+    const idx = h ? headers.indexOf(h) : -1;
+    return idx >= 0 ? typeConvert(row[idx], field.type) : null;
+  }
+
+  async function beginImport(sourceConfig, area, mappingAlreadySaved) {
+    const mapping = readMappingFromUI(sourceConfig, area);
+    const missingRequired = allMappingFields(sourceConfig.fields).filter(leaf => {
+      const v = leaf.partKey ? (mapping[leaf.fieldKey] || {})[leaf.partKey] : mapping[leaf.fieldKey];
+      return leaf.required && !v;
+    });
     const statusEl = document.getElementById(`status-${sourceConfig.source}`);
     if (missingRequired.length) {
       statusEl.className = 'upload-status err';
-      statusEl.textContent = 'Please map required fields: ' + missingRequired.map(f => f.label).join(', ');
+      statusEl.textContent = 'Please map required fields: ' + missingRequired.map(l => l.label).join(', ');
       return;
     }
 
@@ -588,31 +681,93 @@
     }
 
     const { headers, rows } = uploadState[sourceConfig.source];
-    const idx = {};
-    Object.entries(mapping).forEach(([k, h]) => { idx[k] = h ? headers.indexOf(h) : -1; });
+    const companyIdx = headers.indexOf(mapping.company);
+    const aliasByKey = await loadAliases();
 
+    const distinctCompanies = new Map(); // normalized -> display text
+    for (const r of rows) {
+      const raw = String(r[companyIdx] || '').trim();
+      if (!raw) continue;
+      const key = normalizeCompany(raw);
+      if (!aliasByKey.has(key) && !distinctCompanies.has(key)) distinctCompanies.set(key, raw);
+    }
+
+    if (distinctCompanies.size > 0) {
+      renderAliasAssignment(sourceConfig, area, mapping, distinctCompanies);
+      return;
+    }
+
+    await finishImport(sourceConfig, mapping);
+  }
+
+  function renderAliasAssignment(sourceConfig, area, mapping, distinctCompanies) {
+    const aliasArea = document.getElementById(`alias-area-${sourceConfig.source}`);
+    const firmOptions = ['<option value="">Skip — not a rep-tracked account</option>']
+      .concat(firmsCache.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`)).join('');
+
+    aliasArea.innerHTML = `
+      <div class="dd-sub-title" style="margin-top:18px;">New Companies Found — Assign to a Rep Firm</div>
+      <div class="upload-hint">These company/dealer names haven't been seen before. Pick the rep firm each belongs to (or skip it) — this is remembered for future uploads.</div>
+      <div class="mapping-grid" style="grid-template-columns: 1fr 260px;">
+        ${[...distinctCompanies.entries()].map(([key, display]) => `
+          <label>${escapeHtml(display)}</label>
+          <select data-alias-key="${escapeHtml(key)}" data-alias-display="${escapeHtml(display)}">${firmOptions}</select>
+        `).join('')}
+      </div>
+      <div class="action-row">
+        <button class="audac-btn" data-action="save-aliases">Save Assignments &amp; Import</button>
+      </div>
+    `;
+    aliasArea.querySelector('[data-action="save-aliases"]').addEventListener('click', async () => {
+      const selects = [...aliasArea.querySelectorAll('select[data-alias-key]')];
+      const upserts = selects.map(sel => ({
+        alias_key: sel.dataset.aliasKey,
+        display_name: sel.dataset.aliasDisplay,
+        rep_firm_id: sel.value || null,
+        updated_by: currentUser.id,
+        updated_at: new Date().toISOString(),
+      }));
+      const statusEl = document.getElementById(`status-${sourceConfig.source}`);
+      const { error } = await client.from('rep_firm_aliases').upsert(upserts, { onConflict: 'alias_key' });
+      if (error) {
+        statusEl.className = 'upload-status err';
+        statusEl.textContent = 'Could not save company assignments: ' + error.message;
+        return;
+      }
+      await loadAliases(true);
+      aliasArea.innerHTML = '';
+      await finishImport(sourceConfig, mapping);
+    });
+  }
+
+  async function finishImport(sourceConfig, mapping) {
+    const { headers, rows } = uploadState[sourceConfig.source];
+    const aliasByKey = await loadAliases();
+    const companyIdx = headers.indexOf(mapping.company);
     const month = monthInput.value;
+    const statusEl = document.getElementById(`status-${sourceConfig.source}`);
+
     const toInsert = [];
-    let skipped = 0;
-    const unmatchedFirms = new Set();
+    let skippedNoFirm = 0, skippedMissingFields = 0;
+    const requiredFields = sourceConfig.fields.filter(f => f.required && f.key !== 'company');
 
     for (const r of rows) {
-      const firmRaw = idx.firm >= 0 ? (r[idx.firm] || '').trim() : '';
-      const firm = firmsCache.find(f => f.name.toLowerCase() === firmRaw.toLowerCase());
-      if (!firm) { skipped++; if (firmRaw) unmatchedFirms.add(firmRaw); continue; }
+      const companyRaw = String(r[companyIdx] || '').trim();
+      const repFirmId = companyRaw ? aliasByKey.get(normalizeCompany(companyRaw)) : undefined;
+      if (!repFirmId) { skippedNoFirm++; continue; }
 
-      const record = { rep_firm_id: firm.id, reporting_month: month };
+      const record = { rep_firm_id: repFirmId, reporting_month: month };
       for (const f of sourceConfig.fields) {
-        if (f.key === 'firm') continue;
-        const colIdx = idx[f.key];
-        record[f.key] = colIdx >= 0 ? typeConvert(r[colIdx], f.type) : null;
+        if (f.key === 'company') continue;
+        record[f.key] = buildFieldValue(f, mapping, headers, r);
       }
+      if (requiredFields.some(f => record[f.key] === null || record[f.key] === undefined)) { skippedMissingFields++; continue; }
       toInsert.push(record);
     }
 
     if (!toInsert.length) {
       statusEl.className = 'upload-status err';
-      statusEl.textContent = `No rows imported. ${skipped} skipped (firm not recognized: ${[...unmatchedFirms].join(', ') || 'n/a'}).`;
+      statusEl.textContent = `No rows imported. ${skippedNoFirm} skipped (company excluded/unmapped), ${skippedMissingFields} skipped (missing required data).`;
       return;
     }
 
@@ -622,9 +777,10 @@
       statusEl.textContent = 'Import failed: ' + error.message;
       return;
     }
-    statusEl.className = 'upload-status ' + (skipped ? 'warn' : 'ok');
+    const skippedTotal = skippedNoFirm + skippedMissingFields;
+    statusEl.className = 'upload-status ' + (skippedTotal ? 'warn' : 'ok');
     statusEl.textContent = `Imported ${toInsert.length} row(s) for ${month}.` +
-      (skipped ? ` ${skipped} skipped (unrecognized firm: ${[...unmatchedFirms].join(', ')}).` : '');
+      (skippedTotal ? ` ${skippedNoFirm} skipped (excluded company), ${skippedMissingFields} skipped (missing required data).` : '');
     loadScorecard();
   }
 

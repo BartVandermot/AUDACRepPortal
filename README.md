@@ -45,9 +45,11 @@ where email in ('melissa@pvs.global', 'bart@pvs.global', 'tom@pvs.global')
 on conflict (id) do update set role = excluded.role;
 ```
 
-## CSV uploads
+## CSV / XLSX uploads
 
-The manager dashboard's upload panels (Education, Pipeline, Sell-out) parse a CSV client-side, let you map its columns to the schema fields (including a required "Rep Firm" column matched against `rep_firms.name`), and save that mapping per source in `csv_column_mappings` so later uploads from the same export auto-apply it. Rows whose firm doesn't match a known rep firm are skipped and counted in the upload summary.
+The manager dashboard's upload panels (Education, Pipeline, Sell-out) accept either `.csv` or `.xlsx`/`.xls` files, parsed entirely client-side (XLSX via SheetJS, no server round-trip). On first upload per source you map its columns to the schema fields; that mapping is saved in `csv_column_mappings` and auto-applied on later uploads from the same export.
+
+Real exports list end-customer/dealer company names (e.g. "AC PROMEDIA"), not rep firm names — there's no direct match against `rep_firms.name`. So company → rep firm is resolved through `rep_firm_aliases`: the first time a given company name appears, the dashboard prompts you to assign it to one of the 6 rep firms (or skip it as not rep-tracked); that assignment is remembered for every later upload. Rows for a company you've skipped, or one still unassigned, are excluded and counted in the upload summary.
 
 ## Deploying
 
