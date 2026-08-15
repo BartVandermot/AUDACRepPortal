@@ -186,6 +186,64 @@ async function fetchCount(url: string, token: string): Promise<number | null> {
   return isNaN(n) ? null : n;
 }
 
+async function fetchJson(url: string, token: string): Promise<any> {
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/json", "OData-MaxVersion": "4.0", "OData-Version": "4.0" },
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`Metadata request failed: ${res.status} ${text}`);
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`Metadata response wasn't JSON: ${text.slice(0, 300)}`);
+  }
+}
+
+// Queries Dataverse's own metadata instead of guessing relationship/attribute names:
+// - the real Web API navigation property behind Account's scp_countrylookup field,
+//   and the logical name of whatever entity it points to
+// - that entity's own attributes (to find its ISO/name field for filtering)
+// - Contact's relationships, to confirm its parentcustomerid->Account nav property
+//   and check whether Contact has its own country-style lookup at all
+async function discoverSchema(): Promise<Record<string, any>> {
+  const token = await getDataverseToken();
+  const base = `${DATAVERSE_ORG_URL}/api/data/v9.2`;
+
+  const accountRels = await fetchJson(
+    `${base}/EntityDefinitions(LogicalName='account')/ManyToOneRelationships?$select=ReferencingAttribute,ReferencingEntityNavigationPropertyName,ReferencedEntity,ReferencedAttribute,SchemaName`,
+    token,
+  );
+  const accountCountryRelationship =
+    (accountRels.value || []).find((r: any) => r.ReferencingAttribute === "scp_countrylookup") || null;
+
+  let countryEntityAttributes = null;
+  if (accountCountryRelationship?.ReferencedEntity) {
+    const attrs = await fetchJson(
+      `${base}/EntityDefinitions(LogicalName='${accountCountryRelationship.ReferencedEntity}')/Attributes?$select=LogicalName,SchemaName,AttributeType`,
+      token,
+    );
+    countryEntityAttributes = (attrs.value || []).map((a: any) => ({
+      logicalName: a.LogicalName, schemaName: a.SchemaName, type: a.AttributeType,
+    }));
+  }
+
+  const contactRels = await fetchJson(
+    `${base}/EntityDefinitions(LogicalName='contact')/ManyToOneRelationships?$select=ReferencingAttribute,ReferencingEntityNavigationPropertyName,ReferencedEntity,SchemaName`,
+    token,
+  );
+  const contactParentAccountRelationship =
+    (contactRels.value || []).find((r: any) => r.ReferencingAttribute === "parentcustomerid" && r.ReferencedEntity === "account") || null;
+  const contactCountryRelationships =
+    (contactRels.value || []).filter((r: any) => String(r.ReferencingAttribute || "").toLowerCase().includes("country"));
+
+  return {
+    accountCountryRelationship,
+    countryEntityAttributes,
+    contactParentAccountRelationship,
+    contactCountryRelationships,
+  };
+}
+
 async function getCounts(): Promise<Record<string, any>> {
   const token = await getDataverseToken();
   const [accFull, accActive, accNone, conFull, conActive, conNone] = await Promise.all([
@@ -228,6 +286,10 @@ Deno.serve(async (req: Request) => {
 
     if (payload.phase === "count") {
       return jsonResponse(await getCounts());
+    }
+
+    if (payload.phase === "discover") {
+      return jsonResponse(await discoverSchema());
     }
 
     const phase = payload.phase === "contacts" ? "contacts" : "accounts";

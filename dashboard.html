@@ -648,6 +648,7 @@
           <div class="action-row" style="margin-top:0;">
             <button class="audac-btn" id="sync-crm-btn">Sync from CRM</button>
             <button class="audac-btn-outline" id="check-counts-btn">Check CRM Counts</button>
+            <button class="audac-btn-outline" id="discover-schema-btn">Discover Schema (debug)</button>
           </div>
           <div class="upload-hint">Pulls Accounts &amp; Contacts live from Dynamics 365 (Dataverse) via the app's secure server-side connection — the file upload below stays available as a fallback.</div>
         ` : ''}
@@ -663,6 +664,33 @@
     if (syncBtn) syncBtn.addEventListener('click', runCrmSync);
     const countsBtn = document.getElementById('check-counts-btn');
     if (countsBtn) countsBtn.addEventListener('click', runCheckCounts);
+    const discoverBtn = document.getElementById('discover-schema-btn');
+    if (discoverBtn) discoverBtn.addEventListener('click', runDiscoverSchema);
+  }
+
+  async function runDiscoverSchema() {
+    const statusEl = document.getElementById('status-crm_accounts');
+    const btn = document.getElementById('discover-schema-btn');
+    btn.disabled = true;
+    btn.textContent = 'Discovering…';
+    statusEl.className = '';
+    statusEl.textContent = '';
+
+    try {
+      const data = await invokeCrmSync({ phase: 'discover' });
+      statusEl.className = 'upload-status ok';
+      const pre = document.createElement('pre');
+      pre.style.cssText = 'white-space:pre-wrap;font-size:11px;margin:0;';
+      pre.textContent = JSON.stringify(data, null, 2);
+      statusEl.innerHTML = '';
+      statusEl.appendChild(pre);
+    } catch (err) {
+      statusEl.className = 'upload-status err';
+      statusEl.textContent = 'Discover failed: ' + err.message;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Discover Schema (debug)';
+    }
   }
 
   async function runCheckCounts() {
