@@ -5,6 +5,13 @@
 // read-only security role (Account, Contact, Opportunity, Product, Country
 // lookup, Account type). Secrets are read from the function's own environment
 // -- never passed through the client.
+//
+// Processes one small page per invocation (Edge Functions have a per-call CPU
+// budget; pulling a whole org's worth of Accounts/Contacts in one call blew
+// through it). The caller drives the pagination loop: POST { phase, cursor }
+// and keep calling with the returned nextCursor until done=true, first for
+// phase "accounts" then phase "contacts" (contacts resolve their rep firm by
+// looking up their already-synced parent account in crm_accounts).
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
@@ -15,6 +22,8 @@ const DATAVERSE_TENANT_ID = Deno.env.get("DATAVERSE_TENANT_ID")!;
 const DATAVERSE_CLIENT_ID = Deno.env.get("DATAVERSE_CLIENT_ID")!;
 const DATAVERSE_CLIENT_SECRET = Deno.env.get("DATAVERSE_CLIENT_SECRET")!;
 const DATAVERSE_ORG_URL = (Deno.env.get("DATAVERSE_ORG_URL") || "").replace(/\/+$/, "");
+
+const PAGE_SIZE = 100;
 
 const US_STATE_NAMES: Record<string, string> = {
   alabama: "AL", alaska: "AK", arizona: "AZ", arkansas: "AR", california: "CA", colorado: "CO",
@@ -76,25 +85,31 @@ async function getDataverseToken(): Promise<string> {
   return json.access_token as string;
 }
 
-async function fetchAllPages(url: string, token: string): Promise<any[]> {
-  const results: any[] = [];
-  let next: string | null = url;
-  while (next) {
-    const res: Response = await fetch(next, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/json",
-        "OData-MaxVersion": "4.0",
-        "OData-Version": "4.0",
-        Prefer: 'odata.include-annotations="OData.Community.Display.V1.FormattedValue"',
-      },
-    });
-    if (!res.ok) throw new Error(`Dataverse request failed: ${res.status} ${await res.text()}`);
-    const body = await res.json();
-    results.push(...(body.value || []));
-    next = body["@odata.nextLink"] || null;
-  }
-  return results;
+async function fetchOnePage(url: string, token: string): Promise<{ rows: any[]; nextLink: string | null; status: number; bodyText?: string }> {
+  const res = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+      "OData-MaxVersion": "4.0",
+      "OData-Version": "4.0",
+      Prefer: `odata.include-annotations="OData.Community.Display.V1.FormattedValue",odata.maxpagesize=${PAGE_SIZE}`,
+    },
+  });
+  if (!res.ok) return { rows: [], nextLink: null, status: res.status, bodyText: await res.text() };
+  const body = await res.json();
+  return { rows: body.value || [], nextLink: body["@odata.nextLink"] || null, status: 200 };
+}
+
+// Only the first page of a fresh sync (no cursor yet) carries the $filter, since a
+// nextLink already has whatever filter was used baked into it. If the guessed
+// Dataverse relationship/field names for the country filter are wrong, fall back to
+// the unfiltered URL rather than failing the whole sync.
+async function fetchFirstPage(filteredUrl: string, unfilteredUrl: string, token: string): Promise<{ rows: any[]; nextLink: string | null; filterApplied: boolean }> {
+  const filtered = await fetchOnePage(filteredUrl, token);
+  if (filtered.status === 200) return { rows: filtered.rows, nextLink: filtered.nextLink, filterApplied: true };
+  const unfiltered = await fetchOnePage(unfilteredUrl, token);
+  if (unfiltered.status !== 200) throw new Error(`Dataverse request failed: ${unfiltered.status} ${unfiltered.bodyText}`);
+  return { rows: unfiltered.rows, nextLink: unfiltered.nextLink, filterApplied: false };
 }
 
 const corsHeaders = {
@@ -109,6 +124,27 @@ function jsonResponse(body: unknown, status = 200): Response {
     headers: { "Content-Type": "application/json", ...corsHeaders },
   });
 }
+
+const ACCOUNTS_SELECT = [
+  "accountid", "name", "address1_line1", "address1_city",
+  "address1_stateorprovince", "address1_postalcode",
+  "telephone1", "websiteurl", "customertypecode", "businesstypecode",
+  "_scp_countrylookup_value", "modifiedon",
+].join(",");
+
+const CONTACTS_SELECT = ["contactid", "fullname", "emailaddress1", "_parentcustomerid_value", "modifiedon"].join(",");
+
+// We only care about US/Canada accounts (rep territories are US states) -- filtering
+// server-side cuts the record count (and page count) way down. scp_iso is the ISO
+// code field on the Country entity behind the scp_countrylookup relationship
+// (confirmed from the account export's column metadata); the relationship/nav
+// property names themselves are a best guess for this org's schema, so
+// fetchFirstPage() falls back to an unfiltered query if this 400s.
+const ACCOUNTS_URL_BASE = `${DATAVERSE_ORG_URL}/api/data/v9.2/accounts?$select=${ACCOUNTS_SELECT}`;
+const ACCOUNTS_URL_FILTERED = `${ACCOUNTS_URL_BASE}&$filter=scp_countrylookup/scp_iso eq 'US' or scp_countrylookup/scp_iso eq 'CA'`;
+
+const CONTACTS_URL_BASE = `${DATAVERSE_ORG_URL}/api/data/v9.2/contacts?$select=${CONTACTS_SELECT}`;
+const CONTACTS_URL_FILTERED = `${CONTACTS_URL_BASE}&$filter=parentcustomerid_account/scp_countrylookup/scp_iso eq 'US' or parentcustomerid_account/scp_countrylookup/scp_iso eq 'CA'`;
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -127,99 +163,132 @@ Deno.serve(async (req: Request) => {
     const { data: profile } = await svc.from("profiles").select("role").eq("id", userData.user.id).maybeSingle();
     if (!profile || profile.role !== "manager") return jsonResponse({ error: "Manager role required" }, 403);
 
+    let payload: { phase?: string; cursor?: string | null } = {};
+    try {
+      payload = await req.json();
+    } catch {
+      // no body -> start accounts phase from the beginning
+    }
+    const phase = payload.phase === "contacts" ? "contacts" : "accounts";
+    const cursor = payload.cursor || null;
+
     const token = await getDataverseToken();
 
-    const { data: firms } = await svc.from("rep_firms").select("id, states").eq("status", "active");
-    const firmsCache = firms || [];
+    if (phase === "accounts") {
+      let rows: any[], nextLink: string | null, filterApplied: boolean | null;
+      if (cursor) {
+        const page = await fetchOnePage(cursor, token);
+        if (page.status !== 200) throw new Error(`Dataverse request failed: ${page.status} ${page.bodyText}`);
+        rows = page.rows; nextLink = page.nextLink; filterApplied = null;
+      } else {
+        const first = await fetchFirstPage(ACCOUNTS_URL_FILTERED, ACCOUNTS_URL_BASE, token);
+        rows = first.rows; nextLink = first.nextLink; filterApplied = first.filterApplied;
+      }
 
-    function resolveFirmIdByState(stateCode: string | null, countryCode: string | null): string | null {
-      if (!stateCode || countryCode !== "US") return null;
-      const firm = firmsCache.find((f: any) => Array.isArray(f.states) && f.states.includes(stateCode));
-      return firm ? firm.id : null;
-    }
+      const { data: firms } = await svc.from("rep_firms").select("id, states").eq("status", "active");
+      const firmsCache = firms || [];
+      function resolveFirmIdByState(stateCode: string | null, countryCode: string | null): string | null {
+        if (!stateCode || countryCode !== "US") return null;
+        const firm = firmsCache.find((f: any) => Array.isArray(f.states) && f.states.includes(stateCode));
+        return firm ? firm.id : null;
+      }
 
-    // ---------- Accounts ----------
-    const accountsUrl = `${DATAVERSE_ORG_URL}/api/data/v9.2/accounts?$select=` + [
-      "accountid", "name", "address1_line1", "address1_city",
-      "address1_stateorprovince", "address1_postalcode",
-      "telephone1", "websiteurl", "customertypecode", "businesstypecode",
-      "_scp_countrylookup_value", "modifiedon",
-    ].join(",");
-    const accountRows = await fetchAllPages(accountsUrl, token);
+      let matched = 0, outOfTerritory = 0, noState = 0;
+      const upserts = rows
+        .filter((r: any) => r.name)
+        .map((r: any) => {
+          const stateCode = normalizeState(r.address1_stateorprovince);
+          const countryText = r["_scp_countrylookup_value@OData.Community.Display.V1.FormattedValue"] ?? null;
+          const countryCode = normalizeCountry(countryText);
+          const repFirmId = resolveFirmIdByState(stateCode, countryCode);
+          if (repFirmId) matched++;
+          else if (stateCode && countryCode === "US") outOfTerritory++;
+          else noState++;
+          return {
+            external_id: r.accountid,
+            name: r.name,
+            name_key: normalizeCompany(r.name),
+            street: r.address1_line1 || null,
+            city: r.address1_city || null,
+            state_raw: r.address1_stateorprovince || null,
+            state_code: stateCode,
+            zip: r.address1_postalcode || null,
+            country_code: countryCode,
+            website: r.websiteurl || null,
+            relationship_type: r["customertypecode@OData.Community.Display.V1.FormattedValue"] ?? null,
+            business_type: r["businesstypecode@OData.Community.Display.V1.FormattedValue"] ?? null,
+            rep_firm_id: repFirmId,
+            updated_by: userData.user.id,
+            updated_at: new Date().toISOString(),
+          };
+        });
 
-    const accountFirmByExternalId = new Map<string, string | null>();
-    let accountsMatched = 0, accountsOutOfTerritory = 0, accountsNoState = 0;
+      if (upserts.length) {
+        const { error } = await svc.from("crm_accounts").upsert(upserts, { onConflict: "external_id" });
+        if (error) throw new Error(`crm_accounts upsert failed: ${error.message}`);
+      }
 
-    const accountUpserts = accountRows
-      .filter((r) => r.name)
-      .map((r) => {
-        const stateCode = normalizeState(r.address1_stateorprovince);
-        const countryText = r["_scp_countrylookup_value@OData.Community.Display.V1.FormattedValue"] ?? null;
-        const countryCode = normalizeCountry(countryText);
-        const repFirmId = resolveFirmIdByState(stateCode, countryCode);
-        if (repFirmId) accountsMatched++;
-        else if (stateCode && countryCode === "US") accountsOutOfTerritory++;
-        else accountsNoState++;
-        accountFirmByExternalId.set(r.accountid, repFirmId);
-
-        return {
-          external_id: r.accountid,
-          name: r.name,
-          name_key: normalizeCompany(r.name),
-          street: r.address1_line1 || null,
-          city: r.address1_city || null,
-          state_raw: r.address1_stateorprovince || null,
-          state_code: stateCode,
-          zip: r.address1_postalcode || null,
-          country_code: countryCode,
-          website: r.websiteurl || null,
-          relationship_type: r["customertypecode@OData.Community.Display.V1.FormattedValue"] ?? null,
-          business_type: r["businesstypecode@OData.Community.Display.V1.FormattedValue"] ?? null,
-          rep_firm_id: repFirmId,
-          updated_by: userData.user.id,
-          updated_at: new Date().toISOString(),
-        };
+      return jsonResponse({
+        phase: "accounts",
+        done: !nextLink,
+        nextCursor: nextLink,
+        processed: upserts.length,
+        matched,
+        outOfTerritory,
+        noState,
+        filterApplied,
       });
+    } else {
+      let rows: any[], nextLink: string | null, filterApplied: boolean | null;
+      if (cursor) {
+        const page = await fetchOnePage(cursor, token);
+        if (page.status !== 200) throw new Error(`Dataverse request failed: ${page.status} ${page.bodyText}`);
+        rows = page.rows; nextLink = page.nextLink; filterApplied = null;
+      } else {
+        const first = await fetchFirstPage(CONTACTS_URL_FILTERED, CONTACTS_URL_BASE, token);
+        rows = first.rows; nextLink = first.nextLink; filterApplied = first.filterApplied;
+      }
 
-    if (accountUpserts.length) {
-      const { error } = await svc.from("crm_accounts").upsert(accountUpserts, { onConflict: "external_id" });
-      if (error) throw new Error(`crm_accounts upsert failed: ${error.message}`);
-    }
+      const parentIds = [...new Set(rows.map((r: any) => r._parentcustomerid_value).filter(Boolean))];
+      let parentFirmById = new Map<string, string | null>();
+      if (parentIds.length) {
+        const { data: parents } = await svc.from("crm_accounts").select("external_id, rep_firm_id").in("external_id", parentIds);
+        parentFirmById = new Map((parents || []).map((p: any) => [p.external_id, p.rep_firm_id]));
+      }
 
-    // ---------- Contacts ----------
-    const contactsUrl = `${DATAVERSE_ORG_URL}/api/data/v9.2/contacts?$select=` +
-      ["contactid", "fullname", "emailaddress1", "_parentcustomerid_value", "modifiedon"].join(",");
-    const contactRows = await fetchAllPages(contactsUrl, token);
+      let matchedToFirm = 0;
+      const upserts = rows
+        .filter((r: any) => r.fullname || r.emailaddress1)
+        .map((r: any) => {
+          const parentId = r._parentcustomerid_value || null;
+          const repFirmId = parentId ? parentFirmById.get(parentId) ?? null : null;
+          if (repFirmId) matchedToFirm++;
+          return {
+            external_id: r.contactid,
+            full_name: r.fullname || null,
+            email: r.emailaddress1 || null,
+            email_key: normalizeEmail(r.emailaddress1),
+            parent_account_external_id: parentId,
+            rep_firm_id: repFirmId,
+            updated_by: userData.user.id,
+            updated_at: new Date().toISOString(),
+          };
+        });
 
-    let contactsMatched = 0;
-    const contactUpserts = contactRows
-      .filter((r) => r.fullname || r.emailaddress1)
-      .map((r) => {
-        const parentId = r._parentcustomerid_value || null;
-        const repFirmId = parentId ? accountFirmByExternalId.get(parentId) ?? null : null;
-        if (repFirmId) contactsMatched++;
-        return {
-          external_id: r.contactid,
-          full_name: r.fullname || null,
-          email: r.emailaddress1 || null,
-          email_key: normalizeEmail(r.emailaddress1),
-          parent_account_external_id: parentId,
-          rep_firm_id: repFirmId,
-          updated_by: userData.user.id,
-          updated_at: new Date().toISOString(),
-        };
+      if (upserts.length) {
+        const { error } = await svc.from("crm_contacts").upsert(upserts, { onConflict: "external_id" });
+        if (error) throw new Error(`crm_contacts upsert failed: ${error.message}`);
+      }
+
+      return jsonResponse({
+        phase: "contacts",
+        done: !nextLink,
+        nextCursor: nextLink,
+        processed: upserts.length,
+        matchedToFirm,
+        filterApplied,
       });
-
-    if (contactUpserts.length) {
-      const { error } = await svc.from("crm_contacts").upsert(contactUpserts, { onConflict: "external_id" });
-      if (error) throw new Error(`crm_contacts upsert failed: ${error.message}`);
     }
-
-    return jsonResponse({
-      accounts: { total: accountUpserts.length, matched: accountsMatched, outOfTerritory: accountsOutOfTerritory, noState: accountsNoState },
-      contacts: { total: contactUpserts.length, matchedToFirm: contactsMatched },
-      syncedAt: new Date().toISOString(),
-    });
   } catch (err) {
     return jsonResponse({ error: String((err as Error)?.message || err) }, 500);
   }

@@ -662,41 +662,74 @@
     if (syncBtn) syncBtn.addEventListener('click', runCrmSync);
   }
 
-  async function runCrmSync() {
-    const statusEl = document.getElementById('status-crm_accounts');
-    const btn = document.getElementById('sync-crm-btn');
-    btn.disabled = true;
-    btn.textContent = 'Syncing…';
-    statusEl.className = '';
-    statusEl.textContent = '';
-
-    const { data, error } = await client.functions.invoke('dataverse-sync');
-
-    btn.disabled = false;
-    btn.textContent = 'Sync from CRM';
-
+  async function invokeCrmSync(body) {
+    const { data, error } = await client.functions.invoke('dataverse-sync', { body });
     if (error || data?.error) {
       // supabase-js hides the actual response body behind a generic message on non-2xx;
       // the real error is in error.context (the raw Response), so unwrap it if present.
       let detail = data?.error || error?.message || 'Unknown error';
       if (error?.context && typeof error.context.json === 'function') {
         try {
-          const body = await error.context.json();
-          if (body?.error) detail = body.error;
+          const respBody = await error.context.json();
+          if (respBody?.error) detail = respBody.error;
         } catch (_) { /* keep generic message if body isn't JSON */ }
       }
-      statusEl.className = 'upload-status err';
-      statusEl.textContent = 'CRM sync failed: ' + detail;
-      return;
+      throw new Error(detail);
     }
+    return data;
+  }
 
-    await loadCrmAccounts(true);
-    await loadCrmContacts(true);
-    statusEl.className = 'upload-status ' + (data.accounts.matched ? 'ok' : 'warn');
-    statusEl.textContent =
-      `Synced ${data.accounts.total} account(s) — ${data.accounts.matched} matched to a rep firm by state, ` +
-      `${data.accounts.outOfTerritory} outside configured territories, ${data.accounts.noState} missing/unrecognized state. ` +
-      `Synced ${data.contacts.total} contact(s) — ${data.contacts.matchedToFirm} inherited a rep firm from their account.`;
+  async function runCrmSync() {
+    const statusEl = document.getElementById('status-crm_accounts');
+    const btn = document.getElementById('sync-crm-btn');
+    btn.disabled = true;
+    statusEl.className = '';
+    statusEl.textContent = '';
+
+    try {
+      // The Edge Function processes one small page per call (its CPU budget can't
+      // cover a whole org in one go), so the client drives the pagination loop.
+      let cursor = null;
+      let accTotal = 0, accMatched = 0, accOutOfTerritory = 0, accNoState = 0, accFilterApplied = true;
+      let firstAccountsPage = true;
+      do {
+        btn.textContent = `Syncing accounts… (${accTotal} so far)`;
+        const res = await invokeCrmSync({ phase: 'accounts', cursor });
+        accTotal += res.processed;
+        accMatched += res.matched;
+        accOutOfTerritory += res.outOfTerritory;
+        accNoState += res.noState;
+        if (firstAccountsPage) { accFilterApplied = res.filterApplied !== false; firstAccountsPage = false; }
+        cursor = res.nextCursor;
+      } while (cursor);
+
+      cursor = null;
+      let conTotal = 0, conMatched = 0, conFilterApplied = true;
+      let firstContactsPage = true;
+      do {
+        btn.textContent = `Syncing contacts… (${conTotal} so far)`;
+        const res = await invokeCrmSync({ phase: 'contacts', cursor });
+        conTotal += res.processed;
+        conMatched += res.matchedToFirm;
+        if (firstContactsPage) { conFilterApplied = res.filterApplied !== false; firstContactsPage = false; }
+        cursor = res.nextCursor;
+      } while (cursor);
+
+      await loadCrmAccounts(true);
+      await loadCrmContacts(true);
+      statusEl.className = 'upload-status ' + (accMatched ? 'ok' : 'warn');
+      statusEl.textContent =
+        `Synced ${accTotal} account(s) — ${accMatched} matched to a rep firm by state, ` +
+        `${accOutOfTerritory} outside configured territories, ${accNoState} missing/unrecognized state. ` +
+        `Synced ${conTotal} contact(s) — ${conMatched} inherited a rep firm from their account.` +
+        (!accFilterApplied || !conFilterApplied ? ' (Note: the US/Canada server-side filter could not be applied, so this pulled the full table — ask Claude to check the Dataverse field names.)' : '');
+    } catch (err) {
+      statusEl.className = 'upload-status err';
+      statusEl.textContent = 'CRM sync failed: ' + err.message;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Sync from CRM';
+    }
   }
 
   async function handleFile(sourceConfig, file) {
