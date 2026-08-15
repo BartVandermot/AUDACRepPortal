@@ -438,7 +438,8 @@
     {
       source: 'education', label: 'Education Records', hint: 'education.audac.eu export (.xlsx or .csv)', table: 'education_records',
       fields: [
-        { key: 'company', label: 'Company / Dealer Name', required: true },
+        { key: 'company', label: 'Company / Dealer Name', required: true, resolutionOnly: true },
+        { key: 'email', label: 'Email (matches CRM contact for more precise firm resolution)', required: false, resolutionOnly: true },
         { key: 'person_name', label: 'Person Name', required: true, parts: [{ key: 'first', label: 'First Name' }, { key: 'last', label: 'Last Name' }] },
         { key: 'course_name', label: 'Course Name', required: true },
         { key: 'completion_date', label: 'Completion Date', required: false, type: 'date' },
@@ -448,7 +449,7 @@
     {
       source: 'pipeline', label: 'Pipeline', hint: 'D365 export (.xlsx or .csv)', table: 'pipeline_entries',
       fields: [
-        { key: 'company', label: 'Company / Dealer Name', required: true },
+        { key: 'company', label: 'Company / Dealer Name', required: true, resolutionOnly: true },
         { key: 'account_name', label: 'Account Name', required: true },
         { key: 'project_name', label: 'Project Name', required: false },
         { key: 'stage', label: 'Stage', required: false },
@@ -461,7 +462,7 @@
     {
       source: 'sellout', label: 'Sell-out', hint: 'AVL sell-out export (.xlsx or .csv)', table: 'sellout_records',
       fields: [
-        { key: 'company', label: 'Company / Dealer Name', required: true },
+        { key: 'company', label: 'Company / Dealer Name', required: true, resolutionOnly: true },
         { key: 'dealer_name', label: 'Dealer Name', required: false },
         { key: 'product_sku', label: 'Product SKU', required: false },
         { key: 'quantity', label: 'Quantity', required: false, type: 'number' },
@@ -473,6 +474,7 @@
   const uploadState = {};
   const aliasCache = { loaded: false, byKey: new Map() };
   const accountsCache = { loaded: false, byKey: new Map() };
+  const contactsCache = { loaded: false, byEmail: new Map() };
 
   const US_STATE_NAMES = {
     alabama: 'AL', alaska: 'AK', arizona: 'AZ', arkansas: 'AR', california: 'CA', colorado: 'CO',
@@ -557,6 +559,7 @@
 
   function normalize(s) { return String(s).toLowerCase().replace(/[^a-z0-9]/g, ''); }
   function normalizeCompany(s) { return String(s || '').trim().toLowerCase(); }
+  function normalizeEmail(s) { return String(s || '').trim().toLowerCase(); }
 
   function allMappingFields(fields) {
     // Flattens compound fields (e.g. person_name -> first/last) into individually mappable leaves.
@@ -627,12 +630,26 @@
     return accountsCache.byKey;
   }
 
+  async function loadCrmContacts(force) {
+    if (contactsCache.loaded && !force) return contactsCache.byEmail;
+    const { data } = await client.from('crm_contacts').select('email_key, rep_firm_id').not('email_key', 'is', null);
+    contactsCache.byEmail = new Map((data || []).map(r => [r.email_key, r.rep_firm_id]));
+    contactsCache.loaded = true;
+    return contactsCache.byEmail;
+  }
+
   function renderUploadPanels() {
     const container = document.getElementById('upload-panels');
     container.innerHTML = SOURCES.map(s => `
       <details class="upload-panel" id="panel-${s.source}">
         <summary>${s.label}</summary>
         <div class="upload-hint">${s.hint}</div>
+        ${s.isAccounts ? `
+          <div class="action-row" style="margin-top:0;">
+            <button class="audac-btn" id="sync-crm-btn">Sync from CRM</button>
+          </div>
+          <div class="upload-hint">Pulls Accounts &amp; Contacts live from Dynamics 365 (Dataverse) via the app's secure server-side connection — the file upload below stays available as a fallback.</div>
+        ` : ''}
         <input type="file" accept=".csv,.xlsx,.xls" id="file-${s.source}">
         <div id="mapping-area-${s.source}"></div>
         <div id="status-${s.source}"></div>
@@ -641,6 +658,36 @@
     SOURCES.forEach(s => {
       document.getElementById(`file-${s.source}`).addEventListener('change', (e) => handleFile(s, e.target.files[0]));
     });
+    const syncBtn = document.getElementById('sync-crm-btn');
+    if (syncBtn) syncBtn.addEventListener('click', runCrmSync);
+  }
+
+  async function runCrmSync() {
+    const statusEl = document.getElementById('status-crm_accounts');
+    const btn = document.getElementById('sync-crm-btn');
+    btn.disabled = true;
+    btn.textContent = 'Syncing…';
+    statusEl.className = '';
+    statusEl.textContent = '';
+
+    const { data, error } = await client.functions.invoke('dataverse-sync');
+
+    btn.disabled = false;
+    btn.textContent = 'Sync from CRM';
+
+    if (error || data?.error) {
+      statusEl.className = 'upload-status err';
+      statusEl.textContent = 'CRM sync failed: ' + (data?.error || error.message);
+      return;
+    }
+
+    await loadCrmAccounts(true);
+    await loadCrmContacts(true);
+    statusEl.className = 'upload-status ' + (data.accounts.matched ? 'ok' : 'warn');
+    statusEl.textContent =
+      `Synced ${data.accounts.total} account(s) — ${data.accounts.matched} matched to a rep firm by state, ` +
+      `${data.accounts.outOfTerritory} outside configured territories, ${data.accounts.noState} missing/unrecognized state. ` +
+      `Synced ${data.contacts.total} contact(s) — ${data.contacts.matchedToFirm} inherited a rep firm from their account.`;
   }
 
   async function handleFile(sourceConfig, file) {
@@ -751,11 +798,18 @@
 
     const { headers, rows } = uploadState[sourceConfig.source];
     const companyIdx = headers.indexOf(mapping.company);
+    const emailIdx = mapping.email ? headers.indexOf(mapping.email) : -1;
     const accountsByKey = await loadCrmAccounts();
     const aliasByKey = await loadAliases();
+    const contactsByEmail = emailIdx >= 0 ? await loadCrmContacts() : null;
 
     const distinctCompanies = new Map(); // normalized -> display text
     for (const r of rows) {
+      // Row already resolvable via a matched CRM contact email — no need to ask about its company.
+      if (contactsByEmail && emailIdx >= 0) {
+        const emailKey = normalizeEmail(r[emailIdx]);
+        if (emailKey && contactsByEmail.has(emailKey)) continue;
+      }
       const raw = String(r[companyIdx] || '').trim();
       if (!raw) continue;
       const key = normalizeCompany(raw);
@@ -879,25 +933,33 @@
     const accountsByKey = await loadCrmAccounts();
     const aliasByKey = await loadAliases();
     const companyIdx = headers.indexOf(mapping.company);
+    const emailIdx = mapping.email ? headers.indexOf(mapping.email) : -1;
+    const contactsByEmail = emailIdx >= 0 ? await loadCrmContacts() : null;
     const month = monthInput.value;
     const statusEl = document.getElementById(`status-${sourceConfig.source}`);
 
     const toInsert = [];
     let skippedNoFirm = 0, skippedMissingFields = 0;
-    const requiredFields = sourceConfig.fields.filter(f => f.required && f.key !== 'company');
+    const requiredFields = sourceConfig.fields.filter(f => f.required && !f.resolutionOnly);
 
     for (const r of rows) {
-      const companyRaw = String(r[companyIdx] || '').trim();
-      const key = companyRaw ? normalizeCompany(companyRaw) : null;
-      // CRM accounts (state-resolved) take precedence over a manual alias assignment.
+      // A matched CRM contact (by email) is more precise than company-name resolution, so it wins when available.
       let repFirmId;
-      if (key && accountsByKey.has(key)) repFirmId = accountsByKey.get(key);
-      else if (key && aliasByKey.has(key)) repFirmId = aliasByKey.get(key);
+      if (contactsByEmail && emailIdx >= 0) {
+        const emailKey = normalizeEmail(r[emailIdx]);
+        if (emailKey && contactsByEmail.has(emailKey)) repFirmId = contactsByEmail.get(emailKey);
+      }
+      if (repFirmId === undefined) {
+        const companyRaw = String(r[companyIdx] || '').trim();
+        const key = companyRaw ? normalizeCompany(companyRaw) : null;
+        if (key && accountsByKey.has(key)) repFirmId = accountsByKey.get(key);
+        else if (key && aliasByKey.has(key)) repFirmId = aliasByKey.get(key);
+      }
       if (!repFirmId) { skippedNoFirm++; continue; }
 
       const record = { rep_firm_id: repFirmId, reporting_month: month };
       for (const f of sourceConfig.fields) {
-        if (f.key === 'company') continue;
+        if (f.resolutionOnly) continue;
         record[f.key] = buildFieldValue(f, mapping, headers, r);
       }
       if (requiredFields.some(f => record[f.key] === null || record[f.key] === undefined)) { skippedMissingFields++; continue; }

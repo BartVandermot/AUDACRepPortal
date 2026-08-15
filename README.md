@@ -11,6 +11,7 @@ Rep performance tracking for AUDAC North America. Static HTML/CSS/JS (one self-c
 - `executive.html` — executive KPI view (read-only)
 - `vercel.json` — clean-URL rewrites (`/form`, `/login`, `/dashboard`, `/executive`)
 - `supabase/migrations/` — SQL migrations (schema, RLS, RAG scorecard RPC, seed data)
+- `supabase/functions/dataverse-sync/` — Edge Function that syncs Accounts/Contacts from Dynamics 365 (see below)
 
 ## Supabase setup
 
@@ -49,16 +50,32 @@ on conflict (id) do update set role = excluded.role;
 
 The manager dashboard's upload panels (CRM Accounts, Education, Pipeline, Sell-out) accept either `.csv` or `.xlsx`/`.xls` files, parsed entirely client-side (XLSX via SheetJS, no server round-trip). On first upload per source you map its columns to the schema fields; that mapping is saved in `csv_column_mappings` and auto-applied on later uploads from the same export.
 
-Real exports list end-customer/dealer company names (e.g. "AC PROMEDIA"), not rep firm names — there's no direct match against `rep_firms.name`. Company → rep firm resolution happens in two layers, checked in order:
+Real exports list end-customer/dealer company names (e.g. "AC PROMEDIA"), not rep firm names — there's no direct match against `rep_firms.name`. Company → rep firm resolution happens in three layers, checked in order:
 
-1. **CRM Accounts** (`crm_accounts`) — upload a CRM Accounts export (currently a POC for a future live D365/Dataverse sync; see below) with address/state data, and the dashboard resolves each account's rep firm automatically by matching its state against `rep_firms.states`. Re-uploading this source upserts by account name, refreshing the reference list.
-2. **Manual assignment** (`rep_firm_aliases`) — fallback for any company not found in `crm_accounts`. The first time a given company name appears in an Education/Pipeline/Sell-out upload, the dashboard prompts you to assign it to one of the 6 rep firms (or skip it as not rep-tracked); that assignment is remembered for every later upload.
+1. **CRM contact email** (`crm_contacts`) — if the upload has an Email column (Education does), and that email matches a synced Dataverse contact, the row inherits that contact's parent account's rep firm. Most precise, since it's keyed on an actual person rather than a free-text company name.
+2. **CRM Accounts** (`crm_accounts`) — matches the row's company name against a synced/uploaded account, whose rep firm was resolved by state (see below).
+3. **Manual assignment** (`rep_firm_aliases`) — fallback for any company not found in either of the above. The first time a given company name appears in an Education/Pipeline/Sell-out upload, the dashboard prompts you to assign it to one of the 6 rep firms (or skip it as not rep-tracked); that assignment is remembered for every later upload.
 
-Rows for a company that's unresolved by either layer, or explicitly skipped, are excluded and counted in the upload summary.
+Rows unresolved by all three layers, or explicitly skipped, are excluded and counted in the upload summary.
 
-### Live CRM connection (future phase)
+### Live CRM connection (Dynamics 365 / Dataverse)
 
-A live Dynamics 365/Dataverse connection (pulling Accounts/Contacts/Opportunities automatically instead of a manual export) was scoped but deferred — it needs a server-side component (a Supabase Edge Function) to hold API credentials securely, plus an Entra ID app registration and a Dataverse Application User with read-only access. The CRM Accounts upload here is a stand-in for that: same state-based resolution logic, manual export instead of a live API pull.
+The **"Sync from CRM"** button in the CRM Accounts panel calls the `dataverse-sync` Edge Function (`supabase/functions/dataverse-sync/`), which pulls Accounts and Contacts live from Dataverse and upserts them into `crm_accounts` / `crm_contacts` — same state-based resolution logic as the manual upload, which stays available as a fallback.
+
+**Authentication**: server-to-server OAuth2 client-credentials flow (Microsoft's recommended pattern for unattended integrations) against a dedicated Entra ID app registration (`AUDAC Rep Portal - Dataverse Sync`, single-tenant), authorized in Dataverse via an Application User assigned a least-privilege security role (`API Read Only - Rep Portal Sync`: read-only on Account, Contact, Opportunity, Product, and the Country/Account-type lookup tables).
+
+**Required Edge Function secrets** (set directly in Supabase — Project Settings → Edge Functions → Secrets, or `supabase secrets set`; never passed through the client or committed here):
+
+| Secret | Value |
+|---|---|
+| `DATAVERSE_TENANT_ID` | `fb594a94-4558-4794-b174-ed9ae79130d8` |
+| `DATAVERSE_CLIENT_ID` | `2a6392b0-7d54-410b-bd05-9bba3fc68766` |
+| `DATAVERSE_ORG_URL` | `https://pvs4younv.crm4.dynamics.com` |
+| `DATAVERSE_CLIENT_SECRET` | *(the client secret value — not written down anywhere; set it directly)* |
+
+`SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are auto-provided to Edge Functions by Supabase; no need to set those.
+
+Opportunity and Product read access is already granted on the security role for a later phase (pipeline/sell-out sync); the function doesn't use them yet.
 
 ## Deploying
 
@@ -68,4 +85,4 @@ A live Dynamics 365/Dataverse connection (pulling Accounts/Contacts/Opportunitie
 
 ## Phase 2 (not in this build)
 
-D365 API integration (pipeline data currently comes in via CSV upload only).
+Live Dataverse sync currently covers Account + Contact only (see above). Opportunity (pipeline) and Product data still come in via CSV/XLSX upload — the security role already has read access for when that's built.
