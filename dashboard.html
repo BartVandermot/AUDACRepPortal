@@ -676,8 +676,17 @@
     btn.textContent = 'Sync from CRM';
 
     if (error || data?.error) {
+      // supabase-js hides the actual response body behind a generic message on non-2xx;
+      // the real error is in error.context (the raw Response), so unwrap it if present.
+      let detail = data?.error || error?.message || 'Unknown error';
+      if (error?.context && typeof error.context.json === 'function') {
+        try {
+          const body = await error.context.json();
+          if (body?.error) detail = body.error;
+        } catch (_) { /* keep generic message if body isn't JSON */ }
+      }
       statusEl.className = 'upload-status err';
-      statusEl.textContent = 'CRM sync failed: ' + (data?.error || error.message);
+      statusEl.textContent = 'CRM sync failed: ' + detail;
       return;
     }
 
