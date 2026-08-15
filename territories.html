@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AUDAC Rep Portal — Rep Firm Territories</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --audac-gold: #d9a653;
+    --audac-black: #000000;
+    --audac-white: #ffffff;
+    --audac-section-bg: #f8f8f8;
+    --audac-text: #737373;
+    --green: #2e7d32; --green-bg: #e8f5e9;
+    --amber: #b8860b; --amber-bg: #fff6e0;
+    --red: #b3261e; --red-bg: #fdeaea;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Montserrat', sans-serif; background: var(--audac-white); color: var(--audac-text); }
+  header.audac-header {
+    background: var(--audac-black); color: #fff; padding: 16px 28px;
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+  }
+  header.audac-header .brand { display: flex; align-items: center; gap: 12px; }
+  header.audac-header img.logo { height: 30px; filter: invert(1); }
+  header.audac-header .wordmark { font-weight: 700; font-size: 18px; letter-spacing: 3px; color: #fff; display: none; }
+  header.audac-header h1 { font-size: 14px; font-weight: 400; margin: 0; color: var(--audac-gold); letter-spacing: 1px; text-transform: uppercase; }
+  .user-box { display: flex; align-items: center; gap: 14px; font-size: 13px; color: #ccc; }
+  .signout-btn, .nav-link { background: transparent; border: 1px solid #555; color: #fff; padding: 7px 14px; border-radius: 3px; cursor: pointer; font-family: inherit; font-size: 12px; text-decoration: none; display: inline-block; }
+
+  main { max-width: 1100px; margin: 0 auto; padding: 28px 20px 100px; }
+
+  .upload-hint { font-size: 12.5px; color: #999; margin: 0 0 20px; max-width: 720px; }
+
+  table.territory-table { width: 100%; border-collapse: collapse; background: #fff; font-size: 13px; }
+  table.territory-table th, table.territory-table td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; vertical-align: middle; }
+  table.territory-table th { background: var(--audac-section-bg); color: var(--audac-black); font-weight: 700; text-transform: uppercase; font-size: 10.5px; letter-spacing: .5px; }
+  table.territory-table input[type="text"] {
+    font-family: 'Montserrat', sans-serif; font-size: 13px; padding: 8px 10px; border: 1px solid #ddd; border-radius: 3px;
+    width: 100%; color: var(--audac-black);
+  }
+  .states-list { font-size: 12.5px; }
+  .states-list .muted { color: #bbb; }
+  .save-note { font-size: 11px; color: var(--green); margin-left: 8px; }
+
+  button.audac-btn { background: var(--audac-gold); color: #000; border: none; padding: 8px 16px; font-family: 'Montserrat', sans-serif; font-weight: 700; font-size: 11.5px; letter-spacing: .4px; text-transform: uppercase; cursor: pointer; border-radius: 3px; }
+  button.audac-btn-outline { background: transparent; color: var(--audac-black); border: 1.5px solid var(--audac-black); padding: 7px 14px; font-family: 'Montserrat', sans-serif; font-weight: 500; font-size: 11.5px; letter-spacing: .4px; text-transform: uppercase; cursor: pointer; border-radius: 3px; }
+
+  #states-panel { display: none; background: var(--audac-section-bg); border-radius: 4px; padding: 20px 22px; margin-top: 20px; }
+  #states-panel .sp-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; flex-wrap: wrap; gap: 10px; }
+  #states-panel .sp-header h3 { margin: 0; color: var(--audac-black); font-size: 15px; }
+  .states-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px 14px; margin: 16px 0; }
+  .state-check { display: flex; align-items: center; gap: 7px; font-size: 13px; padding: 4px 6px; border-radius: 3px; }
+  .state-check.conflict { background: var(--red-bg); }
+  .state-check .conflict-note { font-size: 10.5px; color: var(--red); }
+  #loading-note { font-size: 13px; color: #aaa; padding: 20px 0; }
+</style>
+</head>
+<body>
+
+<header class="audac-header">
+  <div class="brand">
+    <img class="logo" src="https://audac.eu/images/AUDAC-logo.webp" alt="AUDAC"
+         onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
+    <span class="wordmark">AUDAC</span>
+    <h1>Rep Firm Territories</h1>
+  </div>
+  <div class="user-box">
+    <a class="nav-link" href="/crm">CRM Data</a>
+    <a class="nav-link" href="/dashboard">← Dashboard</a>
+    <span id="user-email"></span>
+    <button class="signout-btn" id="signout-btn">Sign Out</button>
+  </div>
+</header>
+
+<main>
+  <div id="loading-note">Loading rep firms…</div>
+
+  <div id="content" style="display:none;">
+    <p class="upload-hint">Territory and state assignments drive the CRM sync's state-based fallback matching (used when an account isn't under a rep firm's own parent account in Dataverse) and the CSV upload resolution. A state assigned to more than one firm is flagged below — the sync will only ever pick one.</p>
+
+    <table class="territory-table">
+      <thead><tr><th>Rep Firm</th><th>Territory</th><th>States</th><th></th></tr></thead>
+      <tbody id="firms-body"></tbody>
+    </table>
+
+    <div id="states-panel">
+      <div class="sp-header">
+        <h3 id="sp-firm-name"></h3>
+        <div>
+          <button class="audac-btn" id="save-states-btn">Save States</button>
+          <button class="audac-btn-outline" id="close-states-btn">Close</button>
+          <span class="save-note" id="save-note"></span>
+        </div>
+      </div>
+      <div class="states-grid" id="states-grid"></div>
+    </div>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
+  const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  const US_STATES = [
+    ['AL', 'Alabama'], ['AK', 'Alaska'], ['AZ', 'Arizona'], ['AR', 'Arkansas'], ['CA', 'California'],
+    ['CO', 'Colorado'], ['CT', 'Connecticut'], ['DE', 'Delaware'], ['DC', 'District of Columbia'],
+    ['FL', 'Florida'], ['GA', 'Georgia'], ['HI', 'Hawaii'], ['ID', 'Idaho'], ['IL', 'Illinois'],
+    ['IN', 'Indiana'], ['IA', 'Iowa'], ['KS', 'Kansas'], ['KY', 'Kentucky'], ['LA', 'Louisiana'],
+    ['ME', 'Maine'], ['MD', 'Maryland'], ['MA', 'Massachusetts'], ['MI', 'Michigan'], ['MN', 'Minnesota'],
+    ['MS', 'Mississippi'], ['MO', 'Missouri'], ['MT', 'Montana'], ['NE', 'Nebraska'], ['NV', 'Nevada'],
+    ['NH', 'New Hampshire'], ['NJ', 'New Jersey'], ['NM', 'New Mexico'], ['NY', 'New York'],
+    ['NC', 'North Carolina'], ['ND', 'North Dakota'], ['OH', 'Ohio'], ['OK', 'Oklahoma'], ['OR', 'Oregon'],
+    ['PA', 'Pennsylvania'], ['RI', 'Rhode Island'], ['SC', 'South Carolina'], ['SD', 'South Dakota'],
+    ['TN', 'Tennessee'], ['TX', 'Texas'], ['UT', 'Utah'], ['VT', 'Vermont'], ['VA', 'Virginia'],
+    ['WA', 'Washington'], ['WV', 'West Virginia'], ['WI', 'Wisconsin'], ['WY', 'Wyoming'],
+    ['PR', 'Puerto Rico'], ['GU', 'Guam'],
+  ];
+
+  let firmsCache = [];
+  let editingFirmId = null;
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  }
+
+  async function guard() {
+    const { data: { session } } = await client.auth.getSession();
+    if (!session) { window.location.href = '/login'; return null; }
+    const { data: profile } = await client.from('profiles').select('role, email').eq('id', session.user.id).maybeSingle();
+    if (!profile) { window.location.href = '/login'; return null; }
+    if (profile.role === 'executive') { window.location.href = '/executive'; return null; }
+    if (profile.role !== 'manager') { window.location.href = '/login'; return null; }
+    return { user: session.user, profile };
+  }
+
+  document.getElementById('signout-btn').addEventListener('click', async () => {
+    await client.auth.signOut();
+    window.location.href = '/login';
+  });
+
+  function stateOwners(code, excludeFirmId) {
+    return firmsCache.filter(f => f.id !== excludeFirmId && Array.isArray(f.states) && f.states.includes(code));
+  }
+
+  function renderFirms() {
+    const tbody = document.getElementById('firms-body');
+    tbody.innerHTML = firmsCache.map(f => {
+      const states = Array.isArray(f.states) ? f.states : [];
+      const conflicts = states.filter(s => stateOwners(s, f.id).length > 0);
+      const statesText = states.length
+        ? states.join(', ') + (conflicts.length ? ` ⚠ ${conflicts.length} conflict${conflicts.length > 1 ? 's' : ''}` : '')
+        : '<span class="muted">None assigned</span>';
+      return `
+        <tr data-firm="${f.id}">
+          <td>${escapeHtml(f.name)}</td>
+          <td><input type="text" class="territory-input" data-firm="${f.id}" value="${escapeHtml(f.territory || '')}"></td>
+          <td class="states-list">${statesText}</td>
+          <td><button class="audac-btn-outline" data-edit-states="${f.id}">Edit States</button></td>
+        </tr>
+      `;
+    }).join('');
+
+    tbody.querySelectorAll('.territory-input').forEach(input => {
+      input.addEventListener('change', () => saveTerritory(input.dataset.firm, input.value.trim()));
+    });
+    tbody.querySelectorAll('[data-edit-states]').forEach(btn => {
+      btn.addEventListener('click', () => openStatesPanel(btn.dataset.editStates));
+    });
+  }
+
+  async function saveTerritory(firmId, territory) {
+    if (!territory) return;
+    const { error } = await client.from('rep_firms').update({ territory }).eq('id', firmId);
+    const firm = firmsCache.find(f => f.id === firmId);
+    if (error) { alert('Could not save territory: ' + error.message); return; }
+    if (firm) firm.territory = territory;
+  }
+
+  function openStatesPanel(firmId) {
+    editingFirmId = firmId;
+    const firm = firmsCache.find(f => f.id === firmId);
+    if (!firm) return;
+    const current = new Set(Array.isArray(firm.states) ? firm.states : []);
+
+    document.getElementById('sp-firm-name').textContent = `${firm.name} — assigned states`;
+    document.getElementById('save-note').textContent = '';
+    document.getElementById('states-grid').innerHTML = US_STATES.map(([code, name]) => {
+      const owners = stateOwners(code, firmId);
+      const conflict = owners.length > 0;
+      return `
+        <label class="state-check ${conflict ? 'conflict' : ''}">
+          <input type="checkbox" value="${code}" ${current.has(code) ? 'checked' : ''}>
+          ${code} — ${name}
+          ${conflict ? `<span class="conflict-note">(also ${escapeHtml(owners.map(o => o.name).join(', '))})</span>` : ''}
+        </label>
+      `;
+    }).join('');
+    document.getElementById('states-panel').style.display = 'block';
+    document.getElementById('states-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  document.getElementById('close-states-btn').addEventListener('click', () => {
+    editingFirmId = null;
+    document.getElementById('states-panel').style.display = 'none';
+  });
+
+  document.getElementById('save-states-btn').addEventListener('click', async () => {
+    if (!editingFirmId) return;
+    const checked = [...document.querySelectorAll('#states-grid input[type="checkbox"]:checked')].map(cb => cb.value);
+    const { error } = await client.from('rep_firms').update({ states: checked }).eq('id', editingFirmId);
+    const saveNote = document.getElementById('save-note');
+    if (error) {
+      saveNote.style.color = 'var(--red)';
+      saveNote.textContent = 'Error: ' + error.message;
+      return;
+    }
+    const firm = firmsCache.find(f => f.id === editingFirmId);
+    if (firm) firm.states = checked;
+    saveNote.style.color = 'var(--green)';
+    saveNote.textContent = 'Saved.';
+    renderFirms();
+    openStatesPanel(editingFirmId);
+  });
+
+  async function loadFirms() {
+    const { data, error } = await client.from('rep_firms').select('id, name, territory, states').eq('status', 'active').order('name');
+    if (error) {
+      document.getElementById('loading-note').textContent = 'Failed to load rep firms: ' + error.message;
+      return;
+    }
+    firmsCache = data || [];
+    renderFirms();
+    document.getElementById('loading-note').style.display = 'none';
+    document.getElementById('content').style.display = 'block';
+  }
+
+  (async function init() {
+    const g = await guard();
+    if (!g) return;
+    document.getElementById('user-email').textContent = g.profile.email;
+    await loadFirms();
+  })();
+</script>
+</body>
+</html>
