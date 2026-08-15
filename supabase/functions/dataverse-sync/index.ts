@@ -136,6 +136,7 @@ const ACCOUNTS_SELECT = [
   "accountid", "name", "address1_line1", "address1_city",
   "address1_stateorprovince", "address1_postalcode",
   "telephone1", "websiteurl", "customertypecode", "businesstypecode",
+  "pvs_audacpartnertype", "accountclassificationcode",
   "_scp_countrylookup_value", "_parentaccountid_value", "modifiedon",
 ].join(",");
 
@@ -292,6 +293,8 @@ Deno.serve(async (req: Request) => {
             website: r.websiteurl || null,
             relationship_type: r["customertypecode@OData.Community.Display.V1.FormattedValue"] ?? null,
             business_type: r["businesstypecode@OData.Community.Display.V1.FormattedValue"] ?? null,
+            audac_partner_type: r["pvs_audacpartnertype@OData.Community.Display.V1.FormattedValue"] ?? null,
+            classification: r["accountclassificationcode@OData.Community.Display.V1.FormattedValue"] ?? null,
             parent_account_external_id: parentId,
             rep_firm_id: repFirmId,
             updated_by: userData.user.id,

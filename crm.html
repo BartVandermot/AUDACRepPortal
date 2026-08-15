@@ -59,13 +59,12 @@
   .badge-parent.via-state { background: var(--amber-bg); color: var(--amber); }
   .muted { color: #bbb; }
 
-  #contacts-panel { display: none; background: var(--audac-section-bg); border-radius: 4px; padding: 20px 22px; margin-top: 18px; }
-  #contacts-panel .cp-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; flex-wrap: wrap; gap: 10px; }
-  #contacts-panel .cp-header h3 { margin: 0; color: var(--audac-black); font-size: 15px; }
+  tr.contacts-row td { background: var(--audac-section-bg); padding: 14px 20px; }
   table.detail { width: 100%; border-collapse: collapse; background: #fff; font-size: 12.5px; }
   table.detail th, table.detail td { padding: 8px 10px; border-bottom: 1px solid #eee; text-align: left; }
   table.detail th { background: #f1f1f1; }
   .empty-note { font-size: 12.5px; color: #aaa; padding: 10px 2px; }
+  .expand-caret { display: inline-block; width: 14px; color: var(--audac-gold); }
 
   button.audac-btn {
     background: var(--audac-gold); color: #000; border: none; padding: 10px 18px;
@@ -125,19 +124,12 @@
         <thead>
           <tr>
             <th>Account</th><th>City / State</th><th>Country</th>
-            <th>Relationship Type</th><th>Contacts</th><th>Rep Firm</th>
+            <th>Relationship Type</th><th>Partner Type</th><th>Classification</th>
+            <th>Contacts</th><th>Rep Firm</th>
           </tr>
         </thead>
         <tbody id="accounts-body"></tbody>
       </table>
-    </div>
-
-    <div id="contacts-panel">
-      <div class="cp-header">
-        <h3 id="cp-account-name"></h3>
-        <button class="audac-btn-outline" id="close-contacts-btn">Close</button>
-      </div>
-      <div id="cp-contacts"></div>
     </div>
   </div>
 </main>
@@ -151,7 +143,8 @@
   let firmsCache = [];
   let accountsCache = [];
   let contactCountByAccount = new Map();
-  let selectedAccountExternalId = null;
+  let expandedIds = new Set();
+  let contactsCache = new Map();
 
   function escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
@@ -218,12 +211,16 @@
         ? `<span class="badge-parent ${viaParent ? 'via-parent' : 'via-state'}">${viaParent ? 'via parent' : 'via state'}</span>`
         : '';
       const contactCount = contactCountByAccount.get(a.external_id) || 0;
-      return `
-        <tr data-id="${a.external_id}" class="${a.external_id === selectedAccountExternalId ? 'selected' : ''}">
-          <td><button class="row-name-btn" data-open="${a.external_id}">${escapeHtml(a.name)}</button></td>
+      const isOpen = expandedIds.has(a.external_id);
+      const caret = isOpen ? '▾' : '▸';
+      const mainRow = `
+        <tr data-id="${a.external_id}">
+          <td><button class="row-name-btn" data-toggle="${a.external_id}"><span class="expand-caret">${caret}</span>${escapeHtml(a.name)}</button></td>
           <td>${escapeHtml(a.city || '')}${a.city && a.state_raw ? ', ' : ''}${escapeHtml(a.state_raw || '')}</td>
           <td>${escapeHtml(a.country_code || '')}</td>
           <td>${escapeHtml(a.relationship_type || '')}</td>
+          <td>${escapeHtml(a.audac_partner_type || '')}</td>
+          <td>${escapeHtml(a.classification || '')}</td>
           <td>${contactCount || '<span class="muted">0</span>'}</td>
           <td>
             <select class="firm-assign" data-account="${a.external_id}">${firmOptions}</select>
@@ -231,6 +228,11 @@
           </td>
         </tr>
       `;
+      if (!isOpen) return mainRow;
+      const contactsHtml = contactsCache.has(a.external_id)
+        ? renderContactsTable(contactsCache.get(a.external_id))
+        : '<div class="empty-note">Loading…</div>';
+      return mainRow + `<tr class="contacts-row"><td colspan="8">${contactsHtml}</td></tr>`;
     }).join('');
 
     tbody.querySelectorAll('select.firm-assign').forEach(sel => {
@@ -239,8 +241,8 @@
       sel.value = acc?.rep_firm_id || '';
       sel.addEventListener('change', () => assignFirm(accountId, sel.value || null));
     });
-    tbody.querySelectorAll('[data-open]').forEach(btn => {
-      btn.addEventListener('click', () => openContacts(btn.dataset.open));
+    tbody.querySelectorAll('[data-toggle]').forEach(btn => {
+      btn.addEventListener('click', () => toggleContacts(btn.dataset.toggle));
     });
   }
 
@@ -256,14 +258,15 @@
     renderAccounts();
   }
 
-  async function openContacts(accountExternalId) {
-    selectedAccountExternalId = accountExternalId;
+  async function toggleContacts(accountExternalId) {
+    if (expandedIds.has(accountExternalId)) {
+      expandedIds.delete(accountExternalId);
+      renderAccounts();
+      return;
+    }
+    expandedIds.add(accountExternalId);
     renderAccounts();
-    const acc = accountsCache.find(a => a.external_id === accountExternalId);
-    const panel = document.getElementById('contacts-panel');
-    panel.style.display = 'block';
-    document.getElementById('cp-account-name').textContent = acc ? acc.name : '';
-    document.getElementById('cp-contacts').innerHTML = '<div class="empty-note">Loading…</div>';
+    if (contactsCache.has(accountExternalId)) return;
 
     const { data, error } = await client
       .from('crm_contacts')
@@ -271,25 +274,17 @@
       .eq('parent_account_external_id', accountExternalId)
       .order('full_name');
 
-    if (error) {
-      document.getElementById('cp-contacts').innerHTML = `<div class="empty-note">Failed to load contacts: ${escapeHtml(error.message)}</div>`;
-      return;
-    }
-    document.getElementById('cp-contacts').innerHTML = renderContactsTable(data || []);
+    contactsCache.set(accountExternalId, error ? { error: error.message } : (data || []));
+    renderAccounts();
   }
 
   function renderContactsTable(rows) {
+    if (rows && rows.error) return `<div class="empty-note">Failed to load contacts: ${escapeHtml(rows.error)}</div>`;
     if (!rows.length) return '<div class="empty-note">No contacts synced for this account.</div>';
     return `<table class="detail"><thead><tr><th>Name</th><th>Email</th></tr></thead><tbody>${rows.map(r => `
       <tr><td>${escapeHtml(r.full_name || '')}</td><td>${escapeHtml(r.email || '')}</td></tr>
     `).join('')}</tbody></table>`;
   }
-
-  document.getElementById('close-contacts-btn').addEventListener('click', () => {
-    selectedAccountExternalId = null;
-    document.getElementById('contacts-panel').style.display = 'none';
-    renderAccounts();
-  });
 
   document.getElementById('search-input').addEventListener('input', renderAccounts);
   document.getElementById('firm-filter').addEventListener('change', renderAccounts);
@@ -297,7 +292,7 @@
   async function loadAll() {
     const [firmsRes, accountsRes, contactsRes] = await Promise.all([
       client.from('rep_firms').select('id, name, crm_account_external_id').eq('status', 'active').order('name'),
-      client.from('crm_accounts').select('external_id, name, city, state_raw, country_code, relationship_type, rep_firm_id, parent_account_external_id').order('name'),
+      client.from('crm_accounts').select('external_id, name, city, state_raw, country_code, relationship_type, audac_partner_type, classification, rep_firm_id, parent_account_external_id').order('name'),
       client.from('crm_contacts').select('parent_account_external_id'),
     ]);
 
