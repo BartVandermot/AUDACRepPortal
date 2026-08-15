@@ -292,6 +292,7 @@ Deno.serve(async (req: Request) => {
             website: r.websiteurl || null,
             relationship_type: r["customertypecode@OData.Community.Display.V1.FormattedValue"] ?? null,
             business_type: r["businesstypecode@OData.Community.Display.V1.FormattedValue"] ?? null,
+            parent_account_external_id: parentId,
             rep_firm_id: repFirmId,
             updated_by: userData.user.id,
             updated_at: new Date().toISOString(),
