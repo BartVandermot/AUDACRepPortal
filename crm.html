@@ -57,6 +57,7 @@
   .badge-parent { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; padding: 2px 7px; border-radius: 10px; margin-left: 6px; }
   .badge-parent.via-parent { background: var(--green-bg); color: var(--green); }
   .badge-parent.via-state { background: var(--amber-bg); color: var(--amber); }
+  .badge-parent.via-manual { background: #eee; color: #777; }
   .muted { color: #bbb; }
 
   tr.contacts-row td { background: var(--audac-section-bg); padding: 14px 20px; }
@@ -207,9 +208,11 @@
     const tbody = document.getElementById('accounts-body');
     tbody.innerHTML = rows.map(a => {
       const viaParent = a.rep_firm_id && firmsCache.some(f => f.id === a.rep_firm_id && f.crm_account_external_id === a.parent_account_external_id);
-      const badge = a.rep_firm_id
-        ? `<span class="badge-parent ${viaParent ? 'via-parent' : 'via-state'}">${viaParent ? 'via parent' : 'via state'}</span>`
-        : '';
+      const badge = a.source === 'manual'
+        ? '<span class="badge-parent via-manual">added by rep</span>'
+        : a.rep_firm_id
+          ? `<span class="badge-parent ${viaParent ? 'via-parent' : 'via-state'}">${viaParent ? 'via parent' : 'via state'}</span>`
+          : '';
       const contactCount = contactCountByAccount.get(a.external_id) || 0;
       const isOpen = expandedIds.has(a.external_id);
       const caret = isOpen ? '▾' : '▸';
@@ -292,7 +295,7 @@
   async function loadAll() {
     const [firmsRes, accountsRes, contactsRes] = await Promise.all([
       client.from('rep_firms').select('id, name, crm_account_external_id').eq('status', 'active').order('name'),
-      client.from('crm_accounts').select('external_id, name, city, state_raw, country_code, relationship_type, audac_partner_type, classification, rep_firm_id, parent_account_external_id').order('name'),
+      client.from('crm_accounts').select('external_id, name, city, state_raw, country_code, relationship_type, audac_partner_type, classification, rep_firm_id, parent_account_external_id, source').order('name'),
       client.from('crm_contacts').select('parent_account_external_id'),
     ]);
 

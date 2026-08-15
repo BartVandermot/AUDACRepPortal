@@ -143,6 +143,9 @@
 
     <div class="dd-sub-title">Education</div>
     <div id="dd-education"></div>
+
+    <div class="dd-sub-title">Dormant Accounts <span style="font-weight:400; text-transform:none; letter-spacing:0; color:#999;">— assigned to this firm, no linked activity in the last 3 months</span></div>
+    <div id="dd-dormant"></div>
   </div>
 
   <h2 class="section-title">CSV Uploads</h2>
@@ -253,15 +256,52 @@
     document.getElementById('drilldown').style.display = 'block';
     document.getElementById('dd-firm-name').textContent = `${row.firm_name} — ${month}`;
 
-    const [acts, pipe, edu] = await Promise.all([
+    const [acts, pipe, edu, dormant] = await Promise.all([
       client.from('activity_entries').select('*').eq('rep_firm_id', firmId).eq('reporting_month', month).order('entry_date'),
       client.from('pipeline_entries').select('*').eq('rep_firm_id', firmId).eq('reporting_month', month).order('created_date'),
       client.from('education_records').select('*').eq('rep_firm_id', firmId).eq('reporting_month', month).order('completion_date'),
+      loadDormantAccounts(firmId, month),
     ]);
 
     document.getElementById('dd-activity').innerHTML = renderActivityTable(acts.data || []);
     document.getElementById('dd-pipeline').innerHTML = renderPipelineTable(pipe.data || []);
     document.getElementById('dd-education').innerHTML = renderEducationTable(edu.data || []);
+    document.getElementById('dd-dormant').innerHTML = renderDormantTable(dormant);
+  }
+
+  // Accounts assigned to this firm (via crm_accounts.rep_firm_id) with no activity
+  // entry linked to them (account_external_id) in the trailing 3 reporting months.
+  // Only entries submitted through the CRM-linked form autocomplete count -- older
+  // free-text entries have no account_external_id and can't be matched here.
+  function trailingMonths(month, n) {
+    const [y, m] = month.split('-').map(Number);
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      let yy = y, mm = m - i;
+      while (mm < 1) { mm += 12; yy -= 1; }
+      out.push(`${yy}-${String(mm).padStart(2, '0')}`);
+    }
+    return out;
+  }
+
+  async function loadDormantAccounts(firmId, month) {
+    const months = trailingMonths(month, 3);
+    const [{ data: accounts }, { data: acts }] = await Promise.all([
+      client.from('crm_accounts').select('external_id, name, city, state_code, relationship_type').eq('rep_firm_id', firmId),
+      client.from('activity_entries').select('account_external_id').eq('rep_firm_id', firmId).in('reporting_month', months).not('account_external_id', 'is', null),
+    ]);
+    const touched = new Set((acts || []).map(a => a.account_external_id));
+    return (accounts || []).filter(a => !touched.has(a.external_id));
+  }
+
+  function renderDormantTable(rows) {
+    if (!rows.length) return '<div class="empty-note">No dormant accounts — every account assigned to this firm has had linked activity in the last 3 months (or none are assigned to this firm yet).</div>';
+    return `<table class="detail"><thead><tr>
+      <th>Account</th><th>City / State</th><th>Relationship Type</th>
+    </tr></thead><tbody>${rows.map(r => `
+      <tr><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.city || '')}${r.city && r.state_code ? ', ' : ''}${escapeHtml(r.state_code || '')}</td>
+      <td>${escapeHtml(r.relationship_type || '')}</td></tr>
+    `).join('')}</tbody></table>`;
   }
 
   function closeDrilldown() {
@@ -274,9 +314,10 @@
   function renderActivityTable(rows) {
     if (!rows.length) return '<div class="empty-note">No activity entries for this period.</div>';
     return `<table class="detail"><thead><tr>
-      <th>Date</th><th>Account</th><th>Contact Type</th><th>Activity Type</th><th>Demo Gear</th><th>Topic / Opportunity</th>
+      <th>Date</th><th>Account</th><th>Contact</th><th>Contact Type</th><th>Activity Type</th><th>Demo Gear</th><th>Topic / Opportunity</th>
     </tr></thead><tbody>${rows.map(r => `
-      <tr><td>${r.entry_date}</td><td>${escapeHtml(r.account_name)}</td><td>${r.contact_type}</td>
+      <tr><td>${r.entry_date}</td><td>${escapeHtml(r.account_name)}${r.account_external_id ? ' <span style="color:#2e7d32;font-size:11px;">✓</span>' : ''}</td>
+      <td>${escapeHtml(r.contact_name || '')}</td><td>${r.contact_type}</td>
       <td>${r.activity_type}</td><td>${r.demo_gear_used ? 'Yes' : 'No'}</td><td>${escapeHtml(r.topic_opportunity || '')}</td></tr>
     `).join('')}</tbody></table>`;
   }

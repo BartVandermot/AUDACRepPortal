@@ -126,6 +126,22 @@
   #confirmation p { color: var(--audac-text); font-size: 14px; }
   select.firm-locked { background: #eee; color: #555; }
   .hint { font-size: 12px; color: #999; margin-top: 4px; }
+
+  .combo { position: relative; }
+  .combo-list {
+    position: absolute; top: 100%; left: 0; right: 0; z-index: 20;
+    background: #fff; border: 1px solid #ddd; border-top: none; border-radius: 0 0 3px 3px;
+    max-height: 220px; overflow-y: auto; box-shadow: 0 4px 10px rgba(0,0,0,.1);
+  }
+  .combo-item { padding: 9px 12px; font-size: 13.5px; cursor: pointer; color: var(--audac-black); }
+  .combo-item:hover { background: #f6ecd8; }
+  .combo-item-sub { color: #999; font-size: 11.5px; margin-left: 6px; }
+  .combo-item-new { color: var(--audac-gold); font-weight: 600; border-top: 1px solid #eee; }
+  .combo-status { font-size: 11.5px; margin-top: 4px; min-height: 14px; }
+  .combo-status.linked { color: #2e7d32; }
+  .combo-status.error { color: #b3261e; }
+  .contact-field { display: none; }
+  .contact-field.active { display: block; }
 </style>
 </head>
 <body>
@@ -218,6 +234,157 @@
     return html;
   }
 
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  }
+
+  function debounce(fn, ms) {
+    let t;
+    return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+  }
+
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('.combo')) return;
+    document.querySelectorAll('.combo-list').forEach(el => { el.hidden = true; });
+  });
+
+  // Lets a rep search existing CRM accounts/contacts (via security-definer RPCs --
+  // crm_accounts/crm_contacts themselves stay manager-only) or create a new one on
+  // the fly if the company/contact isn't in CRM yet. Selection/creation just sets
+  // {account,contact}ExternalId on the entry block's dataset; collectEntries() reads
+  // it at submit time. Editing the text after a selection un-links it (falls back
+  // to plain free text, same as before this feature existed).
+  function wireCompanyCombo(block) {
+    const input = block.querySelector('.account-input');
+    const list = block.querySelector('.account-list');
+    const statusEl = block.querySelector('.account-status');
+    const contactField = block.querySelector('.contact-field');
+
+    function selectAccount(acc) {
+      input.value = acc.name;
+      block.dataset.accountExternalId = acc.external_id;
+      statusEl.textContent = '✓ Linked to CRM';
+      statusEl.className = 'combo-status account-status linked';
+      list.hidden = true;
+      contactField.classList.add('active');
+      wireContactCombo(block);
+    }
+
+    async function createNew(name) {
+      if (!name) return;
+      const firmId = firmSelect.value || null;
+      input.disabled = true;
+      try {
+        const { data, error } = await client.rpc('create_manual_crm_account', {
+          p_name: name, p_city: null, p_state_code: null, p_rep_firm_id: firmId,
+        });
+        if (error) throw error;
+        selectAccount({ external_id: data, name });
+      } catch (err) {
+        statusEl.textContent = 'Could not add company: ' + err.message;
+        statusEl.className = 'combo-status account-status error';
+      } finally {
+        input.disabled = false;
+      }
+    }
+
+    input.addEventListener('input', debounce(async () => {
+      delete block.dataset.accountExternalId;
+      statusEl.textContent = '';
+      statusEl.className = 'combo-status account-status';
+      contactField.classList.remove('active');
+      clearContact(block);
+      const q = input.value.trim();
+      if (q.length < 2) { list.hidden = true; return; }
+      const { data, error } = await client.rpc('search_crm_accounts', { p_query: q, p_limit: 8 });
+      const matches = error ? [] : (data || []);
+      list.innerHTML = matches.map(a => `
+        <div class="combo-item" data-external-id="${escapeHtml(a.external_id)}" data-name="${escapeHtml(a.name)}">
+          ${escapeHtml(a.name)}${a.city || a.state_code ? ` <span class="combo-item-sub">${escapeHtml([a.city, a.state_code].filter(Boolean).join(', '))}</span>` : ''}
+        </div>
+      `).join('') + `<div class="combo-item combo-item-new" data-new="1">+ Add "${escapeHtml(q)}" as a new company</div>`;
+      list.hidden = false;
+    }, 250));
+
+    list.addEventListener('click', (e) => {
+      const item = e.target.closest('.combo-item');
+      if (!item) return;
+      if (item.dataset.new) createNew(input.value.trim());
+      else selectAccount({ external_id: item.dataset.externalId, name: item.dataset.name });
+    });
+  }
+
+  function clearContact(block) {
+    delete block.dataset.contactExternalId;
+    const input = block.querySelector('.contact-input');
+    const statusEl = block.querySelector('.contact-status');
+    const list = block.querySelector('.contact-list');
+    if (input) input.value = '';
+    if (statusEl) { statusEl.textContent = ''; statusEl.className = 'combo-status contact-status'; }
+    if (list) { list.hidden = true; list.innerHTML = ''; }
+  }
+
+  function wireContactCombo(block) {
+    const input = block.querySelector('.contact-input');
+    const list = block.querySelector('.contact-list');
+    const statusEl = block.querySelector('.contact-status');
+
+    function selectContact(c) {
+      input.value = c.full_name || c.email || '';
+      block.dataset.contactExternalId = c.external_id;
+      statusEl.textContent = '✓ Linked to CRM';
+      statusEl.className = 'combo-status contact-status linked';
+      list.hidden = true;
+    }
+
+    async function createNew(name) {
+      const accountExternalId = block.dataset.accountExternalId;
+      if (!name || !accountExternalId) return;
+      input.disabled = true;
+      try {
+        const { data, error } = await client.rpc('create_manual_crm_contact', {
+          p_account_external_id: accountExternalId, p_full_name: name, p_email: null,
+        });
+        if (error) throw error;
+        selectContact({ external_id: data, full_name: name });
+      } catch (err) {
+        statusEl.textContent = 'Could not add contact: ' + err.message;
+        statusEl.className = 'combo-status contact-status error';
+      } finally {
+        input.disabled = false;
+      }
+    }
+
+    input.oninput = debounce(async () => {
+      delete block.dataset.contactExternalId;
+      statusEl.textContent = '';
+      statusEl.className = 'combo-status contact-status';
+      const accountExternalId = block.dataset.accountExternalId;
+      const q = input.value.trim();
+      if (!accountExternalId) { list.hidden = true; return; }
+      const { data, error } = await client.rpc('search_crm_contacts', { p_account_external_id: accountExternalId });
+      let matches = error ? [] : (data || []);
+      if (q) {
+        const nq = q.toLowerCase();
+        matches = matches.filter(c => (c.full_name || '').toLowerCase().includes(nq) || (c.email || '').toLowerCase().includes(nq));
+      }
+      const newItem = q ? `<div class="combo-item combo-item-new" data-new="1">+ Add "${escapeHtml(q)}" as a new contact</div>` : '';
+      list.innerHTML = matches.slice(0, 8).map(c => `
+        <div class="combo-item" data-external-id="${escapeHtml(c.external_id)}" data-name="${escapeHtml(c.full_name || '')}">
+          ${escapeHtml(c.full_name || '(no name)')}${c.email ? ` <span class="combo-item-sub">${escapeHtml(c.email)}</span>` : ''}
+        </div>
+      `).join('') + newItem;
+      list.hidden = !matches.length && !q;
+    }, 250);
+
+    list.onclick = (e) => {
+      const item = e.target.closest('.combo-item');
+      if (!item) return;
+      if (item.dataset.new) createNew(input.value.trim());
+      else selectContact({ external_id: item.dataset.externalId, full_name: item.dataset.name });
+    };
+  }
+
   function addEntry() {
     entryCounter += 1;
     const idx = entryCounter;
@@ -233,9 +400,21 @@
           <input type="date" name="entry_date" value="${todayISO()}" required>
         </div>
         <div class="field">
-          <label>Account Name</label>
-          <input type="text" name="account_name" placeholder="e.g. Guitar Center - Downtown" required>
+          <label>Account / Company</label>
+          <div class="combo">
+            <input type="text" name="account_name" class="account-input" placeholder="Start typing a company name…" autocomplete="off" required>
+            <div class="combo-list account-list" hidden></div>
+          </div>
+          <div class="combo-status account-status"></div>
         </div>
+      </div>
+      <div class="field contact-field">
+        <label>Contact (optional)</label>
+        <div class="combo">
+          <input type="text" class="contact-input" placeholder="Start typing a contact name…" autocomplete="off">
+          <div class="combo-list contact-list" hidden></div>
+        </div>
+        <div class="combo-status contact-status"></div>
       </div>
       <div class="row">
         <div class="field">
@@ -269,6 +448,7 @@
       </div>
     `;
     entriesContainer.appendChild(wrap);
+    wireCompanyCombo(wrap);
     updateEntryHint();
   }
 
@@ -327,9 +507,13 @@
     const blocks = [...entriesContainer.querySelectorAll('.activity-entry')];
     return blocks.map(block => {
       const get = (name) => block.querySelector(`[name="${name}"]`);
+      const contactInput = block.querySelector('.contact-input');
       return {
         entry_date: get('entry_date').value,
         account_name: get('account_name').value.trim(),
+        account_external_id: block.dataset.accountExternalId || null,
+        contact_name: (contactInput && contactInput.value.trim()) || null,
+        contact_external_id: block.dataset.contactExternalId || null,
         contact_type: get('contact_type').value,
         activity_type: get('activity_type').value,
         demo_gear_used: get('demo_gear_used').checked,
