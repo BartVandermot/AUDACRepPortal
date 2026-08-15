@@ -918,11 +918,35 @@
       return;
     }
 
-    const { error } = await client.from('crm_accounts').upsert(toUpsert, { onConflict: 'name_key' });
-    if (error) {
-      statusEl.className = 'upload-status err';
-      statusEl.textContent = 'Import failed: ' + error.message;
-      return;
+    // name_key isn't a unique constraint (Dataverse can have two distinct accounts
+    // sharing a name), so this can't use upsert's onConflict directly. Instead: look
+    // up any existing row per name_key and update it by id; insert the rest as new.
+    const nameKeys = [...new Set(toUpsert.map(r => r.name_key))];
+    const { data: existing } = await client.from('crm_accounts').select('id, name_key').in('name_key', nameKeys);
+    const existingIdByNameKey = new Map((existing || []).map(r => [r.name_key, r.id]));
+
+    const toUpdate = [], toInsert = [];
+    for (const r of toUpsert) {
+      const existingId = existingIdByNameKey.get(r.name_key);
+      if (existingId) toUpdate.push({ ...r, id: existingId });
+      else toInsert.push(r);
+    }
+
+    if (toUpdate.length) {
+      const { error } = await client.from('crm_accounts').upsert(toUpdate, { onConflict: 'id' });
+      if (error) {
+        statusEl.className = 'upload-status err';
+        statusEl.textContent = 'Import failed: ' + error.message;
+        return;
+      }
+    }
+    if (toInsert.length) {
+      const { error } = await client.from('crm_accounts').insert(toInsert);
+      if (error) {
+        statusEl.className = 'upload-status err';
+        statusEl.textContent = 'Import failed: ' + error.message;
+        return;
+      }
     }
     await loadCrmAccounts(true);
     statusEl.className = 'upload-status ' + (matched ? 'ok' : 'warn');
