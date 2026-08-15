@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AUDAC Rep Portal — CRM Data</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --audac-gold: #d9a653;
+    --audac-black: #000000;
+    --audac-white: #ffffff;
+    --audac-section-bg: #f8f8f8;
+    --audac-text: #737373;
+    --green: #2e7d32; --green-bg: #e8f5e9;
+    --amber: #b8860b; --amber-bg: #fff6e0;
+    --red: #b3261e; --red-bg: #fdeaea;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Montserrat', sans-serif; background: var(--audac-white); color: var(--audac-text); }
+  header.audac-header {
+    background: var(--audac-black); color: #fff; padding: 16px 28px;
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+  }
+  header.audac-header .brand { display: flex; align-items: center; gap: 12px; }
+  header.audac-header img.logo { height: 30px; filter: invert(1); }
+  header.audac-header .wordmark { font-weight: 700; font-size: 18px; letter-spacing: 3px; color: #fff; display: none; }
+  header.audac-header h1 { font-size: 14px; font-weight: 400; margin: 0; color: var(--audac-gold); letter-spacing: 1px; text-transform: uppercase; }
+  .user-box { display: flex; align-items: center; gap: 14px; font-size: 13px; color: #ccc; }
+  .signout-btn, .nav-link { background: transparent; border: 1px solid #555; color: #fff; padding: 7px 14px; border-radius: 3px; cursor: pointer; font-family: inherit; font-size: 12px; text-decoration: none; display: inline-block; }
+
+  main { max-width: 1280px; margin: 0 auto; padding: 28px 20px 100px; }
+
+  .kpi-row { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 22px; }
+  .kpi-tile { background: var(--audac-section-bg); border-radius: 4px; padding: 14px 20px; min-width: 140px; }
+  .kpi-tile .kpi-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #999; }
+  .kpi-tile .kpi-value { font-size: 22px; font-weight: 700; color: var(--audac-black); margin-top: 4px; }
+
+  .toolbar { display: flex; align-items: flex-end; gap: 16px; margin-bottom: 18px; flex-wrap: wrap; }
+  .toolbar .field { display: flex; flex-direction: column; gap: 6px; }
+  .toolbar label { font-size: 12px; font-weight: 500; color: var(--audac-black); }
+  .toolbar input[type="text"], .toolbar select {
+    font-family: 'Montserrat', sans-serif; font-size: 13.5px; padding: 9px 12px;
+    border: 1px solid #ddd; border-radius: 3px; background: #fff; color: var(--audac-black); min-width: 220px;
+  }
+  .result-count { font-size: 12.5px; color: #999; margin-bottom: 10px; }
+
+  table.crm-table { width: 100%; border-collapse: collapse; background: #fff; font-size: 13px; }
+  table.crm-table th, table.crm-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #eee; vertical-align: middle; }
+  table.crm-table th { background: var(--audac-section-bg); color: var(--audac-black); font-weight: 700; text-transform: uppercase; font-size: 10.5px; letter-spacing: .5px; }
+  table.crm-table tbody tr:hover { background: #fbf7ee; }
+  table.crm-table tbody tr.selected { background: #f6ecd8; }
+  .row-name-btn { background: none; border: none; padding: 0; font: inherit; color: var(--audac-black); font-weight: 500; cursor: pointer; text-align: left; text-decoration: underline; text-decoration-color: #ddd; }
+  .row-name-btn:hover { text-decoration-color: var(--audac-gold); }
+  select.firm-assign { font-family: 'Montserrat', sans-serif; font-size: 12.5px; padding: 6px 8px; border: 1px solid #ddd; border-radius: 3px; max-width: 190px; }
+  .badge-parent { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; padding: 2px 7px; border-radius: 10px; margin-left: 6px; }
+  .badge-parent.via-parent { background: var(--green-bg); color: var(--green); }
+  .badge-parent.via-state { background: var(--amber-bg); color: var(--amber); }
+  .muted { color: #bbb; }
+
+  #contacts-panel { display: none; background: var(--audac-section-bg); border-radius: 4px; padding: 20px 22px; margin-top: 18px; }
+  #contacts-panel .cp-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; flex-wrap: wrap; gap: 10px; }
+  #contacts-panel .cp-header h3 { margin: 0; color: var(--audac-black); font-size: 15px; }
+  table.detail { width: 100%; border-collapse: collapse; background: #fff; font-size: 12.5px; }
+  table.detail th, table.detail td { padding: 8px 10px; border-bottom: 1px solid #eee; text-align: left; }
+  table.detail th { background: #f1f1f1; }
+  .empty-note { font-size: 12.5px; color: #aaa; padding: 10px 2px; }
+
+  button.audac-btn {
+    background: var(--audac-gold); color: #000; border: none; padding: 10px 18px;
+    font-family: 'Montserrat', sans-serif; font-weight: 700; font-size: 12px; letter-spacing: .4px;
+    text-transform: uppercase; cursor: pointer; border-radius: 3px;
+  }
+  button.audac-btn-outline {
+    background: transparent; color: var(--audac-black); border: 1.5px solid var(--audac-black);
+    padding: 8px 14px; font-family: 'Montserrat', sans-serif; font-weight: 500; font-size: 12px;
+    letter-spacing: .4px; text-transform: uppercase; cursor: pointer; border-radius: 3px;
+  }
+  #loading-note { font-size: 13px; color: #aaa; padding: 20px 0; }
+  #save-status { font-size: 12px; margin-left: 10px; }
+</style>
+</head>
+<body>
+
+<header class="audac-header">
+  <div class="brand">
+    <img class="logo" src="https://audac.eu/images/AUDAC-logo.webp" alt="AUDAC"
+         onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
+    <span class="wordmark">AUDAC</span>
+    <h1>CRM Data</h1>
+  </div>
+  <div class="user-box">
+    <a class="nav-link" href="/dashboard">← Dashboard</a>
+    <span id="user-email"></span>
+    <button class="signout-btn" id="signout-btn">Sign Out</button>
+  </div>
+</header>
+
+<main>
+  <div id="loading-note">Loading CRM data…</div>
+
+  <div id="content" style="display:none;">
+    <div class="kpi-row" id="kpi-row"></div>
+
+    <div class="toolbar">
+      <div class="field">
+        <label for="search-input">Search accounts</label>
+        <input type="text" id="search-input" placeholder="Name, city, state…">
+      </div>
+      <div class="field">
+        <label for="firm-filter">Rep firm</label>
+        <select id="firm-filter">
+          <option value="">All</option>
+          <option value="__unassigned">Unassigned</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="result-count" id="result-count"></div>
+
+    <div style="overflow-x:auto;">
+      <table class="crm-table">
+        <thead>
+          <tr>
+            <th>Account</th><th>City / State</th><th>Country</th>
+            <th>Relationship Type</th><th>Contacts</th><th>Rep Firm</th>
+          </tr>
+        </thead>
+        <tbody id="accounts-body"></tbody>
+      </table>
+    </div>
+
+    <div id="contacts-panel">
+      <div class="cp-header">
+        <h3 id="cp-account-name"></h3>
+        <button class="audac-btn-outline" id="close-contacts-btn">Close</button>
+      </div>
+      <div id="cp-contacts"></div>
+    </div>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
+  const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  let firmsCache = [];
+  let accountsCache = [];
+  let contactCountByAccount = new Map();
+  let selectedAccountExternalId = null;
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  }
+
+  async function guard() {
+    const { data: { session } } = await client.auth.getSession();
+    if (!session) { window.location.href = '/login'; return null; }
+    const { data: profile } = await client.from('profiles').select('role, email').eq('id', session.user.id).maybeSingle();
+    if (!profile) { window.location.href = '/login'; return null; }
+    if (profile.role === 'executive') { window.location.href = '/executive'; return null; }
+    if (profile.role !== 'manager') { window.location.href = '/login'; return null; }
+    return { user: session.user, profile };
+  }
+
+  document.getElementById('signout-btn').addEventListener('click', async () => {
+    await client.auth.signOut();
+    window.location.href = '/login';
+  });
+
+  function renderKpis() {
+    const total = accountsCache.length;
+    const matched = accountsCache.filter(a => a.rep_firm_id).length;
+    const totalContacts = [...contactCountByAccount.values()].reduce((s, n) => s + n, 0);
+    document.getElementById('kpi-row').innerHTML = `
+      <div class="kpi-tile"><div class="kpi-label">Accounts Synced</div><div class="kpi-value">${total}</div></div>
+      <div class="kpi-tile"><div class="kpi-label">Assigned to a Rep Firm</div><div class="kpi-value">${matched}</div></div>
+      <div class="kpi-tile"><div class="kpi-label">Unassigned</div><div class="kpi-value">${total - matched}</div></div>
+      <div class="kpi-tile"><div class="kpi-label">Contacts Synced</div><div class="kpi-value">${totalContacts}</div></div>
+    `;
+  }
+
+  function populateFirmFilter() {
+    const sel = document.getElementById('firm-filter');
+    const current = sel.value;
+    sel.innerHTML = '<option value="">All</option><option value="__unassigned">Unassigned</option>' +
+      firmsCache.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`).join('');
+    sel.value = current || '';
+  }
+
+  function matchesSearch(a, q) {
+    if (!q) return true;
+    const hay = `${a.name} ${a.city || ''} ${a.state_raw || ''} ${a.country_code || ''}`.toLowerCase();
+    return hay.includes(q);
+  }
+
+  function renderAccounts() {
+    const q = document.getElementById('search-input').value.trim().toLowerCase();
+    const firmFilter = document.getElementById('firm-filter').value;
+
+    let rows = accountsCache.filter(a => matchesSearch(a, q));
+    if (firmFilter === '__unassigned') rows = rows.filter(a => !a.rep_firm_id);
+    else if (firmFilter) rows = rows.filter(a => a.rep_firm_id === firmFilter);
+
+    document.getElementById('result-count').textContent = `Showing ${rows.length} of ${accountsCache.length} accounts`;
+
+    const firmOptions = ['<option value="">— Unassigned —</option>']
+      .concat(firmsCache.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`)).join('');
+
+    const tbody = document.getElementById('accounts-body');
+    tbody.innerHTML = rows.map(a => {
+      const viaParent = a.rep_firm_id && firmsCache.some(f => f.id === a.rep_firm_id && f.crm_account_external_id === a.parent_account_external_id);
+      const badge = a.rep_firm_id
+        ? `<span class="badge-parent ${viaParent ? 'via-parent' : 'via-state'}">${viaParent ? 'via parent' : 'via state'}</span>`
+        : '';
+      const contactCount = contactCountByAccount.get(a.external_id) || 0;
+      return `
+        <tr data-id="${a.external_id}" class="${a.external_id === selectedAccountExternalId ? 'selected' : ''}">
+          <td><button class="row-name-btn" data-open="${a.external_id}">${escapeHtml(a.name)}</button></td>
+          <td>${escapeHtml(a.city || '')}${a.city && a.state_raw ? ', ' : ''}${escapeHtml(a.state_raw || '')}</td>
+          <td>${escapeHtml(a.country_code || '')}</td>
+          <td>${escapeHtml(a.relationship_type || '')}</td>
+          <td>${contactCount || '<span class="muted">0</span>'}</td>
+          <td>
+            <select class="firm-assign" data-account="${a.external_id}">${firmOptions}</select>
+            ${badge}
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    tbody.querySelectorAll('select.firm-assign').forEach(sel => {
+      const accountId = sel.dataset.account;
+      const acc = accountsCache.find(a => a.external_id === accountId);
+      sel.value = acc?.rep_firm_id || '';
+      sel.addEventListener('change', () => assignFirm(accountId, sel.value || null));
+    });
+    tbody.querySelectorAll('[data-open]').forEach(btn => {
+      btn.addEventListener('click', () => openContacts(btn.dataset.open));
+    });
+  }
+
+  async function assignFirm(accountExternalId, firmId) {
+    const { error } = await client.from('crm_accounts').update({ rep_firm_id: firmId }).eq('external_id', accountExternalId);
+    const acc = accountsCache.find(a => a.external_id === accountExternalId);
+    if (error) {
+      alert('Could not update rep firm assignment: ' + error.message);
+      return;
+    }
+    if (acc) acc.rep_firm_id = firmId;
+    renderKpis();
+    renderAccounts();
+  }
+
+  async function openContacts(accountExternalId) {
+    selectedAccountExternalId = accountExternalId;
+    renderAccounts();
+    const acc = accountsCache.find(a => a.external_id === accountExternalId);
+    const panel = document.getElementById('contacts-panel');
+    panel.style.display = 'block';
+    document.getElementById('cp-account-name').textContent = acc ? acc.name : '';
+    document.getElementById('cp-contacts').innerHTML = '<div class="empty-note">Loading…</div>';
+
+    const { data, error } = await client
+      .from('crm_contacts')
+      .select('full_name, email, rep_firm_id')
+      .eq('parent_account_external_id', accountExternalId)
+      .order('full_name');
+
+    if (error) {
+      document.getElementById('cp-contacts').innerHTML = `<div class="empty-note">Failed to load contacts: ${escapeHtml(error.message)}</div>`;
+      return;
+    }
+    document.getElementById('cp-contacts').innerHTML = renderContactsTable(data || []);
+  }
+
+  function renderContactsTable(rows) {
+    if (!rows.length) return '<div class="empty-note">No contacts synced for this account.</div>';
+    return `<table class="detail"><thead><tr><th>Name</th><th>Email</th></tr></thead><tbody>${rows.map(r => `
+      <tr><td>${escapeHtml(r.full_name || '')}</td><td>${escapeHtml(r.email || '')}</td></tr>
+    `).join('')}</tbody></table>`;
+  }
+
+  document.getElementById('close-contacts-btn').addEventListener('click', () => {
+    selectedAccountExternalId = null;
+    document.getElementById('contacts-panel').style.display = 'none';
+    renderAccounts();
+  });
+
+  document.getElementById('search-input').addEventListener('input', renderAccounts);
+  document.getElementById('firm-filter').addEventListener('change', renderAccounts);
+
+  async function loadAll() {
+    const [firmsRes, accountsRes, contactsRes] = await Promise.all([
+      client.from('rep_firms').select('id, name, crm_account_external_id').eq('status', 'active').order('name'),
+      client.from('crm_accounts').select('external_id, name, city, state_raw, country_code, relationship_type, rep_firm_id, parent_account_external_id').order('name'),
+      client.from('crm_contacts').select('parent_account_external_id'),
+    ]);
+
+    if (accountsRes.error) {
+      document.getElementById('loading-note').textContent = 'Failed to load CRM accounts: ' + accountsRes.error.message;
+      return;
+    }
+
+    firmsCache = firmsRes.data || [];
+    accountsCache = accountsRes.data || [];
+    contactCountByAccount = new Map();
+    (contactsRes.data || []).forEach(c => {
+      if (!c.parent_account_external_id) return;
+      contactCountByAccount.set(c.parent_account_external_id, (contactCountByAccount.get(c.parent_account_external_id) || 0) + 1);
+    });
+
+    populateFirmFilter();
+    renderKpis();
+    renderAccounts();
+
+    document.getElementById('loading-note').style.display = 'none';
+    document.getElementById('content').style.display = 'block';
+  }
+
+  (async function init() {
+    const g = await guard();
+    if (!g) return;
+    document.getElementById('user-email').textContent = g.profile.email;
+    await loadAll();
+  })();
+</script>
+</body>
+</html>

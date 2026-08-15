@@ -136,7 +136,7 @@ const ACCOUNTS_SELECT = [
   "accountid", "name", "address1_line1", "address1_city",
   "address1_stateorprovince", "address1_postalcode",
   "telephone1", "websiteurl", "customertypecode", "businesstypecode",
-  "_scp_countrylookup_value", "modifiedon",
+  "_scp_countrylookup_value", "_parentaccountid_value", "modifiedon",
 ].join(",");
 
 const CONTACTS_SELECT = ["contactid", "fullname", "emailaddress1", "_parentcustomerid_value", "modifiedon"].join(",");
@@ -246,25 +246,39 @@ Deno.serve(async (req: Request) => {
         rows = first.rows; nextLink = first.nextLink; filterLevel = first.filterLevel;
       }
 
-      const { data: firms } = await svc.from("rep_firms").select("id, states").eq("status", "active");
+      const { data: firms } = await svc.from("rep_firms").select("id, states, crm_account_external_id").eq("status", "active");
       const firmsCache = firms || [];
+      const firmIdByCrmAccountId = new Map<string, string>(
+        firmsCache.filter((f: any) => f.crm_account_external_id).map((f: any) => [f.crm_account_external_id, f.id]),
+      );
       function resolveFirmIdByState(stateCode: string | null, countryCode: string | null): string | null {
         if (!stateCode || countryCode !== "US") return null;
         const firm = firmsCache.find((f: any) => Array.isArray(f.states) && f.states.includes(stateCode));
         return firm ? firm.id : null;
       }
 
-      let matched = 0, outOfTerritory = 0, noState = 0;
+      // Rep firms are themselves Accounts under Intellimix -- an account whose
+      // parentaccountid IS one of those rep-firm accounts is authoritatively that
+      // firm's, no state-guessing needed. State matching is only a fallback for
+      // accounts not under a rep firm parent (or whose parent isn't one we know).
+      let matchedByParent = 0, matchedByState = 0, outOfTerritory = 0, noState = 0;
       const upserts = rows
         .filter((r: any) => r.name)
         .map((r: any) => {
           const stateCode = normalizeState(r.address1_stateorprovince);
           const countryText = r["_scp_countrylookup_value@OData.Community.Display.V1.FormattedValue"] ?? null;
           const countryCode = normalizeCountry(countryText);
-          const repFirmId = resolveFirmIdByState(stateCode, countryCode);
-          if (repFirmId) matched++;
-          else if (stateCode && countryCode === "US") outOfTerritory++;
-          else noState++;
+
+          const parentId = r._parentaccountid_value || null;
+          let repFirmId = parentId ? firmIdByCrmAccountId.get(parentId) ?? null : null;
+          if (repFirmId) matchedByParent++;
+          else {
+            repFirmId = resolveFirmIdByState(stateCode, countryCode);
+            if (repFirmId) matchedByState++;
+            else if (stateCode && countryCode === "US") outOfTerritory++;
+            else noState++;
+          }
+
           return {
             external_id: r.accountid,
             name: r.name,
@@ -294,7 +308,9 @@ Deno.serve(async (req: Request) => {
         done: !nextLink,
         nextCursor: nextLink,
         processed: upserts.length,
-        matched,
+        matched: matchedByParent + matchedByState,
+        matchedByParent,
+        matchedByState,
         outOfTerritory,
         noState,
         filterLevel,

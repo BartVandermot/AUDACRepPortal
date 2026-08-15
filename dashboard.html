@@ -100,6 +100,7 @@
     <h1>Manager Dashboard</h1>
   </div>
   <div class="user-box">
+    <a href="/crm" style="color:#ccc; font-size:13px; text-decoration:none; border:1px solid #555; padding:7px 14px; border-radius:3px;">CRM Data</a>
     <span id="user-email"></span>
     <button class="signout-btn" id="signout-btn">Sign Out</button>
   </div>
@@ -721,13 +722,14 @@
         level === 'none' ? ' [WARNING: no server-side filter applied — pulled the full table]' : '';
 
       let cursor = null;
-      let accTotal = 0, accMatched = 0, accOutOfTerritory = 0, accNoState = 0, accLevel = 'full';
+      let accTotal = 0, accMatchedByParent = 0, accMatchedByState = 0, accOutOfTerritory = 0, accNoState = 0, accLevel = 'full';
       let firstAccountsPage = true;
       do {
         btn.textContent = `Syncing accounts… (${accTotal} so far)`;
         const res = await invokeCrmSync({ phase: 'accounts', cursor });
         accTotal += res.processed;
-        accMatched += res.matched;
+        accMatchedByParent += res.matchedByParent || 0;
+        accMatchedByState += res.matchedByState || 0;
         accOutOfTerritory += res.outOfTerritory;
         accNoState += res.noState;
         if (firstAccountsPage) { accLevel = res.filterLevel || 'full'; firstAccountsPage = false; }
@@ -748,9 +750,11 @@
 
       await loadCrmAccounts(true);
       await loadCrmContacts(true);
+      const accMatched = accMatchedByParent + accMatchedByState;
       statusEl.className = 'upload-status ' + (accLevel === 'none' || conLevel === 'none' ? 'err' : accMatched ? 'ok' : 'warn');
       statusEl.textContent =
-        `Synced ${accTotal} account(s)${filterNote(accLevel)} — ${accMatched} matched to a rep firm by state, ` +
+        `Synced ${accTotal} account(s)${filterNote(accLevel)} — ${accMatched} matched to a rep firm ` +
+        `(${accMatchedByParent} via parent account, ${accMatchedByState} via state), ` +
         `${accOutOfTerritory} outside configured territories, ${accNoState} missing/unrecognized state. ` +
         `Synced ${conTotal} contact(s)${filterNote(conLevel)} — ${conMatched} inherited a rep firm from their account.`;
     } catch (err) {
