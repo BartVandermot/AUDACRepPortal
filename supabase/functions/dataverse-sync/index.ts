@@ -141,118 +141,60 @@ const ACCOUNTS_SELECT = [
 
 const CONTACTS_SELECT = ["contactid", "fullname", "emailaddress1", "_parentcustomerid_value", "modifiedon"].join(",");
 
-// We only care about active US/Canada accounts (rep territories are US states) --
-// filtering server-side cuts the record count (and page count) way down. statecode
-// eq 0 (active) is a standard Dataverse field, high confidence. scp_iso is the ISO
-// code field on the Country entity behind the scp_countrylookup relationship
-// (confirmed from the account export's column metadata) -- the relationship/nav
-// property names themselves are a best guess for this org's schema, so the "full"
-// filter level may 400; the ladder falls back to "active only" (not to zero filter).
+// We only care about active US/Canada accounts (rep territories are US states).
+// The Country entity's Web API relationship/attribute names aren't readable by this
+// Application User (its security role lacks the metadata-read privilege, confirmed
+// via a 403 on EntityDefinitions), so filtering by relationship path isn't available.
+// Instead this filters directly on the raw lookup GUID (_scp_countrylookup_value),
+// which needs no relationship traversal at all. The two GUIDs below were read
+// directly off real account records (address1_stateorprovince eq 'CA' / 'Ontario')
+// via a throwaway diagnostic function and confirmed against a live filtered query
+// (582 accounts, 676 contacts) before being hardcoded here.
+const COUNTRY_GUID_US = "45adf5cd-c846-e811-a9c6-000d3a254a9a";
+const COUNTRY_GUID_CA = "c1abf5cd-c846-e811-a9c6-000d3a254a9a";
+
 const ACCOUNTS_URL_BASE = `${DATAVERSE_ORG_URL}/api/data/v9.2/accounts?$select=${ACCOUNTS_SELECT}`;
 const ACCOUNTS_URL_LEVELS = [
-  { level: "full", url: `${ACCOUNTS_URL_BASE}&$filter=statecode eq 0 and (scp_countrylookup/scp_iso eq 'US' or scp_countrylookup/scp_iso eq 'CA')` },
+  { level: "full", url: `${ACCOUNTS_URL_BASE}&$filter=statecode eq 0 and (_scp_countrylookup_value eq ${COUNTRY_GUID_US} or _scp_countrylookup_value eq ${COUNTRY_GUID_CA})` },
   { level: "active_only", url: `${ACCOUNTS_URL_BASE}&$filter=statecode eq 0` },
   { level: "none", url: ACCOUNTS_URL_BASE },
 ];
 
 const CONTACTS_URL_BASE = `${DATAVERSE_ORG_URL}/api/data/v9.2/contacts?$select=${CONTACTS_SELECT}`;
 const CONTACTS_URL_LEVELS = [
-  { level: "full", url: `${CONTACTS_URL_BASE}&$filter=statecode eq 0 and (parentcustomerid_account/scp_countrylookup/scp_iso eq 'US' or parentcustomerid_account/scp_countrylookup/scp_iso eq 'CA')` },
+  { level: "full", url: `${CONTACTS_URL_BASE}&$filter=statecode eq 0 and (parentcustomerid_account/_scp_countrylookup_value eq ${COUNTRY_GUID_US} or parentcustomerid_account/_scp_countrylookup_value eq ${COUNTRY_GUID_CA})` },
   { level: "active_only", url: `${CONTACTS_URL_BASE}&$filter=statecode eq 0` },
   { level: "none", url: CONTACTS_URL_BASE },
 ];
 
-// Diagnostic-only counts (Dataverse's /$count endpoint -- cheap, no row data pulled)
-// at each filter level, so the actual expected record counts can be checked before
-// running a real sync.
-const ACCOUNTS_COUNT_LEVELS = [
-  { level: "full", url: `${DATAVERSE_ORG_URL}/api/data/v9.2/accounts/$count?$filter=statecode eq 0 and (scp_countrylookup/scp_iso eq 'US' or scp_countrylookup/scp_iso eq 'CA')` },
-  { level: "active_only", url: `${DATAVERSE_ORG_URL}/api/data/v9.2/accounts/$count?$filter=statecode eq 0` },
-  { level: "none", url: `${DATAVERSE_ORG_URL}/api/data/v9.2/accounts/$count` },
-];
-const CONTACTS_COUNT_LEVELS = [
-  { level: "full", url: `${DATAVERSE_ORG_URL}/api/data/v9.2/contacts/$count?$filter=statecode eq 0 and (parentcustomerid_account/scp_countrylookup/scp_iso eq 'US' or parentcustomerid_account/scp_countrylookup/scp_iso eq 'CA')` },
-  { level: "active_only", url: `${DATAVERSE_ORG_URL}/api/data/v9.2/contacts/$count?$filter=statecode eq 0` },
-  { level: "none", url: `${DATAVERSE_ORG_URL}/api/data/v9.2/contacts/$count` },
-];
-
-async function fetchCount(url: string, token: string): Promise<number | null> {
+// Diagnostic-only counts, so the actual expected record counts can be checked before
+// running a real sync. Dataverse's bare /$count sub-path doesn't support $filter at
+// all in this org (confirmed: fails identically regardless of filter content) --
+// uses ?$count=true on the base collection instead and reads @odata.count.
+async function fetchFilteredCount(entity: "accounts" | "contacts", filter: string | null, token: string): Promise<number | null> {
+  const idField = entity === "contacts" ? "contactid" : "accountid";
+  const url = filter
+    ? `${DATAVERSE_ORG_URL}/api/data/v9.2/${entity}?$select=${idField}&$count=true&$filter=${encodeURIComponent(filter)}`
+    : `${DATAVERSE_ORG_URL}/api/data/v9.2/${entity}?$select=${idField}&$count=true`;
   const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}`, Accept: "text/plain", "OData-MaxVersion": "4.0", "OData-Version": "4.0" },
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/json", "OData-MaxVersion": "4.0", "OData-Version": "4.0", Prefer: "odata.maxpagesize=1" },
   });
   if (!res.ok) return null;
-  const text = await res.text();
-  const n = parseInt(text, 10);
-  return isNaN(n) ? null : n;
-}
-
-async function fetchJson(url: string, token: string): Promise<any> {
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}`, Accept: "application/json", "OData-MaxVersion": "4.0", "OData-Version": "4.0" },
-  });
-  const text = await res.text();
-  if (!res.ok) throw new Error(`Metadata request failed: ${res.status} ${text}`);
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new Error(`Metadata response wasn't JSON: ${text.slice(0, 300)}`);
-  }
-}
-
-// Queries Dataverse's own metadata instead of guessing relationship/attribute names:
-// - the real Web API navigation property behind Account's scp_countrylookup field,
-//   and the logical name of whatever entity it points to
-// - that entity's own attributes (to find its ISO/name field for filtering)
-// - Contact's relationships, to confirm its parentcustomerid->Account nav property
-//   and check whether Contact has its own country-style lookup at all
-async function discoverSchema(): Promise<Record<string, any>> {
-  const token = await getDataverseToken();
-  const base = `${DATAVERSE_ORG_URL}/api/data/v9.2`;
-
-  const accountRels = await fetchJson(
-    `${base}/EntityDefinitions(LogicalName='account')/ManyToOneRelationships?$select=ReferencingAttribute,ReferencingEntityNavigationPropertyName,ReferencedEntity,ReferencedAttribute,SchemaName`,
-    token,
-  );
-  const accountCountryRelationship =
-    (accountRels.value || []).find((r: any) => r.ReferencingAttribute === "scp_countrylookup") || null;
-
-  let countryEntityAttributes = null;
-  if (accountCountryRelationship?.ReferencedEntity) {
-    const attrs = await fetchJson(
-      `${base}/EntityDefinitions(LogicalName='${accountCountryRelationship.ReferencedEntity}')/Attributes?$select=LogicalName,SchemaName,AttributeType`,
-      token,
-    );
-    countryEntityAttributes = (attrs.value || []).map((a: any) => ({
-      logicalName: a.LogicalName, schemaName: a.SchemaName, type: a.AttributeType,
-    }));
-  }
-
-  const contactRels = await fetchJson(
-    `${base}/EntityDefinitions(LogicalName='contact')/ManyToOneRelationships?$select=ReferencingAttribute,ReferencingEntityNavigationPropertyName,ReferencedEntity,SchemaName`,
-    token,
-  );
-  const contactParentAccountRelationship =
-    (contactRels.value || []).find((r: any) => r.ReferencingAttribute === "parentcustomerid" && r.ReferencedEntity === "account") || null;
-  const contactCountryRelationships =
-    (contactRels.value || []).filter((r: any) => String(r.ReferencingAttribute || "").toLowerCase().includes("country"));
-
-  return {
-    accountCountryRelationship,
-    countryEntityAttributes,
-    contactParentAccountRelationship,
-    contactCountryRelationships,
-  };
+  const body = await res.json();
+  return body?.["@odata.count"] ?? null;
 }
 
 async function getCounts(): Promise<Record<string, any>> {
   const token = await getDataverseToken();
+  const accFilter = `statecode eq 0 and (_scp_countrylookup_value eq ${COUNTRY_GUID_US} or _scp_countrylookup_value eq ${COUNTRY_GUID_CA})`;
+  const conFilter = `statecode eq 0 and (parentcustomerid_account/_scp_countrylookup_value eq ${COUNTRY_GUID_US} or parentcustomerid_account/_scp_countrylookup_value eq ${COUNTRY_GUID_CA})`;
   const [accFull, accActive, accNone, conFull, conActive, conNone] = await Promise.all([
-    fetchCount(ACCOUNTS_COUNT_LEVELS[0].url, token),
-    fetchCount(ACCOUNTS_COUNT_LEVELS[1].url, token),
-    fetchCount(ACCOUNTS_COUNT_LEVELS[2].url, token),
-    fetchCount(CONTACTS_COUNT_LEVELS[0].url, token),
-    fetchCount(CONTACTS_COUNT_LEVELS[1].url, token),
-    fetchCount(CONTACTS_COUNT_LEVELS[2].url, token),
+    fetchFilteredCount("accounts", accFilter, token),
+    fetchFilteredCount("accounts", "statecode eq 0", token),
+    fetchFilteredCount("accounts", null, token),
+    fetchFilteredCount("contacts", conFilter, token),
+    fetchFilteredCount("contacts", "statecode eq 0", token),
+    fetchFilteredCount("contacts", null, token),
   ]);
   return {
     accounts: { activeUsCanada: accFull, activeOnly: accActive, total: accNone },
@@ -286,10 +228,6 @@ Deno.serve(async (req: Request) => {
 
     if (payload.phase === "count") {
       return jsonResponse(await getCounts());
-    }
-
-    if (payload.phase === "discover") {
-      return jsonResponse(await discoverSchema());
     }
 
     const phase = payload.phase === "contacts" ? "contacts" : "accounts";
