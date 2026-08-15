@@ -689,8 +689,12 @@
     try {
       // The Edge Function processes one small page per call (its CPU budget can't
       // cover a whole org in one go), so the client drives the pagination loop.
+      const filterNote = (level) => level === 'full' ? '' :
+        level === 'active_only' ? ' [country filter unavailable — active records only]' :
+        level === 'none' ? ' [WARNING: no server-side filter applied — pulled the full table]' : '';
+
       let cursor = null;
-      let accTotal = 0, accMatched = 0, accOutOfTerritory = 0, accNoState = 0, accFilterApplied = true;
+      let accTotal = 0, accMatched = 0, accOutOfTerritory = 0, accNoState = 0, accLevel = 'full';
       let firstAccountsPage = true;
       do {
         btn.textContent = `Syncing accounts… (${accTotal} so far)`;
@@ -699,30 +703,29 @@
         accMatched += res.matched;
         accOutOfTerritory += res.outOfTerritory;
         accNoState += res.noState;
-        if (firstAccountsPage) { accFilterApplied = res.filterApplied !== false; firstAccountsPage = false; }
+        if (firstAccountsPage) { accLevel = res.filterLevel || 'full'; firstAccountsPage = false; }
         cursor = res.nextCursor;
       } while (cursor);
 
       cursor = null;
-      let conTotal = 0, conMatched = 0, conFilterApplied = true;
+      let conTotal = 0, conMatched = 0, conLevel = 'full';
       let firstContactsPage = true;
       do {
         btn.textContent = `Syncing contacts… (${conTotal} so far)`;
         const res = await invokeCrmSync({ phase: 'contacts', cursor });
         conTotal += res.processed;
         conMatched += res.matchedToFirm;
-        if (firstContactsPage) { conFilterApplied = res.filterApplied !== false; firstContactsPage = false; }
+        if (firstContactsPage) { conLevel = res.filterLevel || 'full'; firstContactsPage = false; }
         cursor = res.nextCursor;
       } while (cursor);
 
       await loadCrmAccounts(true);
       await loadCrmContacts(true);
-      statusEl.className = 'upload-status ' + (accMatched ? 'ok' : 'warn');
+      statusEl.className = 'upload-status ' + (accLevel === 'none' || conLevel === 'none' ? 'err' : accMatched ? 'ok' : 'warn');
       statusEl.textContent =
-        `Synced ${accTotal} account(s) — ${accMatched} matched to a rep firm by state, ` +
+        `Synced ${accTotal} account(s)${filterNote(accLevel)} — ${accMatched} matched to a rep firm by state, ` +
         `${accOutOfTerritory} outside configured territories, ${accNoState} missing/unrecognized state. ` +
-        `Synced ${conTotal} contact(s) — ${conMatched} inherited a rep firm from their account.` +
-        (!accFilterApplied || !conFilterApplied ? ' (Note: the US/Canada server-side filter could not be applied, so this pulled the full table — ask Claude to check the Dataverse field names.)' : '');
+        `Synced ${conTotal} contact(s)${filterNote(conLevel)} — ${conMatched} inherited a rep firm from their account.`;
     } catch (err) {
       statusEl.className = 'upload-status err';
       statusEl.textContent = 'CRM sync failed: ' + err.message;

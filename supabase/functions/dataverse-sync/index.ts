@@ -100,16 +100,23 @@ async function fetchOnePage(url: string, token: string): Promise<{ rows: any[]; 
   return { rows: body.value || [], nextLink: body["@odata.nextLink"] || null, status: 200 };
 }
 
-// Only the first page of a fresh sync (no cursor yet) carries the $filter, since a
-// nextLink already has whatever filter was used baked into it. If the guessed
-// Dataverse relationship/field names for the country filter are wrong, fall back to
-// the unfiltered URL rather than failing the whole sync.
-async function fetchFirstPage(filteredUrl: string, unfilteredUrl: string, token: string): Promise<{ rows: any[]; nextLink: string | null; filterApplied: boolean }> {
-  const filtered = await fetchOnePage(filteredUrl, token);
-  if (filtered.status === 200) return { rows: filtered.rows, nextLink: filtered.nextLink, filterApplied: true };
-  const unfiltered = await fetchOnePage(unfilteredUrl, token);
-  if (unfiltered.status !== 200) throw new Error(`Dataverse request failed: ${unfiltered.status} ${unfiltered.bodyText}`);
-  return { rows: unfiltered.rows, nextLink: unfiltered.nextLink, filterApplied: false };
+// Only the first page of a fresh sync (no cursor yet) carries a $filter, since a
+// nextLink already has whatever filter was used baked into it. Tries each URL in
+// order (most restrictive first) and uses the first one Dataverse accepts -- e.g.
+// if the guessed relationship/field names for the country filter are wrong, this
+// falls back to "active records only" rather than silently pulling the entire
+// (possibly huge) unfiltered table, which is the actual failure mode we hit.
+async function fetchFirstPageLadder(
+  levels: { level: string; url: string }[],
+  token: string,
+): Promise<{ rows: any[]; nextLink: string | null; filterLevel: string }> {
+  let lastError: { status: number; bodyText?: string } | null = null;
+  for (const { level, url } of levels) {
+    const page = await fetchOnePage(url, token);
+    if (page.status === 200) return { rows: page.rows, nextLink: page.nextLink, filterLevel: level };
+    lastError = page;
+  }
+  throw new Error(`Dataverse request failed: ${lastError?.status} ${lastError?.bodyText}`);
 }
 
 const corsHeaders = {
@@ -134,17 +141,26 @@ const ACCOUNTS_SELECT = [
 
 const CONTACTS_SELECT = ["contactid", "fullname", "emailaddress1", "_parentcustomerid_value", "modifiedon"].join(",");
 
-// We only care about US/Canada accounts (rep territories are US states) -- filtering
-// server-side cuts the record count (and page count) way down. scp_iso is the ISO
+// We only care about active US/Canada accounts (rep territories are US states) --
+// filtering server-side cuts the record count (and page count) way down. statecode
+// eq 0 (active) is a standard Dataverse field, high confidence. scp_iso is the ISO
 // code field on the Country entity behind the scp_countrylookup relationship
-// (confirmed from the account export's column metadata); the relationship/nav
-// property names themselves are a best guess for this org's schema, so
-// fetchFirstPage() falls back to an unfiltered query if this 400s.
+// (confirmed from the account export's column metadata) -- the relationship/nav
+// property names themselves are a best guess for this org's schema, so the "full"
+// filter level may 400; the ladder falls back to "active only" (not to zero filter).
 const ACCOUNTS_URL_BASE = `${DATAVERSE_ORG_URL}/api/data/v9.2/accounts?$select=${ACCOUNTS_SELECT}`;
-const ACCOUNTS_URL_FILTERED = `${ACCOUNTS_URL_BASE}&$filter=scp_countrylookup/scp_iso eq 'US' or scp_countrylookup/scp_iso eq 'CA'`;
+const ACCOUNTS_URL_LEVELS = [
+  { level: "full", url: `${ACCOUNTS_URL_BASE}&$filter=statecode eq 0 and (scp_countrylookup/scp_iso eq 'US' or scp_countrylookup/scp_iso eq 'CA')` },
+  { level: "active_only", url: `${ACCOUNTS_URL_BASE}&$filter=statecode eq 0` },
+  { level: "none", url: ACCOUNTS_URL_BASE },
+];
 
 const CONTACTS_URL_BASE = `${DATAVERSE_ORG_URL}/api/data/v9.2/contacts?$select=${CONTACTS_SELECT}`;
-const CONTACTS_URL_FILTERED = `${CONTACTS_URL_BASE}&$filter=parentcustomerid_account/scp_countrylookup/scp_iso eq 'US' or parentcustomerid_account/scp_countrylookup/scp_iso eq 'CA'`;
+const CONTACTS_URL_LEVELS = [
+  { level: "full", url: `${CONTACTS_URL_BASE}&$filter=statecode eq 0 and (parentcustomerid_account/scp_countrylookup/scp_iso eq 'US' or parentcustomerid_account/scp_countrylookup/scp_iso eq 'CA')` },
+  { level: "active_only", url: `${CONTACTS_URL_BASE}&$filter=statecode eq 0` },
+  { level: "none", url: CONTACTS_URL_BASE },
+];
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -175,14 +191,14 @@ Deno.serve(async (req: Request) => {
     const token = await getDataverseToken();
 
     if (phase === "accounts") {
-      let rows: any[], nextLink: string | null, filterApplied: boolean | null;
+      let rows: any[], nextLink: string | null, filterLevel: string | null;
       if (cursor) {
         const page = await fetchOnePage(cursor, token);
         if (page.status !== 200) throw new Error(`Dataverse request failed: ${page.status} ${page.bodyText}`);
-        rows = page.rows; nextLink = page.nextLink; filterApplied = null;
+        rows = page.rows; nextLink = page.nextLink; filterLevel = null;
       } else {
-        const first = await fetchFirstPage(ACCOUNTS_URL_FILTERED, ACCOUNTS_URL_BASE, token);
-        rows = first.rows; nextLink = first.nextLink; filterApplied = first.filterApplied;
+        const first = await fetchFirstPageLadder(ACCOUNTS_URL_LEVELS, token);
+        rows = first.rows; nextLink = first.nextLink; filterLevel = first.filterLevel;
       }
 
       const { data: firms } = await svc.from("rep_firms").select("id, states").eq("status", "active");
@@ -236,17 +252,17 @@ Deno.serve(async (req: Request) => {
         matched,
         outOfTerritory,
         noState,
-        filterApplied,
+        filterLevel,
       });
     } else {
-      let rows: any[], nextLink: string | null, filterApplied: boolean | null;
+      let rows: any[], nextLink: string | null, filterLevel: string | null;
       if (cursor) {
         const page = await fetchOnePage(cursor, token);
         if (page.status !== 200) throw new Error(`Dataverse request failed: ${page.status} ${page.bodyText}`);
-        rows = page.rows; nextLink = page.nextLink; filterApplied = null;
+        rows = page.rows; nextLink = page.nextLink; filterLevel = null;
       } else {
-        const first = await fetchFirstPage(CONTACTS_URL_FILTERED, CONTACTS_URL_BASE, token);
-        rows = first.rows; nextLink = first.nextLink; filterApplied = first.filterApplied;
+        const first = await fetchFirstPageLadder(CONTACTS_URL_LEVELS, token);
+        rows = first.rows; nextLink = first.nextLink; filterLevel = first.filterLevel;
       }
 
       const parentIds = [...new Set(rows.map((r: any) => r._parentcustomerid_value).filter(Boolean))];
@@ -286,7 +302,7 @@ Deno.serve(async (req: Request) => {
         nextCursor: nextLink,
         processed: upserts.length,
         matchedToFirm,
-        filterApplied,
+        filterLevel,
       });
     }
   } catch (err) {
