@@ -48,6 +48,18 @@
   button.audac-btn { background: var(--audac-gold); color: #000; border: none; padding: 8px 16px; font-family: 'Montserrat', sans-serif; font-weight: 700; font-size: 11.5px; letter-spacing: .4px; text-transform: uppercase; cursor: pointer; border-radius: 3px; }
   button.audac-btn-outline { background: transparent; color: var(--audac-black); border: 1.5px solid var(--audac-black); padding: 7px 14px; font-family: 'Montserrat', sans-serif; font-weight: 500; font-size: 11.5px; letter-spacing: .4px; text-transform: uppercase; cursor: pointer; border-radius: 3px; }
 
+  .usa-map-wrap { display: flex; gap: 30px; flex-wrap: wrap; align-items: flex-start; margin: 4px 0 32px; }
+  .usa-map-grid { display: grid; grid-template-columns: repeat(12, 42px); grid-template-rows: repeat(8, 42px); gap: 4px; }
+  .state-tile {
+    display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700;
+    border-radius: 4px; cursor: pointer; transition: transform .1s ease; user-select: none;
+  }
+  .state-tile:hover { transform: scale(1.1); box-shadow: 0 0 0 2px var(--audac-gold); z-index: 1; position: relative; }
+  .map-legend { display: flex; flex-direction: column; gap: 7px; font-size: 12.5px; min-width: 210px; max-height: 380px; overflow-y: auto; padding-right: 4px; }
+  .legend-item { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .legend-item:hover { color: var(--audac-black); }
+  .legend-swatch { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; }
+
   #states-panel { display: none; background: var(--audac-section-bg); border-radius: 4px; padding: 20px 22px; margin-top: 20px; }
   #states-panel .sp-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; flex-wrap: wrap; gap: 10px; }
   #states-panel .sp-header h3 { margin: 0; color: var(--audac-black); font-size: 15px; }
@@ -80,6 +92,11 @@
 
   <div id="content" style="display:none;">
     <p class="upload-hint">Territory and state assignments drive the CRM sync's state-based fallback matching (used when an account isn't under a rep firm's own parent account in Dataverse) and the CSV upload resolution. A state assigned to more than one firm is flagged below — the sync will only ever pick one.</p>
+
+    <div class="usa-map-wrap">
+      <div class="usa-map-grid" id="usa-map-grid"></div>
+      <div class="map-legend" id="map-legend"></div>
+    </div>
 
     <table class="territory-table">
       <thead><tr><th>Rep Firm</th><th>Territory</th><th>States</th><th></th></tr></thead>
@@ -121,11 +138,73 @@
     ['PR', 'Puerto Rico'], ['GU', 'Guam'],
   ];
 
+  // Tile-grid map positions (x = column, y = row) for the 50 states + DC, based on the
+  // widely-used NYT-derived layout from kristw/gridmap-layout-usa (MIT licensed).
+  // Territories like PR/GU aren't part of this grid and so don't appear on the map.
+  const TILE_LAYOUT = [
+    { x: 0, y: 0, key: 'AK' }, { x: 11, y: 0, key: 'ME' },
+    { x: 9, y: 1, key: 'VT' }, { x: 10, y: 1, key: 'NH' }, { x: 11, y: 1, key: 'MA' },
+    { x: 1, y: 2, key: 'WA' }, { x: 2, y: 2, key: 'MT' }, { x: 3, y: 2, key: 'ND' }, { x: 4, y: 2, key: 'SD' },
+    { x: 5, y: 2, key: 'MN' }, { x: 6, y: 2, key: 'WI' }, { x: 7, y: 2, key: 'MI' },
+    { x: 9, y: 2, key: 'NY' }, { x: 10, y: 2, key: 'CT' }, { x: 11, y: 2, key: 'RI' },
+    { x: 1, y: 3, key: 'OR' }, { x: 2, y: 3, key: 'ID' }, { x: 3, y: 3, key: 'WY' }, { x: 4, y: 3, key: 'NE' },
+    { x: 5, y: 3, key: 'IA' }, { x: 6, y: 3, key: 'IL' }, { x: 7, y: 3, key: 'IN' }, { x: 8, y: 3, key: 'OH' },
+    { x: 9, y: 3, key: 'PA' }, { x: 10, y: 3, key: 'NJ' },
+    { x: 0, y: 4, key: 'CA' }, { x: 1, y: 4, key: 'NV' }, { x: 2, y: 4, key: 'UT' }, { x: 3, y: 4, key: 'CO' },
+    { x: 4, y: 4, key: 'KS' }, { x: 5, y: 4, key: 'MO' }, { x: 6, y: 4, key: 'KY' }, { x: 7, y: 4, key: 'WV' },
+    { x: 8, y: 4, key: 'DC' }, { x: 9, y: 4, key: 'MD' }, { x: 10, y: 4, key: 'DE' },
+    { x: 2, y: 5, key: 'AZ' }, { x: 3, y: 5, key: 'NM' }, { x: 4, y: 5, key: 'OK' }, { x: 5, y: 5, key: 'AR' },
+    { x: 6, y: 5, key: 'TN' }, { x: 7, y: 5, key: 'VA' }, { x: 8, y: 5, key: 'NC' },
+    { x: 3, y: 6, key: 'TX' }, { x: 4, y: 6, key: 'LA' }, { x: 5, y: 6, key: 'MS' }, { x: 6, y: 6, key: 'AL' },
+    { x: 7, y: 6, key: 'GA' }, { x: 8, y: 6, key: 'SC' },
+    { x: 0, y: 7, key: 'HI' }, { x: 7, y: 7, key: 'FL' },
+  ];
+  const STATE_NAME_BY_CODE = new Map(US_STATES);
+
   let firmsCache = [];
   let editingFirmId = null;
 
   function escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  }
+
+  // Deterministic color per firm name so it stays stable across reloads without storing a color.
+  function colorForFirm(name) {
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+    return `hsl(${hash % 360}, 55%, 52%)`;
+  }
+
+  function renderMap() {
+    const grid = document.getElementById('usa-map-grid');
+    grid.innerHTML = TILE_LAYOUT.map(t => {
+      const owner = firmsCache.find(f => Array.isArray(f.states) && f.states.includes(t.key));
+      const bg = owner ? colorForFirm(owner.name) : '#eee';
+      const color = owner ? '#fff' : '#aaa';
+      const stateName = STATE_NAME_BY_CODE.get(t.key) || t.key;
+      const title = owner ? `${stateName} — ${owner.name}` : `${stateName} — unassigned`;
+      return `<div class="state-tile" style="grid-column:${t.x + 1}; grid-row:${t.y + 1}; background:${bg}; color:${color};"
+        data-firm="${owner ? owner.id : ''}" title="${escapeHtml(title)}">${t.key}</div>`;
+    }).join('');
+
+    grid.querySelectorAll('.state-tile').forEach(el => {
+      if (el.dataset.firm) el.addEventListener('click', () => openStatesPanel(el.dataset.firm));
+    });
+  }
+
+  function renderLegend() {
+    const legend = document.getElementById('map-legend');
+    legend.innerHTML = firmsCache.map(f => `
+      <div class="legend-item" data-firm="${f.id}">
+        <span class="legend-swatch" style="background:${colorForFirm(f.name)}"></span>
+        ${escapeHtml(f.name)} (${(f.states || []).length})
+      </div>
+    `).join('') + `
+      <div class="legend-item"><span class="legend-swatch" style="background:#eee; border:1px solid #ddd;"></span>Unassigned</div>
+    `;
+    legend.querySelectorAll('.legend-item[data-firm]').forEach(el => {
+      el.addEventListener('click', () => openStatesPanel(el.dataset.firm));
+    });
   }
 
   async function guard() {
@@ -148,6 +227,8 @@
   }
 
   function renderFirms() {
+    renderMap();
+    renderLegend();
     const tbody = document.getElementById('firms-body');
     tbody.innerHTML = firmsCache.map(f => {
       const states = Array.isArray(f.states) ? f.states : [];
