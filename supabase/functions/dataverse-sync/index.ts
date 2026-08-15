@@ -162,6 +162,46 @@ const CONTACTS_URL_LEVELS = [
   { level: "none", url: CONTACTS_URL_BASE },
 ];
 
+// Diagnostic-only counts (Dataverse's /$count endpoint -- cheap, no row data pulled)
+// at each filter level, so the actual expected record counts can be checked before
+// running a real sync.
+const ACCOUNTS_COUNT_LEVELS = [
+  { level: "full", url: `${DATAVERSE_ORG_URL}/api/data/v9.2/accounts/$count?$filter=statecode eq 0 and (scp_countrylookup/scp_iso eq 'US' or scp_countrylookup/scp_iso eq 'CA')` },
+  { level: "active_only", url: `${DATAVERSE_ORG_URL}/api/data/v9.2/accounts/$count?$filter=statecode eq 0` },
+  { level: "none", url: `${DATAVERSE_ORG_URL}/api/data/v9.2/accounts/$count` },
+];
+const CONTACTS_COUNT_LEVELS = [
+  { level: "full", url: `${DATAVERSE_ORG_URL}/api/data/v9.2/contacts/$count?$filter=statecode eq 0 and (parentcustomerid_account/scp_countrylookup/scp_iso eq 'US' or parentcustomerid_account/scp_countrylookup/scp_iso eq 'CA')` },
+  { level: "active_only", url: `${DATAVERSE_ORG_URL}/api/data/v9.2/contacts/$count?$filter=statecode eq 0` },
+  { level: "none", url: `${DATAVERSE_ORG_URL}/api/data/v9.2/contacts/$count` },
+];
+
+async function fetchCount(url: string, token: string): Promise<number | null> {
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}`, Accept: "text/plain", "OData-MaxVersion": "4.0", "OData-Version": "4.0" },
+  });
+  if (!res.ok) return null;
+  const text = await res.text();
+  const n = parseInt(text, 10);
+  return isNaN(n) ? null : n;
+}
+
+async function getCounts(): Promise<Record<string, any>> {
+  const token = await getDataverseToken();
+  const [accFull, accActive, accNone, conFull, conActive, conNone] = await Promise.all([
+    fetchCount(ACCOUNTS_COUNT_LEVELS[0].url, token),
+    fetchCount(ACCOUNTS_COUNT_LEVELS[1].url, token),
+    fetchCount(ACCOUNTS_COUNT_LEVELS[2].url, token),
+    fetchCount(CONTACTS_COUNT_LEVELS[0].url, token),
+    fetchCount(CONTACTS_COUNT_LEVELS[1].url, token),
+    fetchCount(CONTACTS_COUNT_LEVELS[2].url, token),
+  ]);
+  return {
+    accounts: { activeUsCanada: accFull, activeOnly: accActive, total: accNone },
+    contacts: { activeUsCanada: conFull, activeOnly: conActive, total: conNone },
+  };
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -185,6 +225,11 @@ Deno.serve(async (req: Request) => {
     } catch {
       // no body -> start accounts phase from the beginning
     }
+
+    if (payload.phase === "count") {
+      return jsonResponse(await getCounts());
+    }
+
     const phase = payload.phase === "contacts" ? "contacts" : "accounts";
     const cursor = payload.cursor || null;
 

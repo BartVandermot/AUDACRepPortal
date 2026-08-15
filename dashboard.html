@@ -647,6 +647,7 @@
         ${s.isAccounts ? `
           <div class="action-row" style="margin-top:0;">
             <button class="audac-btn" id="sync-crm-btn">Sync from CRM</button>
+            <button class="audac-btn-outline" id="check-counts-btn">Check CRM Counts</button>
           </div>
           <div class="upload-hint">Pulls Accounts &amp; Contacts live from Dynamics 365 (Dataverse) via the app's secure server-side connection — the file upload below stays available as a fallback.</div>
         ` : ''}
@@ -660,6 +661,32 @@
     });
     const syncBtn = document.getElementById('sync-crm-btn');
     if (syncBtn) syncBtn.addEventListener('click', runCrmSync);
+    const countsBtn = document.getElementById('check-counts-btn');
+    if (countsBtn) countsBtn.addEventListener('click', runCheckCounts);
+  }
+
+  async function runCheckCounts() {
+    const statusEl = document.getElementById('status-crm_accounts');
+    const btn = document.getElementById('check-counts-btn');
+    btn.disabled = true;
+    btn.textContent = 'Checking…';
+    statusEl.className = '';
+    statusEl.textContent = '';
+
+    try {
+      const data = await invokeCrmSync({ phase: 'count' });
+      const fmt = (n) => n === null ? 'n/a (filter rejected)' : n;
+      statusEl.className = 'upload-status ok';
+      statusEl.textContent =
+        `Accounts in Dataverse — active US/Canada: ${fmt(data.accounts.activeUsCanada)}, active (any country): ${fmt(data.accounts.activeOnly)}, total: ${fmt(data.accounts.total)}. ` +
+        `Contacts in Dataverse — active US/Canada accounts: ${fmt(data.contacts.activeUsCanada)}, active (any): ${fmt(data.contacts.activeOnly)}, total: ${fmt(data.contacts.total)}.`;
+    } catch (err) {
+      statusEl.className = 'upload-status err';
+      statusEl.textContent = 'Count check failed: ' + err.message;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Check CRM Counts';
+    }
   }
 
   async function invokeCrmSync(body) {
