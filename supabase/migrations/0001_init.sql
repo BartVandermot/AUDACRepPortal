@@ -123,7 +123,7 @@ create table public.monthly_reviews (
 -- ============================================================
 create table public.csv_column_mappings (
   id uuid primary key default gen_random_uuid(),
-  source text not null unique check (source in ('education', 'pipeline', 'sellout')),
+  source text not null unique check (source in ('crm_accounts', 'education', 'pipeline', 'sellout')),
   mapping jsonb not null,
   updated_by uuid references public.profiles(id),
   updated_at timestamptz not null default now()

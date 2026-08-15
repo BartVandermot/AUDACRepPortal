@@ -47,9 +47,18 @@ on conflict (id) do update set role = excluded.role;
 
 ## CSV / XLSX uploads
 
-The manager dashboard's upload panels (Education, Pipeline, Sell-out) accept either `.csv` or `.xlsx`/`.xls` files, parsed entirely client-side (XLSX via SheetJS, no server round-trip). On first upload per source you map its columns to the schema fields; that mapping is saved in `csv_column_mappings` and auto-applied on later uploads from the same export.
+The manager dashboard's upload panels (CRM Accounts, Education, Pipeline, Sell-out) accept either `.csv` or `.xlsx`/`.xls` files, parsed entirely client-side (XLSX via SheetJS, no server round-trip). On first upload per source you map its columns to the schema fields; that mapping is saved in `csv_column_mappings` and auto-applied on later uploads from the same export.
 
-Real exports list end-customer/dealer company names (e.g. "AC PROMEDIA"), not rep firm names — there's no direct match against `rep_firms.name`. So company → rep firm is resolved through `rep_firm_aliases`: the first time a given company name appears, the dashboard prompts you to assign it to one of the 6 rep firms (or skip it as not rep-tracked); that assignment is remembered for every later upload. Rows for a company you've skipped, or one still unassigned, are excluded and counted in the upload summary.
+Real exports list end-customer/dealer company names (e.g. "AC PROMEDIA"), not rep firm names — there's no direct match against `rep_firms.name`. Company → rep firm resolution happens in two layers, checked in order:
+
+1. **CRM Accounts** (`crm_accounts`) — upload a CRM Accounts export (currently a POC for a future live D365/Dataverse sync; see below) with address/state data, and the dashboard resolves each account's rep firm automatically by matching its state against `rep_firms.states`. Re-uploading this source upserts by account name, refreshing the reference list.
+2. **Manual assignment** (`rep_firm_aliases`) — fallback for any company not found in `crm_accounts`. The first time a given company name appears in an Education/Pipeline/Sell-out upload, the dashboard prompts you to assign it to one of the 6 rep firms (or skip it as not rep-tracked); that assignment is remembered for every later upload.
+
+Rows for a company that's unresolved by either layer, or explicitly skipped, are excluded and counted in the upload summary.
+
+### Live CRM connection (future phase)
+
+A live Dynamics 365/Dataverse connection (pulling Accounts/Contacts/Opportunities automatically instead of a manual export) was scoped but deferred — it needs a server-side component (a Supabase Edge Function) to hold API credentials securely, plus an Entra ID app registration and a Dataverse Application User with read-only access. The CRM Accounts upload here is a stand-in for that: same state-based resolution logic, manual export instead of a live API pull.
 
 ## Deploying
 

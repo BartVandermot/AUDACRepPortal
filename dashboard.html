@@ -189,7 +189,7 @@
 
   // ---------- Scorecard ----------
   async function loadFirms() {
-    const { data } = await client.from('rep_firms').select('id, name, territory').eq('status', 'active').order('name');
+    const { data } = await client.from('rep_firms').select('id, name, territory, states').eq('status', 'active').order('name');
     firmsCache = data || [];
   }
 
@@ -420,6 +420,22 @@
   // a saved alias table (rep_firm_aliases) rather than a direct name match.
   const SOURCES = [
     {
+      source: 'crm_accounts', label: 'CRM Accounts', hint: 'CRM Accounts export (.xlsx or .csv) — resolves rep firm by state', table: 'crm_accounts',
+      isAccounts: true,
+      fields: [
+        { key: 'account_name', label: 'Account Name', required: true },
+        { key: 'external_id', label: 'External/CRM ID', required: false },
+        { key: 'street', label: 'Street Address', required: false },
+        { key: 'city', label: 'City', required: false },
+        { key: 'state', label: 'State / Province', required: false },
+        { key: 'zip', label: 'ZIP / Postal Code', required: false },
+        { key: 'country', label: 'Country', required: false },
+        { key: 'website', label: 'Website', required: false },
+        { key: 'relationship_type', label: 'Relationship Type', required: false },
+        { key: 'business_type', label: 'Business Type', required: false },
+      ],
+    },
+    {
       source: 'education', label: 'Education Records', hint: 'education.audac.eu export (.xlsx or .csv)', table: 'education_records',
       fields: [
         { key: 'company', label: 'Company / Dealer Name', required: true },
@@ -456,6 +472,46 @@
 
   const uploadState = {};
   const aliasCache = { loaded: false, byKey: new Map() };
+  const accountsCache = { loaded: false, byKey: new Map() };
+
+  const US_STATE_NAMES = {
+    alabama: 'AL', alaska: 'AK', arizona: 'AZ', arkansas: 'AR', california: 'CA', colorado: 'CO',
+    connecticut: 'CT', delaware: 'DE', 'district of columbia': 'DC', florida: 'FL', georgia: 'GA',
+    hawaii: 'HI', idaho: 'ID', illinois: 'IL', indiana: 'IN', iowa: 'IA', kansas: 'KS', kentucky: 'KY',
+    louisiana: 'LA', maine: 'ME', maryland: 'MD', massachusetts: 'MA', michigan: 'MI', minnesota: 'MN',
+    mississippi: 'MS', missouri: 'MO', montana: 'MT', nebraska: 'NE', nevada: 'NV', 'new hampshire': 'NH',
+    'new jersey': 'NJ', 'new mexico': 'NM', 'new york': 'NY', 'north carolina': 'NC', 'north dakota': 'ND',
+    ohio: 'OH', oklahoma: 'OK', oregon: 'OR', pennsylvania: 'PA', 'rhode island': 'RI',
+    'south carolina': 'SC', 'south dakota': 'SD', tennessee: 'TN', texas: 'TX', utah: 'UT', vermont: 'VT',
+    virginia: 'VA', washington: 'WA', 'west virginia': 'WV', wisconsin: 'WI', wyoming: 'WY',
+    'puerto rico': 'PR', guam: 'GU',
+  };
+  const US_STATE_CODES = new Set(Object.values(US_STATE_NAMES));
+
+  function normalizeState(raw) {
+    if (!raw) return null;
+    const s = String(raw).trim();
+    if (!s) return null;
+    if (s.length === 2 && US_STATE_CODES.has(s.toUpperCase())) return s.toUpperCase();
+    return US_STATE_NAMES[s.toLowerCase()] || null;
+  }
+
+  function normalizeCountry(raw) {
+    if (!raw) return null;
+    const s = String(raw).trim();
+    if (!s) return null;
+    if (s.length === 2) return s.toUpperCase();
+    const nl = s.toLowerCase();
+    if (nl.includes('united states')) return 'US';
+    if (nl === 'canada') return 'CA';
+    return null;
+  }
+
+  function resolveFirmIdByState(stateCode, countryCode) {
+    if (!stateCode || countryCode !== 'US') return null;
+    const firm = firmsCache.find(f => Array.isArray(f.states) && f.states.includes(stateCode));
+    return firm ? firm.id : null;
+  }
 
   function parseCSV(text) {
     text = text.replace(/^﻿/, '');
@@ -561,6 +617,14 @@
     aliasCache.byKey = new Map((data || []).map(r => [r.alias_key, r.rep_firm_id]));
     aliasCache.loaded = true;
     return aliasCache.byKey;
+  }
+
+  async function loadCrmAccounts(force) {
+    if (accountsCache.loaded && !force) return accountsCache.byKey;
+    const { data } = await client.from('crm_accounts').select('name_key, rep_firm_id');
+    accountsCache.byKey = new Map((data || []).map(r => [r.name_key, r.rep_firm_id]));
+    accountsCache.loaded = true;
+    return accountsCache.byKey;
   }
 
   function renderUploadPanels() {
@@ -680,8 +744,14 @@
       );
     }
 
+    if (sourceConfig.isAccounts) {
+      await importCrmAccounts(sourceConfig, mapping);
+      return;
+    }
+
     const { headers, rows } = uploadState[sourceConfig.source];
     const companyIdx = headers.indexOf(mapping.company);
+    const accountsByKey = await loadCrmAccounts();
     const aliasByKey = await loadAliases();
 
     const distinctCompanies = new Map(); // normalized -> display text
@@ -689,7 +759,9 @@
       const raw = String(r[companyIdx] || '').trim();
       if (!raw) continue;
       const key = normalizeCompany(raw);
-      if (!aliasByKey.has(key) && !distinctCompanies.has(key)) distinctCompanies.set(key, raw);
+      // Already resolvable via the CRM accounts extract or a prior manual assignment — no need to ask again.
+      if (accountsByKey.has(key) || aliasByKey.has(key)) continue;
+      if (!distinctCompanies.has(key)) distinctCompanies.set(key, raw);
     }
 
     if (distinctCompanies.size > 0) {
@@ -698,6 +770,68 @@
     }
 
     await finishImport(sourceConfig, mapping);
+  }
+
+  async function importCrmAccounts(sourceConfig, mapping) {
+    const { headers, rows } = uploadState[sourceConfig.source];
+    const statusEl = document.getElementById(`status-${sourceConfig.source}`);
+
+    function val(key, r) {
+      const h = mapping[key];
+      const idx = h ? headers.indexOf(h) : -1;
+      const v = idx >= 0 ? r[idx] : null;
+      return (v === undefined || v === null || String(v).trim() === '') ? null : String(v).trim();
+    }
+
+    const toUpsert = [];
+    let matched = 0, outOfTerritory = 0, noState = 0;
+    for (const r of rows) {
+      const name = val('account_name', r);
+      if (!name) continue;
+      const stateRaw = val('state', r);
+      const countryRaw = val('country', r);
+      const stateCode = normalizeState(stateRaw);
+      const countryCode = normalizeCountry(countryRaw);
+      const repFirmId = resolveFirmIdByState(stateCode, countryCode);
+      if (repFirmId) matched++;
+      else if (stateCode && countryCode === 'US') outOfTerritory++;
+      else noState++;
+
+      toUpsert.push({
+        external_id: val('external_id', r),
+        name,
+        name_key: normalizeCompany(name),
+        street: val('street', r),
+        city: val('city', r),
+        state_raw: stateRaw,
+        state_code: stateCode,
+        zip: val('zip', r),
+        country_code: countryCode,
+        website: val('website', r),
+        relationship_type: val('relationship_type', r),
+        business_type: val('business_type', r),
+        rep_firm_id: repFirmId,
+        updated_by: currentUser.id,
+        updated_at: new Date().toISOString(),
+      });
+    }
+
+    if (!toUpsert.length) {
+      statusEl.className = 'upload-status err';
+      statusEl.textContent = 'No rows with an account name were found to import.';
+      return;
+    }
+
+    const { error } = await client.from('crm_accounts').upsert(toUpsert, { onConflict: 'name_key' });
+    if (error) {
+      statusEl.className = 'upload-status err';
+      statusEl.textContent = 'Import failed: ' + error.message;
+      return;
+    }
+    await loadCrmAccounts(true);
+    statusEl.className = 'upload-status ' + (matched ? 'ok' : 'warn');
+    statusEl.textContent = `Upserted ${toUpsert.length} account(s). ${matched} matched to a rep firm by state, ` +
+      `${outOfTerritory} recognized (US) but outside configured territories, ${noState} missing/unrecognized state.`;
   }
 
   function renderAliasAssignment(sourceConfig, area, mapping, distinctCompanies) {
@@ -742,6 +876,7 @@
 
   async function finishImport(sourceConfig, mapping) {
     const { headers, rows } = uploadState[sourceConfig.source];
+    const accountsByKey = await loadCrmAccounts();
     const aliasByKey = await loadAliases();
     const companyIdx = headers.indexOf(mapping.company);
     const month = monthInput.value;
@@ -753,7 +888,11 @@
 
     for (const r of rows) {
       const companyRaw = String(r[companyIdx] || '').trim();
-      const repFirmId = companyRaw ? aliasByKey.get(normalizeCompany(companyRaw)) : undefined;
+      const key = companyRaw ? normalizeCompany(companyRaw) : null;
+      // CRM accounts (state-resolved) take precedence over a manual alias assignment.
+      let repFirmId;
+      if (key && accountsByKey.has(key)) repFirmId = accountsByKey.get(key);
+      else if (key && aliasByKey.has(key)) repFirmId = aliasByKey.get(key);
       if (!repFirmId) { skippedNoFirm++; continue; }
 
       const record = { rep_firm_id: repFirmId, reporting_month: month };
