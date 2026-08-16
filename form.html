@@ -15,6 +15,7 @@
     --audac-text: #737373;
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body {
     margin: 0;
     font-family: 'Montserrat', sans-serif;
@@ -142,6 +143,27 @@
   .combo-status.error { color: #b3261e; }
   .contact-field { display: none; }
   .contact-field.active { display: block; }
+
+  #auth-bar { font-size: 12.5px; color: var(--audac-text); margin-bottom: 16px; text-align: right; }
+  .link-btn { background: none; border: none; padding: 0; font: inherit; font-size: 12.5px; cursor: pointer; text-decoration: underline; color: var(--audac-black); }
+  .link-btn.danger { color: #b3261e; }
+  #signin-form { display: inline-flex; align-items: center; gap: 8px; margin-top: 6px; }
+  #signin-form input { width: 220px; font-size: 13px; padding: 7px 10px; display: inline-block; }
+  #signin-status { font-size: 12px; }
+
+  table.detail { width: 100%; border-collapse: collapse; background: #fff; font-size: 12.5px; }
+  table.detail th, table.detail td { padding: 8px 10px; border-bottom: 1px solid #eee; text-align: left; }
+  table.detail th { background: #f1f1f1; }
+  tr.activity-edit-row td { background: #fbf7ee; padding: 16px; border-bottom: 2px solid var(--audac-gold); }
+  .edit-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 14px; margin-bottom: 10px; }
+  .edit-grid label, tr.activity-edit-row > td > label { display: block; font-size: 11.5px; font-weight: 500; color: var(--audac-black); margin-bottom: 10px; }
+  .edit-grid input, .edit-grid select, tr.activity-edit-row textarea {
+    display: block; width: 100%; font-size: 12.5px; padding: 6px 8px; margin-top: 3px;
+  }
+  tr.activity-edit-row textarea { min-height: 44px; resize: vertical; }
+  .ae-checkbox { display: flex !important; align-items: center; gap: 6px; margin-top: 12px; }
+  .ae-checkbox input { width: auto !important; margin: 0; }
+  .ae-status { font-size: 12px; margin-left: 8px; color: #b3261e; }
 </style>
 </head>
 <body>
@@ -156,6 +178,27 @@
 </header>
 
 <main>
+  <div id="auth-bar">
+    <div id="auth-signed-out">
+      <button type="button" class="link-btn" id="show-signin-btn">Sign in to view or edit your past submissions</button>
+      <div id="signin-form" hidden>
+        <input type="email" id="signin-email" placeholder="you@example.com">
+        <button type="button" class="audac-btn-outline" id="send-magic-link-btn">Send Magic Link</button>
+        <span id="signin-status"></span>
+      </div>
+    </div>
+    <div id="auth-signed-in" hidden>
+      Signed in as <strong id="signed-in-email"></strong> —
+      <button type="button" class="link-btn" id="sign-out-btn">Sign Out</button>
+    </div>
+  </div>
+
+  <div id="my-submissions-section" hidden>
+    <h2 style="padding-left:4px;">My Submissions</h2>
+    <div id="my-submissions-list"></div>
+    <hr style="border:none; border-top:1px solid #eee; margin:28px 0;">
+  </div>
+
   <div id="error-banner"></div>
 
   <form id="activity-form">
@@ -205,6 +248,8 @@
   ];
 
   let entryCounter = 0;
+  let firmsCache = [];
+  let currentSession = null;
   const entriesContainer = document.getElementById('entries-container');
   const firmSelect = document.getElementById('firm-select');
   const monthInput = document.getElementById('reporting-month');
@@ -385,6 +430,188 @@
     };
   }
 
+  // ---------- Light auth (passwordless magic link) + My Submissions ----------
+  // The public form stays fully anonymous by default (no login required to
+  // submit, matching the original design). Signing in is purely opt-in and only
+  // unlocks viewing/editing entries THIS signed-in account created --
+  // activity_entries.created_by is set at insert time when signed in, and RLS
+  // ("created_by = auth.uid()") is what actually enforces the scoping, not this
+  // client code. Anonymous submissions keep created_by null, exactly as before.
+  async function initAuth() {
+    if (window.location.hash.includes('access_token')) {
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+    const { data: { session } } = await client.auth.getSession();
+    currentSession = session;
+    renderAuthState();
+    if (session) loadMySubmissions();
+
+    client.auth.onAuthStateChange((_event, session) => {
+      currentSession = session;
+      renderAuthState();
+      if (session) loadMySubmissions();
+      else document.getElementById('my-submissions-section').hidden = true;
+    });
+  }
+
+  function renderAuthState() {
+    document.getElementById('auth-signed-out').hidden = !!currentSession;
+    document.getElementById('auth-signed-in').hidden = !currentSession;
+    if (currentSession) document.getElementById('signed-in-email').textContent = currentSession.user.email;
+  }
+
+  document.getElementById('show-signin-btn').addEventListener('click', () => {
+    document.getElementById('signin-form').hidden = false;
+    document.getElementById('show-signin-btn').hidden = true;
+  });
+
+  document.getElementById('send-magic-link-btn').addEventListener('click', async () => {
+    const email = document.getElementById('signin-email').value.trim();
+    const statusEl = document.getElementById('signin-status');
+    if (!email) { statusEl.textContent = 'Enter your email first.'; return; }
+    const btn = document.getElementById('send-magic-link-btn');
+    btn.disabled = true;
+    statusEl.textContent = 'Sending…';
+    const { error } = await client.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: window.location.href.split('#')[0] },
+    });
+    btn.disabled = false;
+    statusEl.textContent = error ? ('Error: ' + error.message) : 'Check your email for a sign-in link.';
+  });
+
+  document.getElementById('sign-out-btn').addEventListener('click', async () => {
+    await client.auth.signOut();
+  });
+
+  async function loadMySubmissions() {
+    const section = document.getElementById('my-submissions-section');
+    section.hidden = false;
+    const container = document.getElementById('my-submissions-list');
+    container.innerHTML = '<div class="hint">Loading…</div>';
+    // RLS scopes this to created_by = auth.uid() automatically -- no explicit
+    // filter needed, and none of it depends on which firm this session is for.
+    const { data, error } = await client.from('activity_entries').select('*').order('entry_date', { ascending: false });
+    if (error) {
+      container.innerHTML = `<div class="hint">Failed to load your submissions: ${escapeHtml(error.message)}</div>`;
+      return;
+    }
+    if (!data.length) {
+      container.innerHTML = '<div class="hint">No submissions linked to this account yet. Entries you submit while signed in will show up here.</div>';
+      return;
+    }
+    container.innerHTML = renderMySubmissionsTable(data);
+    wireActivityRows(container, data, loadMySubmissions);
+  }
+
+  function renderMySubmissionsTable(rows) {
+    return `<table class="detail"><thead><tr>
+      <th>Date</th><th>Firm</th><th>Account</th><th>Contact Type</th><th>Activity Type</th><th>Topic / Opportunity</th><th>Actions</th>
+    </tr></thead><tbody>${rows.map(r => activityRowHtml(r)).join('')}</tbody></table>`;
+  }
+
+  function activityRowHtml(r) {
+    const firmName = escapeHtml((firmsCache.find(f => f.id === r.rep_firm_id) || {}).name || '');
+    return `
+      <tr data-activity-id="${r.id}">
+        <td>${r.entry_date}</td>
+        <td>${firmName}</td>
+        <td>${escapeHtml(r.account_name)}</td>
+        <td>${r.contact_type}</td>
+        <td>${r.activity_type}</td>
+        <td>${escapeHtml(r.topic_opportunity || '')}</td>
+        <td>
+          <button type="button" class="link-btn" data-edit-activity="${r.id}">Edit</button>
+          <button type="button" class="link-btn danger" data-delete-activity="${r.id}">Delete</button>
+        </td>
+      </tr>
+    `;
+  }
+
+  function wireActivityRows(container, rows, onChanged) {
+    const byId = new Map(rows.map(r => [String(r.id), r]));
+    container.querySelectorAll('[data-edit-activity]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tr = btn.closest('tr');
+        openActivityEditor(tr, byId.get(btn.dataset.editActivity), onChanged);
+      });
+    });
+    container.querySelectorAll('[data-delete-activity]').forEach(btn => {
+      btn.addEventListener('click', () => deleteActivityEntry(btn.dataset.deleteActivity, onChanged));
+    });
+  }
+
+  function openActivityEditor(tr, row, onChanged) {
+    const table = tr.closest('table');
+    const existingNext = tr.nextElementSibling;
+    if (existingNext && existingNext.classList.contains('activity-edit-row')) {
+      existingNext.remove();
+      return;
+    }
+    table.querySelectorAll('.activity-edit-row').forEach(el => el.remove());
+
+    const colspan = tr.children.length;
+    const editRow = document.createElement('tr');
+    editRow.className = 'activity-edit-row';
+    editRow.innerHTML = `<td colspan="${colspan}">
+      <div class="edit-grid">
+        <label>Date<input type="date" class="ae-date" value="${row.entry_date}"></label>
+        <label>Account<input type="text" class="ae-account" value="${escapeHtml(row.account_name)}"></label>
+        <label>Contact<input type="text" class="ae-contact" value="${escapeHtml(row.contact_name || '')}"></label>
+        <label>Contact Type<select class="ae-contact-type">${CONTACT_TYPES.map(v => `<option value="${v}">${v}</option>`).join('')}</select></label>
+        <label>Activity Type<select class="ae-activity-type">${ACTIVITY_TYPES.map(v => `<option value="${v}">${v}</option>`).join('')}</select></label>
+        <label class="ae-checkbox"><input type="checkbox" class="ae-demo" ${row.demo_gear_used ? 'checked' : ''}> Demo gear used</label>
+      </div>
+      <label>Topic / Opportunity<textarea class="ae-topic">${escapeHtml(row.topic_opportunity || '')}</textarea></label>
+      <label>Solution Feedback<textarea class="ae-solution">${escapeHtml(row.solution_feedback || '')}</textarea></label>
+      <label>Competitive Feedback<textarea class="ae-competitive">${escapeHtml(row.competitive_feedback || '')}</textarea></label>
+      <label>Additional Comments<textarea class="ae-additional">${escapeHtml(row.additional_comments || '')}</textarea></label>
+      <div class="actions" style="justify-content:flex-start; gap:10px;">
+        <button type="button" class="audac-btn" data-ae-save>Save</button>
+        <button type="button" class="audac-btn-outline" data-ae-cancel>Cancel</button>
+        <span class="ae-status"></span>
+      </div>
+    </td>`;
+    tr.after(editRow);
+    editRow.querySelector('.ae-contact-type').value = row.contact_type;
+    editRow.querySelector('.ae-activity-type').value = row.activity_type;
+
+    editRow.querySelector('[data-ae-cancel]').addEventListener('click', () => editRow.remove());
+    editRow.querySelector('[data-ae-save]').addEventListener('click', async () => {
+      const statusEl = editRow.querySelector('.ae-status');
+      const accountName = editRow.querySelector('.ae-account').value.trim();
+      if (!accountName) { statusEl.textContent = 'Account name is required.'; return; }
+      const patch = {
+        entry_date: editRow.querySelector('.ae-date').value,
+        account_name: accountName,
+        contact_name: editRow.querySelector('.ae-contact').value.trim() || null,
+        contact_type: editRow.querySelector('.ae-contact-type').value,
+        activity_type: editRow.querySelector('.ae-activity-type').value,
+        demo_gear_used: editRow.querySelector('.ae-demo').checked,
+        topic_opportunity: editRow.querySelector('.ae-topic').value.trim() || null,
+        solution_feedback: editRow.querySelector('.ae-solution').value.trim() || null,
+        competitive_feedback: editRow.querySelector('.ae-competitive').value.trim() || null,
+        additional_comments: editRow.querySelector('.ae-additional').value.trim() || null,
+      };
+      statusEl.style.color = '#999';
+      statusEl.textContent = 'Saving…';
+      const { error } = await client.from('activity_entries').update(patch).eq('id', row.id);
+      if (error) {
+        statusEl.style.color = '#b3261e';
+        statusEl.textContent = 'Error: ' + error.message;
+        return;
+      }
+      onChanged();
+    });
+  }
+
+  async function deleteActivityEntry(id, onChanged) {
+    if (!confirm('Delete this submission? This cannot be undone.')) return;
+    const { error } = await client.from('activity_entries').delete().eq('id', id);
+    if (error) { alert('Delete failed: ' + error.message); return; }
+    onChanged();
+  }
+
   function addEntry() {
     entryCounter += 1;
     const idx = entryCounter;
@@ -488,6 +715,7 @@
       showError('Could not load rep firms: ' + error.message);
       return;
     }
+    firmsCache = data;
 
     if (presetFirmId) {
       const match = data.find(f => f.id === presetFirmId);
@@ -557,6 +785,7 @@
     const rows = entries.map(e => ({
       rep_firm_id: firmId,
       reporting_month: month,
+      created_by: currentSession?.user?.id || null,
       ...e,
     }));
 
@@ -575,6 +804,7 @@
       `${entries.length} activity ${entries.length === 1 ? 'entry' : 'entries'} submitted for ${firmLabel} — ${month}.`;
     document.getElementById('activity-form').style.display = 'none';
     document.getElementById('confirmation').style.display = 'block';
+    if (currentSession) loadMySubmissions();
   });
 
   document.getElementById('submit-more-btn').addEventListener('click', () => {
@@ -586,7 +816,10 @@
 
   monthInput.value = currentMonthValue();
   addEntry();
-  loadFirms();
+  (async () => {
+    await loadFirms(); // firmsCache must be populated before My Submissions can show firm names
+    await initAuth();
+  })();
 </script>
 </body>
 </html>
