@@ -116,6 +116,15 @@
           <option value="__unassigned">Unassigned</option>
         </select>
       </div>
+      <div class="field">
+        <label for="source-filter">Source</label>
+        <select id="source-filter">
+          <option value="">All</option>
+          <option value="manual">Manually added by reps</option>
+          <option value="dataverse">Synced from CRM</option>
+        </select>
+      </div>
+      <button class="audac-btn-outline" id="export-btn">Export to Excel</button>
     </div>
 
     <div class="result-count" id="result-count"></div>
@@ -136,6 +145,7 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
   const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
@@ -169,12 +179,14 @@
   function renderKpis() {
     const total = accountsCache.length;
     const matched = accountsCache.filter(a => a.rep_firm_id).length;
+    const manual = accountsCache.filter(a => a.source === 'manual').length;
     const totalContacts = [...contactCountByAccount.values()].reduce((s, n) => s + n, 0);
     document.getElementById('kpi-row').innerHTML = `
       <div class="kpi-tile"><div class="kpi-label">Accounts Synced</div><div class="kpi-value">${total}</div></div>
       <div class="kpi-tile"><div class="kpi-label">Assigned to a Rep Firm</div><div class="kpi-value">${matched}</div></div>
       <div class="kpi-tile"><div class="kpi-label">Unassigned</div><div class="kpi-value">${total - matched}</div></div>
       <div class="kpi-tile"><div class="kpi-label">Contacts Synced</div><div class="kpi-value">${totalContacts}</div></div>
+      <div class="kpi-tile"><div class="kpi-label">Manually Added — Needs CRM Import</div><div class="kpi-value">${manual}</div></div>
     `;
   }
 
@@ -192,13 +204,20 @@
     return hay.includes(q);
   }
 
-  function renderAccounts() {
+  function getFilteredAccounts() {
     const q = document.getElementById('search-input').value.trim().toLowerCase();
     const firmFilter = document.getElementById('firm-filter').value;
+    const sourceFilter = document.getElementById('source-filter').value;
 
     let rows = accountsCache.filter(a => matchesSearch(a, q));
     if (firmFilter === '__unassigned') rows = rows.filter(a => !a.rep_firm_id);
     else if (firmFilter) rows = rows.filter(a => a.rep_firm_id === firmFilter);
+    if (sourceFilter) rows = rows.filter(a => (a.source || 'dataverse') === sourceFilter);
+    return rows;
+  }
+
+  function renderAccounts() {
+    const rows = getFilteredAccounts();
 
     document.getElementById('result-count').textContent = `Showing ${rows.length} of ${accountsCache.length} accounts`;
 
@@ -291,11 +310,82 @@
 
   document.getElementById('search-input').addEventListener('input', renderAccounts);
   document.getElementById('firm-filter').addEventListener('change', renderAccounts);
+  document.getElementById('source-filter').addEventListener('change', renderAccounts);
+
+  // Manually-added accounts/contacts never make it into Dataverse on their own --
+  // a manager has to key them in there by hand. This gives them an .xlsx of exactly
+  // what's currently filtered (name a source="Manually added" filter first to get
+  // just those) plus a second sheet with their contacts, ready to work from during
+  // that CRM data entry.
+  async function exportToExcel() {
+    const btn = document.getElementById('export-btn');
+    btn.disabled = true;
+    btn.textContent = 'Exporting…';
+    try {
+      const rows = getFilteredAccounts();
+      if (!rows.length) {
+        alert('No accounts match the current filters — nothing to export.');
+        return;
+      }
+      const firmNameById = new Map(firmsCache.map(f => [f.id, f.name]));
+      const accountSheetRows = rows.map(a => ({
+        'Account Name': a.name,
+        'Street': a.street || '',
+        'City': a.city || '',
+        'State': a.state_code || a.state_raw || '',
+        'Zip': a.zip || '',
+        'Country': a.country_code || '',
+        'Website': a.website || '',
+        'Relationship Type': a.relationship_type || '',
+        'Business Type': a.business_type || '',
+        'AUDAC Partner Type': a.audac_partner_type || '',
+        'Classification': a.classification || '',
+        'Rep Firm': a.rep_firm_id ? (firmNameById.get(a.rep_firm_id) || '') : '',
+        'Source': a.source === 'manual' ? 'Manually added by rep' : 'Synced from CRM',
+        'External ID': a.source === 'manual' ? '' : a.external_id,
+      }));
+
+      // Fetches the full contacts table rather than filtering server-side with
+      // .in(accountIds) -- with "All" selected that's 500+ GUIDs, long enough to
+      // risk hitting a URL length limit. Filtering client-side against the
+      // exported account set avoids that entirely.
+      const accountIds = new Set(rows.map(a => a.external_id));
+      const { data: allContacts, error: contactsErr } = await client
+        .from('crm_contacts')
+        .select('full_name, email, parent_account_external_id, source')
+        .order('full_name');
+      if (contactsErr) throw contactsErr;
+      const contacts = (allContacts || []).filter(c => accountIds.has(c.parent_account_external_id));
+
+      const accountNameByExternalId = new Map(rows.map(a => [a.external_id, a.name]));
+      const contactSheetRows = contacts.map(c => ({
+        'Contact Name': c.full_name || '',
+        'Email': c.email || '',
+        'Account': accountNameByExternalId.get(c.parent_account_external_id) || '',
+        'Source': c.source === 'manual' ? 'Manually added by rep' : 'Synced from CRM',
+      }));
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(accountSheetRows), 'Accounts');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(contactSheetRows), 'Contacts');
+
+      const sourceFilter = document.getElementById('source-filter').value;
+      const suffix = sourceFilter === 'manual' ? 'manually-added' : sourceFilter === 'dataverse' ? 'crm-synced' : 'all';
+      const dateStr = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(wb, `audac-crm-accounts-${suffix}-${dateStr}.xlsx`);
+    } catch (err) {
+      alert('Export failed: ' + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Export to Excel';
+    }
+  }
+  document.getElementById('export-btn').addEventListener('click', exportToExcel);
 
   async function loadAll() {
     const [firmsRes, accountsRes, contactsRes] = await Promise.all([
       client.from('rep_firms').select('id, name, crm_account_external_id').eq('status', 'active').order('name'),
-      client.from('crm_accounts').select('external_id, name, city, state_raw, country_code, relationship_type, audac_partner_type, classification, rep_firm_id, parent_account_external_id, source').order('name'),
+      client.from('crm_accounts').select('external_id, name, street, city, state_raw, state_code, zip, country_code, website, relationship_type, business_type, audac_partner_type, classification, rep_firm_id, parent_account_external_id, source').order('name'),
       client.from('crm_contacts').select('parent_account_external_id'),
     ]);
 
