@@ -60,6 +60,26 @@
   table.detail th { background: #f1f1f1; }
   .empty-note { font-size: 12.5px; color: #aaa; padding: 10px 2px; }
 
+  #alerts-panel { display: none; margin-bottom: 20px; }
+  .alert-row { padding: 12px 16px; border-radius: 4px; font-size: 13px; margin-bottom: 8px; }
+  .alert-row a { color: inherit; text-decoration: underline; cursor: pointer; }
+  .alert-row.alert-red { background: var(--red-bg); color: var(--red); }
+  .alert-row.alert-amber { background: var(--amber-bg); color: var(--amber); }
+
+  .link-btn { background: none; border: none; padding: 0; font: inherit; font-size: 12px; cursor: pointer; text-decoration: underline; color: var(--audac-black); margin-right: 10px; }
+  .link-btn.danger { color: var(--red); }
+  tr.activity-edit-row td { background: #fff; padding: 16px; border-bottom: 2px solid var(--audac-gold); }
+  .edit-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 14px; margin-bottom: 10px; }
+  .edit-grid label, tr.activity-edit-row > td > label { display: block; font-size: 11.5px; font-weight: 500; color: var(--audac-black); margin-bottom: 10px; }
+  .edit-grid input, .edit-grid select, tr.activity-edit-row textarea {
+    display: block; width: 100%; font-family: 'Montserrat', sans-serif; font-size: 12.5px; padding: 6px 8px; margin-top: 3px;
+    border: 1px solid #ddd; border-radius: 3px;
+  }
+  tr.activity-edit-row textarea { min-height: 44px; resize: vertical; }
+  .ae-checkbox { display: flex !important; align-items: center; gap: 6px; margin-top: 12px; }
+  .ae-checkbox input { width: auto !important; margin: 0; }
+  .ae-status { font-size: 12px; margin-left: 8px; color: var(--red); }
+
   button.audac-btn {
     background: var(--audac-gold); color: #000; border: none; padding: 11px 20px;
     font-family: 'Montserrat', sans-serif; font-weight: 700; font-size: 12.5px; letter-spacing: .4px;
@@ -115,6 +135,8 @@
     </div>
   </div>
 
+  <div id="alerts-panel"></div>
+
   <div id="loading-note">Loading scorecard…</div>
   <table class="scorecard" id="scorecard-table" style="display:none;">
     <thead>
@@ -148,6 +170,32 @@
     <div id="dd-dormant"></div>
   </div>
 
+  <h2 class="section-title">Search All Activity</h2>
+  <div class="toolbar">
+    <div>
+      <label for="activity-search-input">Search</label>
+      <input type="text" id="activity-search-input" placeholder="Account, contact, topic, feedback…">
+    </div>
+    <div>
+      <label for="activity-search-firm">Rep Firm</label>
+      <select id="activity-search-firm"><option value="">All</option></select>
+    </div>
+    <div>
+      <label for="activity-search-type">Activity Type</label>
+      <select id="activity-search-type"><option value="">All</option></select>
+    </div>
+    <div>
+      <label for="activity-search-from">From</label>
+      <input type="month" id="activity-search-from">
+    </div>
+    <div>
+      <label for="activity-search-to">To</label>
+      <input type="month" id="activity-search-to">
+    </div>
+  </div>
+  <div class="result-count" id="activity-search-count" style="font-size:12.5px; color:#999; margin-bottom:10px;"></div>
+  <div id="activity-search-results"></div>
+
   <h2 class="section-title">CSV Uploads</h2>
   <div id="upload-panels"></div>
 </main>
@@ -163,6 +211,14 @@
   let firmsCache = [];
   let scorecardCache = [];
   let selectedFirmId = null;
+  let dormantByFirm = new Map();
+  let allActivityCache = [];
+
+  const CONTACT_TYPES = ['Dealer', 'Consultant', 'End User'];
+  const ACTIVITY_TYPES = [
+    'Brand Introduction', 'Demo', 'Follow Up', 'Lunch & Learn',
+    'Online Demo', 'Dealer Training', 'Other',
+  ];
 
   const monthInput = document.getElementById('month-select');
 
@@ -202,19 +258,53 @@
     document.getElementById('loading-note').style.display = 'block';
     document.getElementById('scorecard-table').style.display = 'none';
     const month = monthInput.value;
-    const { data, error } = await client.rpc('get_rag_scorecard', { p_month: month });
+    const [scorecardRes] = await Promise.all([
+      client.rpc('get_rag_scorecard', { p_month: month }),
+      computeAllDormantAccounts(month),
+    ]);
+    const { data, error } = scorecardRes;
     if (error) {
       document.getElementById('loading-note').textContent = 'Failed to load scorecard: ' + error.message;
       return;
     }
     scorecardCache = data || [];
     renderScorecard();
+    renderAlerts();
     document.getElementById('loading-note').style.display = 'none';
     document.getElementById('scorecard-table').style.display = 'table';
     if (selectedFirmId) {
       const stillThere = scorecardCache.find(r => r.rep_firm_id === selectedFirmId);
       if (stillThere) openDrilldown(selectedFirmId); else closeDrilldown();
     }
+  }
+
+  // Surfaces what a manager would otherwise only notice by opening every firm's
+  // drilldown one at a time: firms at Red RAG this month, and firms with accounts
+  // that have gone quiet. Reuses the same dormantByFirm map the drilldown itself
+  // reads from, computed once per scorecard load rather than per firm.
+  function renderAlerts() {
+    const panel = document.getElementById('alerts-panel');
+    const redFirms = scorecardCache.filter(r => r.rag_status === 'Red');
+    const dormantEntries = [...dormantByFirm.entries()].filter(([, accts]) => accts.length > 0);
+    const totalDormant = dormantEntries.reduce((s, [, accts]) => s + accts.length, 0);
+
+    if (!redFirms.length && !dormantEntries.length) {
+      panel.style.display = 'none';
+      panel.innerHTML = '';
+      return;
+    }
+    const firmName = (id) => (firmsCache.find(f => f.id === id) || {}).name || '(unknown firm)';
+    panel.style.display = 'block';
+    panel.innerHTML =
+      (redFirms.length ? `<div class="alert-row alert-red"><strong>${redFirms.length} firm${redFirms.length === 1 ? '' : 's'} at Red RAG this month:</strong> ${redFirms.map(r => `<a href="#" data-open-firm="${r.rep_firm_id}">${escapeHtml(r.firm_name)}</a>`).join(', ')}</div>` : '') +
+      (dormantEntries.length ? `<div class="alert-row alert-amber"><strong>${totalDormant} account${totalDormant === 1 ? '' : 's'}</strong> with no linked activity in the last 3 months, across ${dormantEntries.length} firm${dormantEntries.length === 1 ? '' : 's'}: ${dormantEntries.map(([id, accts]) => `<a href="#" data-open-firm="${id}">${escapeHtml(firmName(id))} (${accts.length})</a>`).join(', ')}</div>` : '');
+    panel.querySelectorAll('[data-open-firm]').forEach(a => {
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        openDrilldown(a.dataset.openFirm);
+        document.getElementById('drilldown').scrollIntoView({ behavior: 'smooth' });
+      });
+    });
   }
 
   function momCell(row) {
@@ -256,23 +346,26 @@
     document.getElementById('drilldown').style.display = 'block';
     document.getElementById('dd-firm-name').textContent = `${row.firm_name} — ${month}`;
 
-    const [acts, pipe, edu, dormant] = await Promise.all([
+    const [acts, pipe, edu] = await Promise.all([
       client.from('activity_entries').select('*').eq('rep_firm_id', firmId).eq('reporting_month', month).order('entry_date'),
       client.from('pipeline_entries').select('*').eq('rep_firm_id', firmId).eq('reporting_month', month).order('created_date'),
       client.from('education_records').select('*').eq('rep_firm_id', firmId).eq('reporting_month', month).order('completion_date'),
-      loadDormantAccounts(firmId, month),
     ]);
 
-    document.getElementById('dd-activity').innerHTML = renderActivityTable(acts.data || []);
+    const ddActivity = document.getElementById('dd-activity');
+    ddActivity.innerHTML = renderActivityTable(acts.data || []);
+    wireActivityRows(ddActivity, acts.data || [], refreshAfterActivityChange);
     document.getElementById('dd-pipeline').innerHTML = renderPipelineTable(pipe.data || []);
     document.getElementById('dd-education').innerHTML = renderEducationTable(edu.data || []);
-    document.getElementById('dd-dormant').innerHTML = renderDormantTable(dormant);
+    document.getElementById('dd-dormant').innerHTML = renderDormantTable(dormantByFirm.get(firmId) || []);
   }
 
-  // Accounts assigned to this firm (via crm_accounts.rep_firm_id) with no activity
+  // Accounts assigned to a firm (via crm_accounts.rep_firm_id) with no activity
   // entry linked to them (account_external_id) in the trailing 3 reporting months.
   // Only entries submitted through the CRM-linked form autocomplete count -- older
   // free-text entries have no account_external_id and can't be matched here.
+  // Computed for every firm at once (not just the one currently drilled into) so
+  // the alerts banner can summarize across all firms without N extra queries.
   function trailingMonths(month, n) {
     const [y, m] = month.split('-').map(Number);
     const out = [];
@@ -284,14 +377,24 @@
     return out;
   }
 
-  async function loadDormantAccounts(firmId, month) {
+  async function computeAllDormantAccounts(month) {
     const months = trailingMonths(month, 3);
     const [{ data: accounts }, { data: acts }] = await Promise.all([
-      client.from('crm_accounts').select('external_id, name, city, state_code, relationship_type').eq('rep_firm_id', firmId),
-      client.from('activity_entries').select('account_external_id').eq('rep_firm_id', firmId).in('reporting_month', months).not('account_external_id', 'is', null),
+      client.from('crm_accounts').select('external_id, name, city, state_code, relationship_type, rep_firm_id').not('rep_firm_id', 'is', null),
+      client.from('activity_entries').select('rep_firm_id, account_external_id').in('reporting_month', months).not('account_external_id', 'is', null),
     ]);
-    const touched = new Set((acts || []).map(a => a.account_external_id));
-    return (accounts || []).filter(a => !touched.has(a.external_id));
+    const touchedByFirm = new Map();
+    (acts || []).forEach(a => {
+      if (!touchedByFirm.has(a.rep_firm_id)) touchedByFirm.set(a.rep_firm_id, new Set());
+      touchedByFirm.get(a.rep_firm_id).add(a.account_external_id);
+    });
+    dormantByFirm = new Map();
+    (accounts || []).forEach(a => {
+      const touched = touchedByFirm.get(a.rep_firm_id);
+      if (touched && touched.has(a.external_id)) return;
+      if (!dormantByFirm.has(a.rep_firm_id)) dormantByFirm.set(a.rep_firm_id, []);
+      dormantByFirm.get(a.rep_firm_id).push(a);
+    });
   }
 
   function renderDormantTable(rows) {
@@ -311,16 +414,182 @@
   }
   document.getElementById('close-drilldown-btn').addEventListener('click', closeDrilldown);
 
-  function renderActivityTable(rows) {
+  function renderActivityTable(rows, opts = {}) {
+    const showFirm = !!opts.showFirm;
     if (!rows.length) return '<div class="empty-note">No activity entries for this period.</div>';
     return `<table class="detail"><thead><tr>
-      <th>Date</th><th>Account</th><th>Contact</th><th>Contact Type</th><th>Activity Type</th><th>Demo Gear</th><th>Topic / Opportunity</th>
-    </tr></thead><tbody>${rows.map(r => `
-      <tr><td>${r.entry_date}</td><td>${escapeHtml(r.account_name)}${r.account_external_id ? ' <span style="color:#2e7d32;font-size:11px;">✓</span>' : ''}</td>
-      <td>${escapeHtml(r.contact_name || '')}</td><td>${r.contact_type}</td>
-      <td>${r.activity_type}</td><td>${r.demo_gear_used ? 'Yes' : 'No'}</td><td>${escapeHtml(r.topic_opportunity || '')}</td></tr>
-    `).join('')}</tbody></table>`;
+      <th>Date</th>${showFirm ? '<th>Firm</th>' : ''}<th>Account</th><th>Contact</th><th>Contact Type</th><th>Activity Type</th><th>Demo Gear</th><th>Topic / Opportunity</th><th>Actions</th>
+    </tr></thead><tbody>${rows.map(r => activityRowHtml(r, showFirm)).join('')}</tbody></table>`;
   }
+
+  function activityRowHtml(r, showFirm) {
+    const firmCell = showFirm ? `<td>${escapeHtml((firmsCache.find(f => f.id === r.rep_firm_id) || {}).name || '')}</td>` : '';
+    return `
+      <tr data-activity-id="${r.id}">
+        <td>${r.entry_date}</td>
+        ${firmCell}
+        <td>${escapeHtml(r.account_name)}${r.account_external_id ? ' <span style="color:#2e7d32;font-size:11px;">✓</span>' : ''}</td>
+        <td>${escapeHtml(r.contact_name || '')}</td>
+        <td>${r.contact_type}</td>
+        <td>${r.activity_type}</td>
+        <td>${r.demo_gear_used ? 'Yes' : 'No'}</td>
+        <td>${escapeHtml(r.topic_opportunity || '')}</td>
+        <td>
+          <button class="link-btn" data-edit-activity="${r.id}">Edit</button>
+          <button class="link-btn danger" data-delete-activity="${r.id}">Delete</button>
+        </td>
+      </tr>
+    `;
+  }
+
+  // Wires Edit/Delete for a rendered activity table. onChanged runs after a save
+  // or delete succeeds -- callers pass whatever needs to re-run to reflect it
+  // (the scorecard/alerts/dormant list all derive from activity_entries, so a
+  // single edit anywhere can move any of them).
+  function wireActivityRows(container, rows, onChanged) {
+    const byId = new Map(rows.map(r => [String(r.id), r]));
+    container.querySelectorAll('[data-edit-activity]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tr = btn.closest('tr');
+        openActivityEditor(tr, byId.get(btn.dataset.editActivity), onChanged);
+      });
+    });
+    container.querySelectorAll('[data-delete-activity]').forEach(btn => {
+      btn.addEventListener('click', () => deleteActivityEntry(btn.dataset.deleteActivity, onChanged));
+    });
+  }
+
+  function openActivityEditor(tr, row, onChanged) {
+    const table = tr.closest('table');
+    const existingNext = tr.nextElementSibling;
+    if (existingNext && existingNext.classList.contains('activity-edit-row')) {
+      existingNext.remove();
+      return;
+    }
+    table.querySelectorAll('.activity-edit-row').forEach(el => el.remove());
+
+    const colspan = tr.children.length;
+    const editRow = document.createElement('tr');
+    editRow.className = 'activity-edit-row';
+    editRow.innerHTML = `<td colspan="${colspan}">
+      <div class="edit-grid">
+        <label>Date<input type="date" class="ae-date" value="${row.entry_date}"></label>
+        <label>Account<input type="text" class="ae-account" value="${escapeHtml(row.account_name)}"></label>
+        <label>Contact<input type="text" class="ae-contact" value="${escapeHtml(row.contact_name || '')}"></label>
+        <label>Contact Type<select class="ae-contact-type">${CONTACT_TYPES.map(v => `<option value="${v}" ${v === row.contact_type ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+        <label>Activity Type<select class="ae-activity-type">${ACTIVITY_TYPES.map(v => `<option value="${v}" ${v === row.activity_type ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+        <label class="ae-checkbox"><input type="checkbox" class="ae-demo" ${row.demo_gear_used ? 'checked' : ''}> Demo gear used</label>
+      </div>
+      <label>Topic / Opportunity<textarea class="ae-topic">${escapeHtml(row.topic_opportunity || '')}</textarea></label>
+      <label>Solution Feedback<textarea class="ae-solution">${escapeHtml(row.solution_feedback || '')}</textarea></label>
+      <label>Competitive Feedback<textarea class="ae-competitive">${escapeHtml(row.competitive_feedback || '')}</textarea></label>
+      <label>Additional Comments<textarea class="ae-additional">${escapeHtml(row.additional_comments || '')}</textarea></label>
+      <div class="action-row">
+        <button type="button" class="audac-btn" data-ae-save>Save</button>
+        <button type="button" class="audac-btn-outline" data-ae-cancel>Cancel</button>
+        <span class="ae-status"></span>
+      </div>
+    </td>`;
+    tr.after(editRow);
+
+    editRow.querySelector('[data-ae-cancel]').addEventListener('click', () => editRow.remove());
+    editRow.querySelector('[data-ae-save]').addEventListener('click', async () => {
+      const statusEl = editRow.querySelector('.ae-status');
+      const accountName = editRow.querySelector('.ae-account').value.trim();
+      if (!accountName) { statusEl.textContent = 'Account name is required.'; return; }
+      const patch = {
+        entry_date: editRow.querySelector('.ae-date').value,
+        account_name: accountName,
+        contact_name: editRow.querySelector('.ae-contact').value.trim() || null,
+        contact_type: editRow.querySelector('.ae-contact-type').value,
+        activity_type: editRow.querySelector('.ae-activity-type').value,
+        demo_gear_used: editRow.querySelector('.ae-demo').checked,
+        topic_opportunity: editRow.querySelector('.ae-topic').value.trim() || null,
+        solution_feedback: editRow.querySelector('.ae-solution').value.trim() || null,
+        competitive_feedback: editRow.querySelector('.ae-competitive').value.trim() || null,
+        additional_comments: editRow.querySelector('.ae-additional').value.trim() || null,
+      };
+      statusEl.style.color = '#999';
+      statusEl.textContent = 'Saving…';
+      const { error } = await client.from('activity_entries').update(patch).eq('id', row.id);
+      if (error) {
+        statusEl.style.color = 'var(--red)';
+        statusEl.textContent = 'Error: ' + error.message;
+        return;
+      }
+      editRow.remove();
+      onChanged();
+    });
+  }
+
+  async function deleteActivityEntry(id, onChanged) {
+    if (!confirm('Delete this activity entry? This cannot be undone.')) return;
+    const { error } = await client.from('activity_entries').delete().eq('id', id);
+    if (error) { alert('Delete failed: ' + error.message); return; }
+    onChanged();
+  }
+
+  // Re-runs everything that derives from activity_entries after an edit/delete --
+  // scorecard counts, RAG, alerts, dormant lists, and the cross-firm search below
+  // all need to reflect it regardless of which view the edit happened in.
+  async function refreshAfterActivityChange() {
+    await loadScorecard();
+    await loadActivitySearchRange();
+  }
+
+  // ---------- Cross-firm, cross-month activity search ----------
+  // The drilldown above only ever shows one firm's one month. This pulls a wider
+  // date range (default: trailing 6 months) up front, then filters/searches it
+  // entirely client-side -- same pattern as crm.html's account list, reasonable
+  // while activity_entries stays in the low thousands.
+  async function loadActivitySearchRange() {
+    const from = document.getElementById('activity-search-from').value;
+    const to = document.getElementById('activity-search-to').value;
+    const countEl = document.getElementById('activity-search-count');
+    let q = client.from('activity_entries').select('*').order('entry_date', { ascending: false });
+    if (from) q = q.gte('reporting_month', from);
+    if (to) q = q.lte('reporting_month', to);
+    const { data, error } = await q;
+    if (error) {
+      document.getElementById('activity-search-results').innerHTML = `<div class="empty-note">Failed to load: ${escapeHtml(error.message)}</div>`;
+      countEl.textContent = '';
+      return;
+    }
+    allActivityCache = data || [];
+    renderActivitySearch();
+  }
+
+  function renderActivitySearch() {
+    const q = document.getElementById('activity-search-input').value.trim().toLowerCase();
+    const firmFilter = document.getElementById('activity-search-firm').value;
+    const typeFilter = document.getElementById('activity-search-type').value;
+
+    let rows = allActivityCache;
+    if (firmFilter) rows = rows.filter(r => r.rep_firm_id === firmFilter);
+    if (typeFilter) rows = rows.filter(r => r.activity_type === typeFilter);
+    if (q) {
+      rows = rows.filter(r => `${r.account_name} ${r.contact_name || ''} ${r.topic_opportunity || ''} ${r.solution_feedback || ''} ${r.competitive_feedback || ''} ${r.additional_comments || ''}`.toLowerCase().includes(q));
+    }
+
+    document.getElementById('activity-search-count').textContent = `Showing ${rows.length} of ${allActivityCache.length} entries in range`;
+    const container = document.getElementById('activity-search-results');
+    container.innerHTML = renderActivityTable(rows, { showFirm: true });
+    wireActivityRows(container, rows, refreshAfterActivityChange);
+  }
+
+  function populateActivitySearchFilters() {
+    const firmSel = document.getElementById('activity-search-firm');
+    firmSel.innerHTML = '<option value="">All</option>' + firmsCache.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`).join('');
+    const typeSel = document.getElementById('activity-search-type');
+    typeSel.innerHTML = '<option value="">All</option>' + ACTIVITY_TYPES.map(t => `<option value="${t}">${t}</option>`).join('');
+  }
+
+  document.getElementById('activity-search-input').addEventListener('input', renderActivitySearch);
+  document.getElementById('activity-search-firm').addEventListener('change', renderActivitySearch);
+  document.getElementById('activity-search-type').addEventListener('change', renderActivitySearch);
+  document.getElementById('activity-search-from').addEventListener('change', loadActivitySearchRange);
+  document.getElementById('activity-search-to').addEventListener('change', loadActivitySearchRange);
+
   function renderPipelineTable(rows) {
     if (!rows.length) return '<div class="empty-note">No pipeline entries for this period.</div>';
     return `<table class="detail"><thead><tr>
@@ -1136,7 +1405,11 @@
     monthInput.value = currentMonthValue();
     await loadFirms();
     renderUploadPanels();
-    await loadScorecard();
+    populateActivitySearchFilters();
+    const nowMonth = currentMonthValue();
+    document.getElementById('activity-search-to').value = nowMonth;
+    document.getElementById('activity-search-from').value = trailingMonths(nowMonth, 6)[5];
+    await Promise.all([loadScorecard(), loadActivitySearchRange()]);
     monthInput.addEventListener('change', loadScorecard);
   })();
 </script>
