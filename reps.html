@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AUDAC Rep Portal — Reps</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --audac-gold: #d9a653;
+    --audac-black: #000000;
+    --audac-white: #ffffff;
+    --audac-section-bg: #f8f8f8;
+    --audac-text: #737373;
+    --green: #2e7d32; --green-bg: #e8f5e9;
+    --amber: #b8860b; --amber-bg: #fff6e0;
+    --red: #b3261e; --red-bg: #fdeaea;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Montserrat', sans-serif; background: var(--audac-white); color: var(--audac-text); }
+  header.audac-header {
+    background: var(--audac-black); color: #fff; padding: 16px 28px;
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+  }
+  header.audac-header .brand { display: flex; align-items: center; gap: 12px; }
+  header.audac-header img.logo { height: 30px; filter: invert(1); }
+  header.audac-header .wordmark { font-weight: 700; font-size: 18px; letter-spacing: 3px; color: #fff; display: none; }
+  header.audac-header h1 { font-size: 14px; font-weight: 400; margin: 0; color: var(--audac-gold); letter-spacing: 1px; text-transform: uppercase; }
+  .user-box { display: flex; align-items: center; gap: 14px; font-size: 13px; color: #ccc; }
+  .signout-btn, .nav-link { background: transparent; border: 1px solid #555; color: #fff; padding: 7px 14px; border-radius: 3px; cursor: pointer; font-family: inherit; font-size: 12px; text-decoration: none; display: inline-block; }
+
+  main { max-width: 1100px; margin: 0 auto; padding: 28px 20px 100px; }
+
+  .kpi-row { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 22px; }
+  .kpi-tile { background: var(--audac-section-bg); border-radius: 4px; padding: 14px 20px; min-width: 140px; }
+  .kpi-tile .kpi-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #999; }
+  .kpi-tile .kpi-value { font-size: 22px; font-weight: 700; color: var(--audac-black); margin-top: 4px; }
+
+  .upload-hint { font-size: 12.5px; color: #999; margin: 0 0 20px; max-width: 720px; }
+
+  .toolbar { display: flex; align-items: flex-end; gap: 16px; margin-bottom: 18px; flex-wrap: wrap; }
+  .toolbar .field { display: flex; flex-direction: column; gap: 6px; }
+  .toolbar label { font-size: 12px; font-weight: 500; color: var(--audac-black); }
+  .toolbar input[type="text"], .toolbar select {
+    font-family: 'Montserrat', sans-serif; font-size: 13.5px; padding: 9px 12px;
+    border: 1px solid #ddd; border-radius: 3px; background: #fff; color: var(--audac-black); min-width: 220px;
+  }
+  .result-count { font-size: 12.5px; color: #999; margin-bottom: 10px; }
+
+  table.rep-table { width: 100%; border-collapse: collapse; background: #fff; font-size: 13px; }
+  table.rep-table th, table.rep-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #eee; vertical-align: middle; }
+  table.rep-table th { background: var(--audac-section-bg); color: var(--audac-black); font-weight: 700; text-transform: uppercase; font-size: 10.5px; letter-spacing: .5px; }
+  select.firm-assign { font-family: 'Montserrat', sans-serif; font-size: 12.5px; padding: 6px 8px; border: 1px solid #ddd; border-radius: 3px; max-width: 240px; }
+  .admin-badge { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; padding: 2px 8px; border-radius: 10px; background: var(--green-bg); color: var(--green); margin-left: 8px; }
+  .save-note { font-size: 11px; margin-left: 8px; }
+  .muted { color: #bbb; }
+  #loading-note { font-size: 13px; color: #aaa; padding: 20px 0; }
+</style>
+</head>
+<body>
+
+<header class="audac-header">
+  <div class="brand">
+    <img class="logo" src="https://audac.eu/images/AUDAC-logo.webp" alt="AUDAC"
+         onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
+    <span class="wordmark">AUDAC</span>
+    <h1>Reps</h1>
+  </div>
+  <div class="user-box">
+    <a class="nav-link" href="/territories">Territories</a>
+    <a class="nav-link" href="/crm">CRM Data</a>
+    <a class="nav-link" href="/dashboard">← Dashboard</a>
+    <span id="user-email"></span>
+    <button class="signout-btn" id="signout-btn">Sign Out</button>
+  </div>
+</header>
+
+<main>
+  <div id="loading-note">Loading reps…</div>
+
+  <div id="content" style="display:none;">
+    <p class="upload-hint">Every rep who signs in on the public form (via the passwordless magic link) shows up here automatically, with their firm claimed from whichever link they signed in from. Correct the firm assignment here if it's wrong, and flag an "Admin" rep at a firm to let them see and edit their whole firm's activity entries, not just their own.</p>
+
+    <div class="kpi-row" id="kpi-row"></div>
+
+    <div class="toolbar">
+      <div class="field">
+        <label for="search-input">Search reps</label>
+        <input type="text" id="search-input" placeholder="Email…">
+      </div>
+      <div class="field">
+        <label for="firm-filter">Rep firm</label>
+        <select id="firm-filter">
+          <option value="">All</option>
+          <option value="__unassigned">Unassigned</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="result-count" id="result-count"></div>
+
+    <div style="overflow-x:auto;">
+      <table class="rep-table">
+        <thead>
+          <tr>
+            <th>Email</th><th>Rep Firm</th><th>Admin</th><th>Signed Up</th>
+          </tr>
+        </thead>
+        <tbody id="reps-body"></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
+  const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  let firmsCache = [];
+  let repsCache = [];
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  }
+
+  async function guard() {
+    const { data: { session } } = await client.auth.getSession();
+    if (!session) { window.location.href = '/login'; return null; }
+    const { data: profile } = await client.from('profiles').select('role, email').eq('id', session.user.id).maybeSingle();
+    if (!profile) { window.location.href = '/login'; return null; }
+    if (profile.role === 'executive') { window.location.href = '/executive'; return null; }
+    if (profile.role !== 'manager') { window.location.href = '/login'; return null; }
+    return { user: session.user, profile };
+  }
+
+  document.getElementById('signout-btn').addEventListener('click', async () => {
+    await client.auth.signOut();
+    window.location.href = '/login';
+  });
+
+  function renderKpis() {
+    const total = repsCache.length;
+    const assigned = repsCache.filter(r => r.rep_firm_id).length;
+    const admins = repsCache.filter(r => r.is_rep_admin).length;
+    document.getElementById('kpi-row').innerHTML = `
+      <div class="kpi-tile"><div class="kpi-label">Reps Signed Up</div><div class="kpi-value">${total}</div></div>
+      <div class="kpi-tile"><div class="kpi-label">Firm Assigned</div><div class="kpi-value">${assigned}</div></div>
+      <div class="kpi-tile"><div class="kpi-label">Unassigned</div><div class="kpi-value">${total - assigned}</div></div>
+      <div class="kpi-tile"><div class="kpi-label">Firm Admins</div><div class="kpi-value">${admins}</div></div>
+    `;
+  }
+
+  function populateFirmFilter() {
+    const sel = document.getElementById('firm-filter');
+    const current = sel.value;
+    sel.innerHTML = '<option value="">All</option><option value="__unassigned">Unassigned</option>' +
+      firmsCache.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`).join('');
+    sel.value = current || '';
+  }
+
+  function matchesSearch(r, q) {
+    if (!q) return true;
+    return (r.email || '').toLowerCase().includes(q);
+  }
+
+  function renderReps() {
+    const q = document.getElementById('search-input').value.trim().toLowerCase();
+    const firmFilter = document.getElementById('firm-filter').value;
+
+    let rows = repsCache.filter(r => matchesSearch(r, q));
+    if (firmFilter === '__unassigned') rows = rows.filter(r => !r.rep_firm_id);
+    else if (firmFilter) rows = rows.filter(r => r.rep_firm_id === firmFilter);
+
+    document.getElementById('result-count').textContent = `Showing ${rows.length} of ${repsCache.length} reps`;
+
+    const firmOptions = ['<option value="">— Unassigned —</option>']
+      .concat(firmsCache.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`)).join('');
+
+    const tbody = document.getElementById('reps-body');
+    tbody.innerHTML = rows.map(r => `
+      <tr data-id="${r.id}">
+        <td>${escapeHtml(r.email)}</td>
+        <td>
+          <select class="firm-assign" data-rep="${r.id}">${firmOptions}</select>
+        </td>
+        <td>
+          <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+            <input type="checkbox" class="admin-toggle" data-rep="${r.id}" ${r.is_rep_admin ? 'checked' : ''}>
+            ${r.is_rep_admin ? '<span class="admin-badge">Admin</span>' : '<span class="muted">Regular rep</span>'}
+          </label>
+        </td>
+        <td>${r.created_at ? new Date(r.created_at).toLocaleDateString() : ''}</td>
+      </tr>
+    `).join('');
+
+    tbody.querySelectorAll('select.firm-assign').forEach(sel => {
+      const repId = sel.dataset.rep;
+      const rep = repsCache.find(r => r.id === repId);
+      sel.value = rep?.rep_firm_id || '';
+      sel.addEventListener('change', () => assignFirm(repId, sel.value || null));
+    });
+    tbody.querySelectorAll('.admin-toggle').forEach(cb => {
+      cb.addEventListener('change', () => setAdmin(cb.dataset.rep, cb.checked));
+    });
+  }
+
+  async function assignFirm(repId, firmId) {
+    const { error } = await client.from('profiles').update({ rep_firm_id: firmId }).eq('id', repId);
+    if (error) { alert('Could not update rep firm: ' + error.message); return; }
+    const rep = repsCache.find(r => r.id === repId);
+    if (rep) rep.rep_firm_id = firmId;
+    renderKpis();
+    renderReps();
+  }
+
+  async function setAdmin(repId, isAdmin) {
+    const { error } = await client.from('profiles').update({ is_rep_admin: isAdmin }).eq('id', repId);
+    if (error) { alert('Could not update admin flag: ' + error.message); return; }
+    const rep = repsCache.find(r => r.id === repId);
+    if (rep) rep.is_rep_admin = isAdmin;
+    renderKpis();
+    renderReps();
+  }
+
+  document.getElementById('search-input').addEventListener('input', renderReps);
+  document.getElementById('firm-filter').addEventListener('change', renderReps);
+
+  async function loadAll() {
+    const [firmsRes, repsRes] = await Promise.all([
+      client.from('rep_firms').select('id, name').eq('status', 'active').order('name'),
+      client.from('profiles').select('id, email, rep_firm_id, is_rep_admin, created_at').eq('role', 'rep').order('created_at', { ascending: false }),
+    ]);
+
+    if (repsRes.error) {
+      document.getElementById('loading-note').textContent = 'Failed to load reps: ' + repsRes.error.message;
+      return;
+    }
+
+    firmsCache = firmsRes.data || [];
+    repsCache = repsRes.data || [];
+
+    populateFirmFilter();
+    renderKpis();
+    renderReps();
+
+    document.getElementById('loading-note').style.display = 'none';
+    document.getElementById('content').style.display = 'block';
+  }
+
+  (async function init() {
+    const g = await guard();
+    if (!g) return;
+    document.getElementById('user-email').textContent = g.profile.email;
+    await loadAll();
+  })();
+</script>
+</body>
+</html>

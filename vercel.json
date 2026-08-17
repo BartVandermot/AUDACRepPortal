@@ -6,6 +6,7 @@
     { "source": "/dashboard", "destination": "/dashboard.html" },
     { "source": "/executive", "destination": "/executive.html" },
     { "source": "/crm", "destination": "/crm.html" },
-    { "source": "/territories", "destination": "/territories.html" }
+    { "source": "/territories", "destination": "/territories.html" },
+    { "source": "/reps", "destination": "/reps.html" }
   ]
 }

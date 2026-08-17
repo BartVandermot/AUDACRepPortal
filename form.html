@@ -204,7 +204,7 @@
   </div>
 
   <div id="my-submissions-section" hidden>
-    <h2 style="padding-left:4px;">My Submissions</h2>
+    <h2 style="padding-left:4px;" id="my-submissions-heading">My Submissions</h2>
     <div id="my-submissions-list"></div>
     <hr style="border:none; border-top:1px solid #eee; margin:28px 0;">
   </div>
@@ -260,6 +260,8 @@
   let entryCounter = 0;
   let firmsCache = [];
   let currentSession = null;
+  let currentProfile = null;
+  const PENDING_FIRM_KEY = 'audac_pending_firm_id';
   const entriesContainer = document.getElementById('entries-container');
   const firmSelect = document.getElementById('firm-select');
   const monthInput = document.getElementById('reporting-month');
@@ -481,11 +483,15 @@
 
   // ---------- Light auth (passwordless magic link) + My Submissions ----------
   // The public form stays fully anonymous by default (no login required to
-  // submit, matching the original design). Signing in is purely opt-in and only
-  // unlocks viewing/editing entries THIS signed-in account created --
-  // activity_entries.created_by is set at insert time when signed in, and RLS
-  // ("created_by = auth.uid()") is what actually enforces the scoping, not this
-  // client code. Anonymous submissions keep created_by null, exactly as before.
+  // submit, matching the original design). Signing in is purely opt-in.
+  // Every sign-in gets a profiles row (role='rep') auto-created by a DB trigger
+  // on auth.users -- no manager setup needed per rep. The firm the rep was on
+  // when they signed in gets self-claimed onto their profile exactly once
+  // (claim_rep_firm RPC), via PENDING_FIRM_KEY stashed in localStorage before
+  // the magic-link redirect (in-memory JS state doesn't survive that redirect).
+  // A rep flagged is_rep_admin by a manager then sees/can edit their whole
+  // firm's entries, not just their own -- enforced by RLS
+  // (activity_entries_select/update/delete_firm_admin), not by this client code.
   async function initAuth() {
     if (window.location.hash.includes('access_token')) {
       history.replaceState(null, '', window.location.pathname + window.location.search);
@@ -493,14 +499,45 @@
     const { data: { session } } = await client.auth.getSession();
     currentSession = session;
     renderAuthState();
-    if (session) loadMySubmissions();
+    if (session) await handleSignedIn();
 
-    client.auth.onAuthStateChange((_event, session) => {
+    client.auth.onAuthStateChange(async (_event, session) => {
       currentSession = session;
       renderAuthState();
-      if (session) loadMySubmissions();
-      else document.getElementById('my-submissions-section').hidden = true;
+      if (session) {
+        await handleSignedIn();
+      } else {
+        currentProfile = null;
+        document.getElementById('my-submissions-section').hidden = true;
+      }
     });
+  }
+
+  async function handleSignedIn() {
+    const { data: profile } = await client.from('profiles').select('*').eq('id', currentSession.user.id).maybeSingle();
+    currentProfile = profile;
+
+    const pendingFirmId = localStorage.getItem(PENDING_FIRM_KEY);
+    if (pendingFirmId && !profile?.rep_firm_id) {
+      const { error } = await client.rpc('claim_rep_firm', { p_firm_id: pendingFirmId });
+      if (!error) {
+        localStorage.removeItem(PENDING_FIRM_KEY);
+        const { data: refreshed } = await client.from('profiles').select('*').eq('id', currentSession.user.id).maybeSingle();
+        currentProfile = refreshed;
+      }
+    }
+
+    if (currentProfile?.rep_firm_id) lockFirmToProfile(currentProfile.rep_firm_id);
+    await loadMySubmissions();
+  }
+
+  function lockFirmToProfile(firmId) {
+    if (firmSelect.disabled) return; // already locked via a ?firm= link
+    const match = firmsCache.find(f => f.id === firmId);
+    if (!match) return;
+    firmSelect.innerHTML = `<option value="${match.id}" selected>${escapeHtml(match.name)} — ${escapeHtml(match.territory)}</option>`;
+    firmSelect.disabled = true;
+    firmSelect.classList.add('firm-locked');
   }
 
   function renderAuthState() {
@@ -518,6 +555,9 @@
     const email = document.getElementById('signin-email').value.trim();
     const statusEl = document.getElementById('signin-status');
     if (!email) { statusEl.textContent = 'Enter your email first.'; return; }
+    // Remembered across the magic-link email round trip so the firm this rep was
+    // on gets claimed onto their profile once they're actually signed in.
+    if (firmSelect.value) localStorage.setItem(PENDING_FIRM_KEY, firmSelect.value);
     const btn = document.getElementById('send-magic-link-btn');
     btn.disabled = true;
     statusEl.textContent = 'Sending…';
@@ -538,10 +578,13 @@
   async function loadMySubmissions() {
     const section = document.getElementById('my-submissions-section');
     section.hidden = false;
+    const showCreator = !!currentProfile?.is_rep_admin;
+    document.getElementById('my-submissions-heading').textContent = showCreator ? "My Firm's Submissions" : 'My Submissions';
     const container = document.getElementById('my-submissions-list');
     container.innerHTML = '<div class="hint">Loading…</div>';
-    // RLS scopes this to created_by = auth.uid() automatically -- no explicit
-    // filter needed, and none of it depends on which firm this session is for.
+    // RLS scopes this automatically -- created_by = auth.uid() for a regular
+    // rep, or (if is_rep_admin) any entry for their firm regardless of who
+    // created it. No explicit filter needed here either way.
     const { data, error } = await client.from('activity_entries').select('*').order('entry_date', { ascending: false });
     if (error) {
       container.innerHTML = `<div class="hint">Failed to load your submissions: ${escapeHtml(error.message)}</div>`;
@@ -552,18 +595,19 @@
       return;
     }
     await fetchAllAttachmentCounts();
-    container.innerHTML = renderMySubmissionsTable(data);
+    container.innerHTML = renderMySubmissionsTable(data, showCreator);
     wireActivityRows(container, data, loadMySubmissions);
   }
 
-  function renderMySubmissionsTable(rows) {
+  function renderMySubmissionsTable(rows, showCreator) {
     return `<table class="detail"><thead><tr>
-      <th>Date</th><th>Firm</th><th>Account</th><th>Contact Type</th><th>Activity Type</th><th>Topic / Opportunity</th><th>Files</th><th>Actions</th>
-    </tr></thead><tbody>${rows.map(r => activityRowHtml(r)).join('')}</tbody></table>`;
+      <th>Date</th><th>Firm</th>${showCreator ? '<th>Submitted By</th>' : ''}<th>Account</th><th>Contact Type</th><th>Activity Type</th><th>Topic / Opportunity</th><th>Files</th><th>Actions</th>
+    </tr></thead><tbody>${rows.map(r => activityRowHtml(r, showCreator)).join('')}</tbody></table>`;
   }
 
-  function activityRowHtml(r) {
+  function activityRowHtml(r, showCreator) {
     const firmName = escapeHtml((firmsCache.find(f => f.id === r.rep_firm_id) || {}).name || '');
+    const creatorCell = showCreator ? `<td>${escapeHtml(r.created_by_email || 'Anonymous')}</td>` : '';
     const attCount = attachmentCountByEntry.get(r.id) || 0;
     const filesCell = attCount > 0
       ? `<button type="button" class="link-btn" data-toggle-attachments="${r.id}">📎 ${attCount}</button>`
@@ -572,6 +616,7 @@
       <tr data-activity-id="${r.id}">
         <td>${r.entry_date}</td>
         <td>${firmName}</td>
+        ${creatorCell}
         <td>${escapeHtml(r.account_name)}</td>
         <td>${r.contact_type}</td>
         <td>${r.activity_type}</td>
@@ -928,6 +973,7 @@
       rep_firm_id: firmId,
       reporting_month: month,
       created_by: currentSession?.user?.id || null,
+      created_by_email: currentSession?.user?.email || null,
       ...e,
     }));
 
