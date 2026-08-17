@@ -82,6 +82,14 @@
   .muted { color: #bbb; }
   tr.attachments-row td, tr.audit-diff-row td { background: #fbf7ee; padding: 14px 20px; }
 
+  .bulk-bar {
+    display: none; align-items: center; gap: 10px; flex-wrap: wrap;
+    background: var(--audac-section-bg); border-radius: 4px; padding: 10px 14px; margin-bottom: 12px; font-size: 13px;
+  }
+  .bulk-bar select { font-family: 'Montserrat', sans-serif; font-size: 12.5px; padding: 7px 10px; border: 1px solid #ddd; border-radius: 3px; }
+  button.audac-btn-outline.danger-outline { color: var(--red); border-color: var(--red); }
+  table.detail th.check-col, table.detail td.check-col { width: 24px; text-align: center; }
+
   button.audac-btn {
     background: var(--audac-gold); color: #000; border: none; padding: 11px 20px;
     font-family: 'Montserrat', sans-serif; font-weight: 700; font-size: 12.5px; letter-spacing: .4px;
@@ -201,6 +209,15 @@
     </div>
   </div>
   <div class="result-count" id="activity-search-count" style="font-size:12.5px; color:#999; margin-bottom:10px;"></div>
+
+  <div id="activity-bulk-bar" class="bulk-bar">
+    <strong id="activity-bulk-count"></strong>
+    <select id="activity-bulk-reassign-firm"><option value="">Reassign to firm…</option></select>
+    <button type="button" class="audac-btn-outline" id="activity-bulk-reassign-btn">Apply</button>
+    <button type="button" class="audac-btn-outline danger-outline" id="activity-bulk-delete-btn">Delete Selected</button>
+    <button type="button" class="link-btn" id="activity-bulk-clear-btn">Clear selection</button>
+  </div>
+
   <div id="activity-search-results"></div>
 
   <h2 class="section-title">Activity Edit/Delete Log</h2>
@@ -226,6 +243,7 @@
   let allActivityCache = [];
   let attachmentCountByEntry = new Map();
   let auditLogCache = [];
+  let selectedActivityIds = new Set();
 
   const CONTACT_TYPES = ['Dealer', 'Consultant', 'End User'];
   const ACTIVITY_TYPES = [
@@ -429,20 +447,26 @@
 
   function renderActivityTable(rows, opts = {}) {
     const showFirm = !!opts.showFirm;
+    const selectable = !!opts.selectable;
     if (!rows.length) return '<div class="empty-note">No activity entries for this period.</div>';
     return `<table class="detail"><thead><tr>
+      ${selectable ? '<th class="check-col"><input type="checkbox" id="activity-select-all"></th>' : ''}
       <th>Date</th>${showFirm ? '<th>Firm</th>' : ''}<th>Account</th><th>Contact</th><th>Contact Type</th><th>Activity Type</th><th>Demo Gear</th><th>Topic / Opportunity</th><th>Files</th><th>Actions</th>
-    </tr></thead><tbody>${rows.map(r => activityRowHtml(r, showFirm)).join('')}</tbody></table>`;
+    </tr></thead><tbody>${rows.map(r => activityRowHtml(r, showFirm, selectable)).join('')}</tbody></table>`;
   }
 
-  function activityRowHtml(r, showFirm) {
+  function activityRowHtml(r, showFirm, selectable) {
     const firmCell = showFirm ? `<td>${escapeHtml((firmsCache.find(f => f.id === r.rep_firm_id) || {}).name || '')}</td>` : '';
     const attCount = attachmentCountByEntry.get(r.id) || 0;
     const filesCell = attCount > 0
       ? `<button type="button" class="link-btn" data-toggle-attachments="${r.id}">📎 ${attCount}</button>`
       : '<span class="muted">—</span>';
+    const checkCell = selectable
+      ? `<td class="check-col"><input type="checkbox" class="activity-select" value="${r.id}" ${selectedActivityIds.has(r.id) ? 'checked' : ''}></td>`
+      : '';
     return `
       <tr data-activity-id="${r.id}">
+        ${checkCell}
         <td>${r.entry_date}</td>
         ${firmCell}
         <td>${escapeHtml(r.account_name)}${r.account_external_id ? ' <span style="color:#2e7d32;font-size:11px;">✓</span>' : ''}</td>
@@ -459,6 +483,108 @@
       </tr>
     `;
   }
+
+  // Bulk selection is opt-in per rendered table (only "Search All Activity" uses
+  // it, not the per-firm drilldown) and lives in module state so a checkbox click
+  // doesn't need to re-render the whole table -- only filter/search changes and
+  // completed bulk actions do, and those intentionally reset the selection since
+  // the underlying row set just changed.
+  function wireBulkSelection(container) {
+    const selectAllCb = container.querySelector('#activity-select-all');
+    if (selectAllCb) {
+      selectAllCb.addEventListener('change', () => {
+        container.querySelectorAll('.activity-select').forEach(cb => {
+          cb.checked = selectAllCb.checked;
+          if (selectAllCb.checked) selectedActivityIds.add(cb.value);
+          else selectedActivityIds.delete(cb.value);
+        });
+        updateBulkBar();
+      });
+    }
+    container.querySelectorAll('.activity-select').forEach(cb => {
+      cb.addEventListener('change', () => {
+        if (cb.checked) selectedActivityIds.add(cb.value);
+        else selectedActivityIds.delete(cb.value);
+        updateBulkBar();
+      });
+    });
+  }
+
+  function updateBulkBar() {
+    const bar = document.getElementById('activity-bulk-bar');
+    const n = selectedActivityIds.size;
+    if (n === 0) { bar.style.display = 'none'; return; }
+    bar.style.display = 'flex';
+    document.getElementById('activity-bulk-count').textContent = `${n} selected`;
+  }
+
+  function chunk(arr, size) {
+    const out = [];
+    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+    return out;
+  }
+
+  document.getElementById('activity-bulk-clear-btn').addEventListener('click', () => {
+    selectedActivityIds = new Set();
+    renderActivitySearch();
+  });
+
+  document.getElementById('activity-bulk-delete-btn').addEventListener('click', async () => {
+    const ids = [...selectedActivityIds];
+    if (!ids.length) return;
+    if (!confirm(`Delete ${ids.length} activity entr${ids.length === 1 ? 'y' : 'ies'}? This cannot be undone.`)) return;
+    const btn = document.getElementById('activity-bulk-delete-btn');
+    btn.disabled = true;
+    btn.textContent = 'Deleting…';
+    try {
+      // Chunked (not one giant .in()) for the same reason crm.html's contacts
+      // export avoids it -- a very large id list risks the request URL length
+      // limit. Attachments' storage objects are removed first per batch so
+      // nothing gets orphaned (same reasoning as the single-entry delete path).
+      for (const batch of chunk(ids, 50)) {
+        const { data: attachments } = await client.from('activity_attachments').select('storage_path').in('activity_entry_id', batch);
+        if (attachments && attachments.length) {
+          await client.storage.from('activity-attachments').remove(attachments.map(a => a.storage_path));
+        }
+        const { error } = await client.from('activity_entries').delete().in('id', batch);
+        if (error) throw error;
+      }
+      selectedActivityIds = new Set();
+      await refreshAfterActivityChange();
+    } catch (err) {
+      alert('Bulk delete failed partway through: ' + err.message + ' Some entries may have already been deleted.');
+      await refreshAfterActivityChange();
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Delete Selected';
+    }
+  });
+
+  document.getElementById('activity-bulk-reassign-btn').addEventListener('click', async () => {
+    const ids = [...selectedActivityIds];
+    const targetFirmId = document.getElementById('activity-bulk-reassign-firm').value;
+    if (!ids.length) return;
+    if (!targetFirmId) { alert('Pick a firm to reassign to first.'); return; }
+    const firmName = (firmsCache.find(f => f.id === targetFirmId) || {}).name || '';
+    if (!confirm(`Reassign ${ids.length} activity entr${ids.length === 1 ? 'y' : 'ies'} to ${firmName}?`)) return;
+    const btn = document.getElementById('activity-bulk-reassign-btn');
+    btn.disabled = true;
+    btn.textContent = 'Reassigning…';
+    try {
+      for (const batch of chunk(ids, 50)) {
+        const { error } = await client.from('activity_entries').update({ rep_firm_id: targetFirmId }).in('id', batch);
+        if (error) throw error;
+      }
+      selectedActivityIds = new Set();
+      await refreshAfterActivityChange();
+    } catch (err) {
+      alert('Bulk reassign failed partway through: ' + err.message);
+      await refreshAfterActivityChange();
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Apply';
+    }
+  });
 
   // Wires Edit/Delete/Attachments for a rendered activity table. onChanged runs
   // after a save or delete succeeds -- callers pass whatever needs to re-run to
@@ -666,11 +792,17 @@
   }
 
   function renderActivitySearch() {
+    // Selection resets on every render here -- filter/search changes alter the
+    // visible row set, and silently keeping a hidden selection around would be
+    // more confusing than just starting over.
+    selectedActivityIds = new Set();
     const rows = getFilteredActivityRows();
     document.getElementById('activity-search-count').textContent = `Showing ${rows.length} of ${allActivityCache.length} entries in range`;
     const container = document.getElementById('activity-search-results');
-    container.innerHTML = renderActivityTable(rows, { showFirm: true });
+    container.innerHTML = renderActivityTable(rows, { showFirm: true, selectable: true });
     wireActivityRows(container, rows, refreshAfterActivityChange);
+    wireBulkSelection(container);
+    updateBulkBar();
   }
 
   function populateActivitySearchFilters() {
@@ -678,6 +810,8 @@
     firmSel.innerHTML = '<option value="">All</option>' + firmsCache.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`).join('');
     const typeSel = document.getElementById('activity-search-type');
     typeSel.innerHTML = '<option value="">All</option>' + ACTIVITY_TYPES.map(t => `<option value="${t}">${t}</option>`).join('');
+    const bulkFirmSel = document.getElementById('activity-bulk-reassign-firm');
+    bulkFirmSel.innerHTML = '<option value="">Reassign to firm…</option>' + firmsCache.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`).join('');
   }
 
   document.getElementById('activity-search-input').addEventListener('input', renderActivitySearch);
