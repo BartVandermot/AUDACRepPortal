@@ -52,7 +52,7 @@
   input, select, textarea {
     width: 100%;
     font-family: 'Montserrat', sans-serif;
-    font-size: 14px;
+    font-size: 16px; /* iOS Safari zooms the page on focus for any input under 16px */
     padding: 10px 12px;
     border: 1px solid #ddd;
     border-radius: 3px;
@@ -75,7 +75,7 @@
   }
   .activity-entry .entry-title { font-weight: 700; color: var(--audac-black); font-size: 13px; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 14px; }
   .remove-entry {
-    position: absolute; top: 16px; right: 16px;
+    position: absolute; top: 8px; right: 8px; padding: 10px 12px;
     background: none; border: none; color: #b33; font-size: 13px; cursor: pointer; font-weight: 500;
   }
   button.audac-btn {
@@ -134,7 +134,7 @@
     background: #fff; border: 1px solid #ddd; border-top: none; border-radius: 0 0 3px 3px;
     max-height: 220px; overflow-y: auto; box-shadow: 0 4px 10px rgba(0,0,0,.1);
   }
-  .combo-item { padding: 9px 12px; font-size: 13.5px; cursor: pointer; color: var(--audac-black); }
+  .combo-item { padding: 12px; font-size: 13.5px; cursor: pointer; color: var(--audac-black); }
   .combo-item:hover { background: #f6ecd8; }
   .combo-item-sub { color: #999; font-size: 11.5px; margin-left: 6px; }
   .combo-item-new { color: var(--audac-gold); font-weight: 600; border-top: 1px solid #eee; }
@@ -145,10 +145,13 @@
   .contact-field.active { display: block; }
 
   #auth-bar { font-size: 12.5px; color: var(--audac-text); margin-bottom: 16px; text-align: right; }
-  .link-btn { background: none; border: none; padding: 0; font: inherit; font-size: 12.5px; cursor: pointer; text-decoration: underline; color: var(--audac-black); }
+  /* Tap targets: a bare 12.5px underlined text link with no padding measures out
+     to a ~15px-tall hit area on a real phone -- padding here doesn't change how
+     it looks, just how forgiving it is to actually tap. */
+  .link-btn { background: none; border: none; padding: 8px 4px; margin: -8px -4px; font: inherit; font-size: 12.5px; cursor: pointer; text-decoration: underline; color: var(--audac-black); }
   .link-btn.danger { color: #b3261e; }
-  #signin-form { display: inline-flex; align-items: center; gap: 8px; margin-top: 6px; }
-  #signin-form input { width: 220px; font-size: 13px; padding: 7px 10px; display: inline-block; }
+  #signin-form { display: inline-flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  #signin-form input { flex: 1; min-width: 160px; max-width: 220px; font-size: 16px; padding: 7px 10px; display: inline-block; }
   #signin-status { font-size: 12px; }
 
   table.detail { width: 100%; border-collapse: collapse; background: #fff; font-size: 12.5px; }
@@ -158,12 +161,17 @@
   .edit-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 14px; margin-bottom: 10px; }
   .edit-grid label, tr.activity-edit-row > td > label { display: block; font-size: 11.5px; font-weight: 500; color: var(--audac-black); margin-bottom: 10px; }
   .edit-grid input, .edit-grid select, tr.activity-edit-row textarea {
-    display: block; width: 100%; font-size: 12.5px; padding: 6px 8px; margin-top: 3px;
+    display: block; width: 100%; font-size: 16px; padding: 6px 8px; margin-top: 3px;
   }
   tr.activity-edit-row textarea { min-height: 44px; resize: vertical; }
   .ae-checkbox { display: flex !important; align-items: center; gap: 6px; margin-top: 12px; }
   .ae-checkbox input { width: auto !important; margin: 0; }
   .ae-status { font-size: 12px; margin-left: 8px; color: #b3261e; }
+
+  @media (max-width: 480px) {
+    .edit-grid { grid-template-columns: 1fr; }
+    table.detail { font-size: 11.5px; }
+  }
   .muted { color: #bbb; }
   tr.attachments-row td { background: #fbf7ee; padding: 14px 20px; }
 
@@ -173,7 +181,7 @@
     display: inline-flex; align-items: center; gap: 6px; background: #f1f1f1; border-radius: 3px;
     padding: 5px 8px; font-size: 12px; color: var(--audac-black);
   }
-  .attachment-chip-remove { background: none; border: none; color: #b3261e; cursor: pointer; font-size: 14px; font-weight: 700; padding: 0; line-height: 1; }
+  .attachment-chip-remove { background: none; border: none; color: #b3261e; cursor: pointer; font-size: 14px; font-weight: 700; padding: 8px; margin: -8px; line-height: 1; }
 </style>
 </head>
 <body>
