@@ -244,6 +244,8 @@
   let attachmentCountByEntry = new Map();
   let auditLogCache = [];
   let selectedActivityIds = new Set();
+  let unassignedReps = [];
+  let newRepsLast7Days = 0;
 
   const CONTACT_TYPES = ['Dealer', 'Consultant', 'End User'];
   const ACTIVITY_TYPES = [
@@ -309,17 +311,31 @@
     }
   }
 
+  // A rep self-registers via magic link with zero manager involvement -- which
+  // is the point, but it also means a manager has no passive signal that it
+  // happened. Fetched once at init (not month-scoped, so no need to recompute
+  // on month change); the alert links to /reps where the actual assignment
+  // happens, same pattern as the other two alerts linking into their drilldown.
+  async function loadRepSignupAlerts() {
+    const { data } = await client.from('profiles').select('id, rep_firm_id, created_at').eq('role', 'rep');
+    const reps = data || [];
+    unassignedReps = reps.filter(r => !r.rep_firm_id);
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    newRepsLast7Days = reps.filter(r => r.created_at && new Date(r.created_at) >= sevenDaysAgo).length;
+  }
+
   // Surfaces what a manager would otherwise only notice by opening every firm's
-  // drilldown one at a time: firms at Red RAG this month, and firms with accounts
-  // that have gone quiet. Reuses the same dormantByFirm map the drilldown itself
-  // reads from, computed once per scorecard load rather than per firm.
+  // drilldown one at a time: firms at Red RAG this month, firms with accounts
+  // that have gone quiet, and reps who've signed up but haven't been assigned
+  // to a firm yet. Reuses the same dormantByFirm map the drilldown itself reads
+  // from, computed once per scorecard load rather than per firm.
   function renderAlerts() {
     const panel = document.getElementById('alerts-panel');
     const redFirms = scorecardCache.filter(r => r.rag_status === 'Red');
     const dormantEntries = [...dormantByFirm.entries()].filter(([, accts]) => accts.length > 0);
     const totalDormant = dormantEntries.reduce((s, [, accts]) => s + accts.length, 0);
 
-    if (!redFirms.length && !dormantEntries.length) {
+    if (!redFirms.length && !dormantEntries.length && !unassignedReps.length) {
       panel.style.display = 'none';
       panel.innerHTML = '';
       return;
@@ -328,7 +344,8 @@
     panel.style.display = 'block';
     panel.innerHTML =
       (redFirms.length ? `<div class="alert-row alert-red"><strong>${redFirms.length} firm${redFirms.length === 1 ? '' : 's'} at Red RAG this month:</strong> ${redFirms.map(r => `<a href="#" data-open-firm="${r.rep_firm_id}">${escapeHtml(r.firm_name)}</a>`).join(', ')}</div>` : '') +
-      (dormantEntries.length ? `<div class="alert-row alert-amber"><strong>${totalDormant} account${totalDormant === 1 ? '' : 's'}</strong> with no linked activity in the last 3 months, across ${dormantEntries.length} firm${dormantEntries.length === 1 ? '' : 's'}: ${dormantEntries.map(([id, accts]) => `<a href="#" data-open-firm="${id}">${escapeHtml(firmName(id))} (${accts.length})</a>`).join(', ')}</div>` : '');
+      (dormantEntries.length ? `<div class="alert-row alert-amber"><strong>${totalDormant} account${totalDormant === 1 ? '' : 's'}</strong> with no linked activity in the last 3 months, across ${dormantEntries.length} firm${dormantEntries.length === 1 ? '' : 's'}: ${dormantEntries.map(([id, accts]) => `<a href="#" data-open-firm="${id}">${escapeHtml(firmName(id))} (${accts.length})</a>`).join(', ')}</div>` : '') +
+      (unassignedReps.length ? `<div class="alert-row alert-amber"><strong>${unassignedReps.length} rep${unassignedReps.length === 1 ? '' : 's'}</strong> signed up but not assigned to a firm yet${newRepsLast7Days ? ` (${newRepsLast7Days} new in the last 7 days)` : ''} — <a href="/reps">assign them on the Reps page</a>.</div>` : '');
     panel.querySelectorAll('[data-open-firm]').forEach(a => {
       a.addEventListener('click', (e) => {
         e.preventDefault();
@@ -1753,6 +1770,7 @@
     document.getElementById('activity-search-to').value = nowMonth;
     document.getElementById('activity-search-from').value = trailingMonths(nowMonth, 6)[5];
     await fetchAllAttachmentCounts();
+    await loadRepSignupAlerts();
     await Promise.all([loadScorecard(), loadActivitySearchRange(), loadAuditLog()]);
     monthInput.addEventListener('change', loadScorecard);
   })();
