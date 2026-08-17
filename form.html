@@ -164,6 +164,16 @@
   .ae-checkbox { display: flex !important; align-items: center; gap: 6px; margin-top: 12px; }
   .ae-checkbox input { width: auto !important; margin: 0; }
   .ae-status { font-size: 12px; margin-left: 8px; color: #b3261e; }
+  .muted { color: #bbb; }
+  tr.attachments-row td { background: #fbf7ee; padding: 14px 20px; }
+
+  input[type="file"] { font-family: 'Montserrat', sans-serif; font-size: 12.5px; padding: 6px 0; border: none; }
+  .attachment-preview { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+  .attachment-chip {
+    display: inline-flex; align-items: center; gap: 6px; background: #f1f1f1; border-radius: 3px;
+    padding: 5px 8px; font-size: 12px; color: var(--audac-black);
+  }
+  .attachment-chip-remove { background: none; border: none; color: #b3261e; cursor: pointer; font-size: 14px; font-weight: 700; padding: 0; line-height: 1; }
 </style>
 </head>
 <body>
@@ -430,6 +440,45 @@
     };
   }
 
+  // Client-side checks mirror the bucket's own file_size_limit/allowed_mime_types
+  // (the real, server-enforced guardrail) -- this is just faster feedback before
+  // an upload that would fail anyway. Files stay in memory on the block itself
+  // (pendingFiles) until the entry is actually inserted and has a real id.
+  const ATTACHMENT_MAX_FILES = 3;
+  const ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
+  const ATTACHMENT_ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
+
+  function wireAttachmentInput(block) {
+    const input = block.querySelector('.attachment-input');
+    const preview = block.querySelector('.attachment-preview');
+    block.pendingFiles = [];
+
+    function renderPreview() {
+      preview.innerHTML = block.pendingFiles.map((f, i) => `
+        <span class="attachment-chip">${escapeHtml(f.name)} <button type="button" class="attachment-chip-remove" data-remove-file="${i}">×</button></span>
+      `).join('');
+      preview.querySelectorAll('[data-remove-file]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          block.pendingFiles.splice(Number(btn.dataset.removeFile), 1);
+          renderPreview();
+        });
+      });
+    }
+
+    input.addEventListener('change', () => {
+      const errors = [];
+      for (const f of [...input.files]) {
+        if (block.pendingFiles.length >= ATTACHMENT_MAX_FILES) { errors.push(`Maximum ${ATTACHMENT_MAX_FILES} photos per activity.`); break; }
+        if (!ATTACHMENT_ALLOWED_TYPES.includes(f.type)) { errors.push(`${f.name}: unsupported file type.`); continue; }
+        if (f.size > ATTACHMENT_MAX_BYTES) { errors.push(`${f.name}: exceeds 5MB.`); continue; }
+        block.pendingFiles.push(f);
+      }
+      input.value = '';
+      if (errors.length) alert(errors.join('\n'));
+      renderPreview();
+    });
+  }
+
   // ---------- Light auth (passwordless magic link) + My Submissions ----------
   // The public form stays fully anonymous by default (no login required to
   // submit, matching the original design). Signing in is purely opt-in and only
@@ -484,6 +533,8 @@
     await client.auth.signOut();
   });
 
+  let attachmentCountByEntry = new Map();
+
   async function loadMySubmissions() {
     const section = document.getElementById('my-submissions-section');
     section.hidden = false;
@@ -500,18 +551,23 @@
       container.innerHTML = '<div class="hint">No submissions linked to this account yet. Entries you submit while signed in will show up here.</div>';
       return;
     }
+    await fetchAllAttachmentCounts();
     container.innerHTML = renderMySubmissionsTable(data);
     wireActivityRows(container, data, loadMySubmissions);
   }
 
   function renderMySubmissionsTable(rows) {
     return `<table class="detail"><thead><tr>
-      <th>Date</th><th>Firm</th><th>Account</th><th>Contact Type</th><th>Activity Type</th><th>Topic / Opportunity</th><th>Actions</th>
+      <th>Date</th><th>Firm</th><th>Account</th><th>Contact Type</th><th>Activity Type</th><th>Topic / Opportunity</th><th>Files</th><th>Actions</th>
     </tr></thead><tbody>${rows.map(r => activityRowHtml(r)).join('')}</tbody></table>`;
   }
 
   function activityRowHtml(r) {
     const firmName = escapeHtml((firmsCache.find(f => f.id === r.rep_firm_id) || {}).name || '');
+    const attCount = attachmentCountByEntry.get(r.id) || 0;
+    const filesCell = attCount > 0
+      ? `<button type="button" class="link-btn" data-toggle-attachments="${r.id}">📎 ${attCount}</button>`
+      : '<span class="muted">—</span>';
     return `
       <tr data-activity-id="${r.id}">
         <td>${r.entry_date}</td>
@@ -520,6 +576,7 @@
         <td>${r.contact_type}</td>
         <td>${r.activity_type}</td>
         <td>${escapeHtml(r.topic_opportunity || '')}</td>
+        <td>${filesCell}</td>
         <td>
           <button type="button" class="link-btn" data-edit-activity="${r.id}">Edit</button>
           <button type="button" class="link-btn danger" data-delete-activity="${r.id}">Delete</button>
@@ -538,6 +595,67 @@
     });
     container.querySelectorAll('[data-delete-activity]').forEach(btn => {
       btn.addEventListener('click', () => deleteActivityEntry(btn.dataset.deleteActivity, onChanged));
+    });
+    container.querySelectorAll('[data-toggle-attachments]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tr = btn.closest('tr');
+        toggleAttachments(tr, btn.dataset.toggleAttachments);
+      });
+    });
+  }
+
+  async function fetchAllAttachmentCounts() {
+    const { data } = await client.from('activity_attachments').select('activity_entry_id');
+    attachmentCountByEntry = new Map();
+    (data || []).forEach(a => {
+      attachmentCountByEntry.set(a.activity_entry_id, (attachmentCountByEntry.get(a.activity_entry_id) || 0) + 1);
+    });
+  }
+
+  async function toggleAttachments(tr, entryId) {
+    const table = tr.closest('table');
+    const existingNext = tr.nextElementSibling;
+    if (existingNext && existingNext.classList.contains('attachments-row')) {
+      existingNext.remove();
+      return;
+    }
+    table.querySelectorAll('.attachments-row').forEach(el => el.remove());
+    const colspan = tr.children.length;
+    const attRow = document.createElement('tr');
+    attRow.className = 'attachments-row';
+    attRow.innerHTML = `<td colspan="${colspan}"></td>`;
+    tr.after(attRow);
+    await renderAttachmentsInto(attRow, entryId);
+  }
+
+  async function renderAttachmentsInto(attRow, entryId) {
+    const td = attRow.querySelector('td');
+    td.innerHTML = '<div class="hint">Loading attachments…</div>';
+    const { data, error } = await client.from('activity_attachments').select('*').eq('activity_entry_id', entryId).order('uploaded_at');
+    if (error) { td.innerHTML = `<div class="hint">Failed to load attachments: ${escapeHtml(error.message)}</div>`; return; }
+    if (!data.length) { td.innerHTML = '<div class="hint">No attachments.</div>'; return; }
+
+    const withUrls = await Promise.all(data.map(async (a) => {
+      const { data: signed } = await client.storage.from('activity-attachments').createSignedUrl(a.storage_path, 3600);
+      return { ...a, url: signed?.signedUrl || null };
+    }));
+
+    td.innerHTML = `<div style="display:flex; gap:14px; flex-wrap:wrap;">${withUrls.map(a => `
+      <div style="text-align:center;">
+        ${a.url ? `<a href="${a.url}" target="_blank" rel="noopener"><img src="${a.url}" alt="${escapeHtml(a.file_name || '')}" style="width:100px; height:100px; object-fit:cover; border-radius:4px; border:1px solid #ddd; display:block;"></a>` : '<div class="hint">Preview unavailable</div>'}
+        <div style="font-size:11px; color:#999; max-width:100px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(a.file_name || '')}</div>
+        <button type="button" class="link-btn danger" data-delete-attachment="${a.id}" data-storage-path="${escapeHtml(a.storage_path)}" style="font-size:11px;">Delete</button>
+      </div>
+    `).join('')}</div>`;
+
+    td.querySelectorAll('[data-delete-attachment]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Delete this attachment?')) return;
+        await client.storage.from('activity-attachments').remove([btn.dataset.storagePath]);
+        await client.from('activity_attachments').delete().eq('id', btn.dataset.deleteAttachment);
+        await fetchAllAttachmentCounts();
+        renderAttachmentsInto(attRow, entryId);
+      });
     });
   }
 
@@ -607,6 +725,14 @@
 
   async function deleteActivityEntry(id, onChanged) {
     if (!confirm('Delete this submission? This cannot be undone.')) return;
+    // The FK cascade removes the activity_attachments row when the entry goes,
+    // but not the actual file in Storage -- and once that metadata row is gone,
+    // nothing can reach the file via RLS to clean it up later. Remove the storage
+    // objects first so nothing gets orphaned.
+    const { data: attachments } = await client.from('activity_attachments').select('storage_path').eq('activity_entry_id', id);
+    if (attachments && attachments.length) {
+      await client.storage.from('activity-attachments').remove(attachments.map(a => a.storage_path));
+    }
     const { error } = await client.from('activity_entries').delete().eq('id', id);
     if (error) { alert('Delete failed: ' + error.message); return; }
     onChanged();
@@ -673,9 +799,15 @@
         <label>Additional Comments</label>
         <textarea name="additional_comments"></textarea>
       </div>
+      <div class="field">
+        <label>Photos (optional — up to 3, JPG/PNG/WEBP/HEIC, max 5MB each)</label>
+        <input type="file" class="attachment-input" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple>
+        <div class="attachment-preview"></div>
+      </div>
     `;
     entriesContainer.appendChild(wrap);
     wireCompanyCombo(wrap);
+    wireAttachmentInput(wrap);
     updateEntryHint();
   }
 
@@ -770,6 +902,7 @@
 
     const firmId = firmSelect.value;
     const month = monthInput.value;
+    const blocks = [...entriesContainer.querySelectorAll('.activity-entry')];
     const entries = collectEntries();
 
     const validationError = validate(firmId, month, entries);
@@ -782,7 +915,16 @@
     submitBtn.disabled = true;
     submitBtn.textContent = 'Submitting…';
 
+    // ids are generated client-side (rather than read back via .insert().select())
+    // because .select() after an insert makes PostgREST evaluate this table's
+    // SELECT policies to build the RETURNING result -- and the manager/executive
+    // policy calls current_role_name(), which anon has no EXECUTE grant on. That
+    // throws "permission denied for function current_role_name" for anonymous
+    // (not-signed-in) submissions specifically. Supplying the id ourselves avoids
+    // RETURNING entirely, so anonymous submission stays exactly as unrestricted
+    // as it was before attachments existed.
     const rows = entries.map(e => ({
+      id: crypto.randomUUID(),
       rep_firm_id: firmId,
       reporting_month: month,
       created_by: currentSession?.user?.id || null,
@@ -791,17 +933,42 @@
 
     const { error } = await client.from('activity_entries').insert(rows);
 
-    submitBtn.disabled = false;
-    submitBtn.textContent = 'Submit Activities';
-
     if (error) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Submit Activities';
       showError('Submission failed: ' + error.message);
       return;
     }
 
+    // Photos can only upload now that each entry has a real id (the storage path
+    // is "<entry-id>/<filename>"). A photo failure here doesn't roll back the
+    // entry itself -- the activity data already saved; only that one photo is
+    // missing, surfaced in the confirmation message.
+    submitBtn.textContent = 'Uploading photos…';
+    const uploadErrors = [];
+    await Promise.all(blocks.map(async (block, i) => {
+      const files = block.pendingFiles || [];
+      if (!files.length) return;
+      const entryId = rows[i].id;
+      for (const file of files) {
+        const path = `${entryId}/${Date.now()}-${file.name}`;
+        const { error: upErr } = await client.storage.from('activity-attachments').upload(path, file, { contentType: file.type });
+        if (upErr) { uploadErrors.push(`${file.name}: ${upErr.message}`); continue; }
+        const { error: metaErr } = await client.from('activity_attachments').insert({
+          activity_entry_id: entryId, storage_path: path, file_name: file.name,
+          content_type: file.type, uploaded_by: currentSession?.user?.id || null,
+        });
+        if (metaErr) uploadErrors.push(`${file.name}: ${metaErr.message}`);
+      }
+    }));
+
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Submit Activities';
+
     const firmLabel = firmSelect.selectedOptions[0]?.textContent || '';
     document.getElementById('confirmation-detail').textContent =
-      `${entries.length} activity ${entries.length === 1 ? 'entry' : 'entries'} submitted for ${firmLabel} — ${month}.`;
+      `${entries.length} activity ${entries.length === 1 ? 'entry' : 'entries'} submitted for ${firmLabel} — ${month}.` +
+      (uploadErrors.length ? ` Note: ${uploadErrors.length} photo(s) failed to upload — ${uploadErrors.join('; ')}` : '');
     document.getElementById('activity-form').style.display = 'none';
     document.getElementById('confirmation').style.display = 'block';
     if (currentSession) loadMySubmissions();
