@@ -726,7 +726,7 @@
     editRow.className = 'activity-edit-row';
     editRow.innerHTML = `<td colspan="${colspan}">
       <div class="edit-grid">
-        <label>Date<input type="date" class="ae-date" value="${row.entry_date}"></label>
+        <label>Date<input type="date" class="ae-date" value="${row.entry_date}" max="${todayISO()}"></label>
         <label>Account<input type="text" class="ae-account" value="${escapeHtml(row.account_name)}"></label>
         <label>Contact<input type="text" class="ae-contact" value="${escapeHtml(row.contact_name || '')}"></label>
         <label>Contact Type<select class="ae-contact-type">${CONTACT_TYPES.map(v => `<option value="${v}">${v}</option>`).join('')}</select></label>
@@ -752,8 +752,10 @@
       const statusEl = editRow.querySelector('.ae-status');
       const accountName = editRow.querySelector('.ae-account').value.trim();
       if (!accountName) { statusEl.textContent = 'Account name is required.'; return; }
+      const entryDate = editRow.querySelector('.ae-date').value;
+      if (entryDate > todayISO()) { statusEl.textContent = 'Entry date can\'t be in the future.'; return; }
       const patch = {
-        entry_date: editRow.querySelector('.ae-date').value,
+        entry_date: entryDate,
         account_name: accountName,
         contact_name: editRow.querySelector('.ae-contact').value.trim() || null,
         contact_type: editRow.querySelector('.ae-contact-type').value,
@@ -803,7 +805,7 @@
       <div class="row">
         <div class="field">
           <label>Entry Date</label>
-          <input type="date" name="entry_date" value="${todayISO()}" required>
+          <input type="date" name="entry_date" value="${todayISO()}" max="${todayISO()}" required>
         </div>
         <div class="field">
           <label>Account / Company</label>
@@ -945,8 +947,19 @@
       if (!e.entry_date || !e.account_name || !e.contact_type || !e.activity_type) {
         return `Activity #${i + 1} is missing a required field.`;
       }
+      if (e.entry_date > todayISO()) {
+        return `Activity #${i + 1}'s entry date can't be in the future.`;
+      }
     }
     return null;
+  }
+
+  // Soft nudge, not a block -- late entries for a prior month are legitimate,
+  // this only catches the "picked the wrong year/month" kind of mistake.
+  function monthsApart(dateStr, monthStr) {
+    const [dy, dm] = dateStr.split('-').map(Number);
+    const [my, mm] = monthStr.split('-').map(Number);
+    return Math.abs((dy - my) * 12 + (dm - mm));
   }
 
   document.getElementById('activity-form').addEventListener('submit', async (e) => {
@@ -962,6 +975,16 @@
     if (validationError) {
       showError(validationError);
       return;
+    }
+
+    const monthMismatchNumbers = entries
+      .map((e, i) => (monthsApart(e.entry_date, month) > 2 ? i + 1 : null))
+      .filter(Boolean);
+    if (monthMismatchNumbers.length) {
+      const proceed = confirm(
+        `Activity #${monthMismatchNumbers.join(', #')} ${monthMismatchNumbers.length === 1 ? 'has' : 'have'} an entry date far from the selected reporting month (${month}). Double-check the date and month are both correct.\n\nSubmit anyway?`
+      );
+      if (!proceed) return;
     }
 
     // Soft duplicate warning, not a hard block -- two genuinely separate visits

@@ -164,7 +164,9 @@
       <h3 id="dd-firm-name"></h3>
       <div class="action-row" style="margin-top:0;">
         <button class="audac-btn" id="generate-agenda-btn">Generate Monthly Review Agenda</button>
+        <button class="audac-btn-outline" id="finalize-review-btn"></button>
         <button class="audac-btn-outline" id="close-drilldown-btn">Close</button>
+        <span id="finalize-status" style="font-size:12px;color:#999;align-self:center;"></span>
       </div>
     </div>
 
@@ -245,6 +247,7 @@
   let auditLogCache = [];
   let selectedActivityIds = new Set();
   let pipelineCacheById = new Map();
+  let currentReviewRow = null;
   let unassignedReps = [];
   let newRepsLast7Days = 0;
 
@@ -261,6 +264,9 @@
   }
   function fmtMoney(n) {
     return '$' + Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
+  }
+  function todayISO() {
+    return new Date().toISOString().slice(0, 10);
   }
   function ragClass(status) {
     return status === 'Green' ? 'rag-green' : status === 'Amber' ? 'rag-amber' : 'rag-red';
@@ -333,6 +339,11 @@
   function renderAlerts() {
     const panel = document.getElementById('alerts-panel');
     const redFirms = scorecardCache.filter(r => r.rag_status === 'Red');
+    // Zero activity is a distinct, more urgent case than "Red because of only
+    // 1-3 activities" -- both are Red RAG, but only one means a firm hasn't
+    // reported in at all this month, so it gets its own callout.
+    const zeroActivityFirms = redFirms.filter(r => Number(r.activity_count) === 0);
+    const lowActivityRedFirms = redFirms.filter(r => Number(r.activity_count) > 0);
     const dormantEntries = [...dormantByFirm.entries()].filter(([, accts]) => accts.length > 0);
     const totalDormant = dormantEntries.reduce((s, [, accts]) => s + accts.length, 0);
 
@@ -344,7 +355,8 @@
     const firmName = (id) => (firmsCache.find(f => f.id === id) || {}).name || '(unknown firm)';
     panel.style.display = 'block';
     panel.innerHTML =
-      (redFirms.length ? `<div class="alert-row alert-red"><strong>${redFirms.length} firm${redFirms.length === 1 ? '' : 's'} at Red RAG this month:</strong> ${redFirms.map(r => `<a href="#" data-open-firm="${r.rep_firm_id}">${escapeHtml(r.firm_name)}</a>`).join(', ')}</div>` : '') +
+      (zeroActivityFirms.length ? `<div class="alert-row alert-red"><strong>${zeroActivityFirms.length} firm${zeroActivityFirms.length === 1 ? '' : 's'} with NO activity logged this month:</strong> ${zeroActivityFirms.map(r => `<a href="#" data-open-firm="${r.rep_firm_id}">${escapeHtml(r.firm_name)}</a>`).join(', ')}</div>` : '') +
+      (lowActivityRedFirms.length ? `<div class="alert-row alert-red"><strong>${lowActivityRedFirms.length} firm${lowActivityRedFirms.length === 1 ? '' : 's'} at Red RAG this month:</strong> ${lowActivityRedFirms.map(r => `<a href="#" data-open-firm="${r.rep_firm_id}">${escapeHtml(r.firm_name)}</a>`).join(', ')}</div>` : '') +
       (dormantEntries.length ? `<div class="alert-row alert-amber"><strong>${totalDormant} account${totalDormant === 1 ? '' : 's'}</strong> with no linked activity in the last 3 months, across ${dormantEntries.length} firm${dormantEntries.length === 1 ? '' : 's'}: ${dormantEntries.map(([id, accts]) => `<a href="#" data-open-firm="${id}">${escapeHtml(firmName(id))} (${accts.length})</a>`).join(', ')}</div>` : '') +
       (unassignedReps.length ? `<div class="alert-row alert-amber"><strong>${unassignedReps.length} rep${unassignedReps.length === 1 ? '' : 's'}</strong> signed up but not assigned to a firm yet${newRepsLast7Days ? ` (${newRepsLast7Days} new in the last 7 days)` : ''} — <a href="/reps">assign them on the Reps page</a>.</div>` : '');
     panel.querySelectorAll('[data-open-firm]').forEach(a => {
@@ -395,14 +407,19 @@
     document.getElementById('drilldown').style.display = 'block';
     document.getElementById('dd-firm-name').textContent = `${row.firm_name} — ${month}`;
 
-    const [acts, pipe, edu] = await Promise.all([
+    const [acts, pipe, edu, review] = await Promise.all([
       client.from('activity_entries').select('*').eq('rep_firm_id', firmId).eq('reporting_month', month).order('entry_date'),
       client.from('pipeline_entries').select('*').eq('rep_firm_id', firmId).eq('reporting_month', month).order('created_date'),
       client.from('education_records').select('*').eq('rep_firm_id', firmId).eq('reporting_month', month).order('completion_date'),
+      client.from('monthly_reviews').select('*').eq('rep_firm_id', firmId).eq('reporting_month', month).maybeSingle(),
     ]);
 
+    currentReviewRow = review.data || null;
+    const locked = !!(currentReviewRow && currentReviewRow.is_finalized);
+    renderFinalizeUI(locked);
+
     const ddActivity = document.getElementById('dd-activity');
-    ddActivity.innerHTML = renderActivityTable(acts.data || []);
+    ddActivity.innerHTML = renderActivityTable(acts.data || [], { locked });
     wireActivityRows(ddActivity, acts.data || [], refreshAfterActivityChange);
     pipelineCacheById = new Map((pipe.data || []).map(p => [String(p.id), p]));
     const ddPipeline = document.getElementById('dd-pipeline');
@@ -411,6 +428,41 @@
     document.getElementById('dd-education').innerHTML = renderEducationTable(edu.data || []);
     document.getElementById('dd-dormant').innerHTML = renderDormantTable(dormantByFirm.get(firmId) || []);
   }
+
+  // A finalized firm+month freezes activity_entries at the DB layer (see
+  // migration 0015) -- this just reflects that state in the UI so a manager
+  // isn't surprised by an error when clicking Edit on a locked entry.
+  function renderFinalizeUI(locked) {
+    const btn = document.getElementById('finalize-review-btn');
+    const status = document.getElementById('finalize-status');
+    btn.textContent = locked ? 'Un-finalize Review' : 'Finalize Review';
+    if (locked && currentReviewRow?.finalized_at) {
+      status.textContent = `🔒 Finalized ${new Date(currentReviewRow.finalized_at).toLocaleDateString()}`;
+    } else {
+      status.textContent = '';
+    }
+  }
+
+  document.getElementById('finalize-review-btn').addEventListener('click', async () => {
+    if (!selectedFirmId) return;
+    const month = monthInput.value;
+    const locked = !!(currentReviewRow && currentReviewRow.is_finalized);
+    const btn = document.getElementById('finalize-review-btn');
+    if (!locked && !confirm('Finalize this firm\'s review for ' + month + '? Activity entries for this period will be locked against further edits/deletes until un-finalized.')) return;
+    btn.disabled = true;
+    const patch = locked
+      ? { is_finalized: false, finalized_at: null, finalized_by: null }
+      : { is_finalized: true, finalized_at: new Date().toISOString(), finalized_by: currentUser.id };
+    let error;
+    if (currentReviewRow) {
+      ({ error } = await client.from('monthly_reviews').update(patch).eq('id', currentReviewRow.id));
+    } else {
+      ({ error } = await client.from('monthly_reviews').insert({ rep_firm_id: selectedFirmId, reporting_month: month, ...patch }));
+    }
+    btn.disabled = false;
+    if (error) { alert('Failed to update finalize status: ' + error.message); return; }
+    await openDrilldown(selectedFirmId);
+  });
 
   // Accounts assigned to a firm (via crm_accounts.rep_firm_id) with no activity
   // entry linked to them (account_external_id) in the trailing 3 reporting months.
@@ -469,14 +521,15 @@
   function renderActivityTable(rows, opts = {}) {
     const showFirm = !!opts.showFirm;
     const selectable = !!opts.selectable;
+    const locked = !!opts.locked;
     if (!rows.length) return '<div class="empty-note">No activity entries for this period.</div>';
     return `<table class="detail"><thead><tr>
       ${selectable ? '<th class="check-col"><input type="checkbox" id="activity-select-all"></th>' : ''}
       <th>Date</th>${showFirm ? '<th>Firm</th>' : ''}<th>Account</th><th>Contact</th><th>Contact Type</th><th>Activity Type</th><th>Demo Gear</th><th>Topic / Opportunity</th><th>Files</th><th>Actions</th>
-    </tr></thead><tbody>${rows.map(r => activityRowHtml(r, showFirm, selectable)).join('')}</tbody></table>`;
+    </tr></thead><tbody>${rows.map(r => activityRowHtml(r, showFirm, selectable, locked)).join('')}</tbody></table>`;
   }
 
-  function activityRowHtml(r, showFirm, selectable) {
+  function activityRowHtml(r, showFirm, selectable, locked) {
     const firmCell = showFirm ? `<td>${escapeHtml((firmsCache.find(f => f.id === r.rep_firm_id) || {}).name || '')}</td>` : '';
     const attCount = attachmentCountByEntry.get(r.id) || 0;
     const filesCell = attCount > 0
@@ -498,8 +551,10 @@
         <td>${escapeHtml(r.topic_opportunity || '')}</td>
         <td>${filesCell}</td>
         <td>
-          <button class="link-btn" data-edit-activity="${r.id}">Edit</button>
-          <button class="link-btn danger" data-delete-activity="${r.id}">Delete</button>
+          ${locked
+            ? '<span class="muted" title="This reporting period has been finalized">🔒 Locked</span>'
+            : `<button class="link-btn" data-edit-activity="${r.id}">Edit</button>
+          <button class="link-btn danger" data-delete-activity="${r.id}">Delete</button>`}
         </td>
       </tr>
     `;
@@ -702,7 +757,7 @@
     editRow.className = 'activity-edit-row';
     editRow.innerHTML = `<td colspan="${colspan}">
       <div class="edit-grid">
-        <label>Date<input type="date" class="ae-date" value="${row.entry_date}"></label>
+        <label>Date<input type="date" class="ae-date" value="${row.entry_date}" max="${todayISO()}"></label>
         <label>Account<input type="text" class="ae-account" value="${escapeHtml(row.account_name)}"></label>
         <label>Contact<input type="text" class="ae-contact" value="${escapeHtml(row.contact_name || '')}"></label>
         <label>Contact Type<select class="ae-contact-type">${CONTACT_TYPES.map(v => `<option value="${v}" ${v === row.contact_type ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
@@ -726,8 +781,10 @@
       const statusEl = editRow.querySelector('.ae-status');
       const accountName = editRow.querySelector('.ae-account').value.trim();
       if (!accountName) { statusEl.textContent = 'Account name is required.'; return; }
+      const entryDate = editRow.querySelector('.ae-date').value;
+      if (entryDate > todayISO()) { statusEl.textContent = 'Entry date can\'t be in the future.'; return; }
       const patch = {
-        entry_date: editRow.querySelector('.ae-date').value,
+        entry_date: entryDate,
         account_name: accountName,
         contact_name: editRow.querySelector('.ae-contact').value.trim() || null,
         contact_type: editRow.querySelector('.ae-contact-type').value,
