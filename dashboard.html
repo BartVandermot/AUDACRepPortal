@@ -244,6 +244,7 @@
   let attachmentCountByEntry = new Map();
   let auditLogCache = [];
   let selectedActivityIds = new Set();
+  let pipelineCacheById = new Map();
   let unassignedReps = [];
   let newRepsLast7Days = 0;
 
@@ -403,7 +404,10 @@
     const ddActivity = document.getElementById('dd-activity');
     ddActivity.innerHTML = renderActivityTable(acts.data || []);
     wireActivityRows(ddActivity, acts.data || [], refreshAfterActivityChange);
-    document.getElementById('dd-pipeline').innerHTML = renderPipelineTable(pipe.data || []);
+    pipelineCacheById = new Map((pipe.data || []).map(p => [String(p.id), p]));
+    const ddPipeline = document.getElementById('dd-pipeline');
+    ddPipeline.innerHTML = renderPipelineTable(pipe.data || [], acts.data || []);
+    wirePipelineRows(ddPipeline);
     document.getElementById('dd-education').innerHTML = renderEducationTable(edu.data || []);
     document.getElementById('dd-dormant').innerHTML = renderDormantTable(dormantByFirm.get(firmId) || []);
   }
@@ -950,14 +954,48 @@
     });
   }
 
-  function renderPipelineTable(rows) {
+  // activityRows is the same firm+month's activity_entries -- pipeline rows are
+  // CSV-imported, not rep-submitted, so linking to "which activity led to this"
+  // is a manual pick a manager makes from that set, not something auto-derived.
+  function renderPipelineTable(rows, activityRows) {
     if (!rows.length) return '<div class="empty-note">No pipeline entries for this period.</div>';
+    const activityOptions = (activityRows || []).map(a =>
+      `<option value="${a.id}">${a.entry_date} — ${escapeHtml(a.account_name)} (${a.activity_type})</option>`
+    ).join('');
     return `<table class="detail"><thead><tr>
-      <th>Account</th><th>Project</th><th>Stage</th><th>Value</th><th>Expected Close</th>
+      <th>Account</th><th>Project</th><th>Stage</th><th>Value</th><th>Expected Close</th><th>Linked Activity</th>
     </tr></thead><tbody>${rows.map(r => `
-      <tr><td>${escapeHtml(r.account_name)}</td><td>${escapeHtml(r.project_name || '')}</td><td>${escapeHtml(r.stage || '')}</td>
-      <td>${fmtMoney(r.value_usd)}</td><td>${r.expected_close_date || ''}</td></tr>
+      <tr data-pipeline-id="${r.id}"><td>${escapeHtml(r.account_name)}</td><td>${escapeHtml(r.project_name || '')}</td><td>${escapeHtml(r.stage || '')}</td>
+      <td>${fmtMoney(r.value_usd)}</td><td>${r.expected_close_date || ''}</td>
+      <td><select class="pipeline-link-select" data-pipeline-link="${r.id}">
+        <option value="">— none —</option>${activityOptions}
+      </select></td></tr>
     `).join('')}</tbody></table>`;
+  }
+
+  // Sets each row's <select> to its current related_activity_entry_id AFTER the
+  // HTML string above is inserted -- can't bake "selected" into the template
+  // itself since escapeHtml-safe comparison against activity ids is simpler as
+  // a DOM property set than as string interpolation per-option.
+  function wirePipelineRows(container) {
+    container.querySelectorAll('[data-pipeline-link]').forEach(select => {
+      const tr = select.closest('tr');
+      const pipelineId = tr.dataset.pipelineId;
+      const row = pipelineCacheById.get(pipelineId);
+      select.value = (row && row.related_activity_entry_id) || '';
+      select.addEventListener('change', async () => {
+        const value = select.value || null;
+        select.disabled = true;
+        const { error } = await client.from('pipeline_entries').update({ related_activity_entry_id: value }).eq('id', pipelineId);
+        select.disabled = false;
+        if (error) {
+          alert('Failed to update linked activity: ' + error.message);
+          select.value = (row && row.related_activity_entry_id) || '';
+          return;
+        }
+        if (row) row.related_activity_entry_id = value;
+      });
+    });
   }
   function renderEducationTable(rows) {
     if (!rows.length) return '<div class="empty-note">No education records for this period.</div>';

@@ -964,6 +964,23 @@
       return;
     }
 
+    // Soft duplicate warning, not a hard block -- two genuinely separate visits
+    // can share every one of these fields, so this asks rather than refuses.
+    // anon can't SELECT activity_entries directly, so this goes through a
+    // narrow security-definer RPC instead of a client-side query.
+    const dupChecks = await Promise.all(entries.map(e =>
+      client.rpc('check_duplicate_activity', {
+        p_rep_firm_id: firmId, p_account_name: e.account_name, p_entry_date: e.entry_date, p_activity_type: e.activity_type,
+      })
+    ));
+    const dupEntryNumbers = dupChecks.map((r, i) => r.data ? i + 1 : null).filter(Boolean);
+    if (dupEntryNumbers.length) {
+      const proceed = confirm(
+        `Activity #${dupEntryNumbers.join(', #')} look${dupEntryNumbers.length === 1 ? 's' : ''} like ${dupEntryNumbers.length === 1 ? 'a duplicate' : 'duplicates'} of an entry already logged for the same account, date, and activity type.\n\nSubmit anyway?`
+      );
+      if (!proceed) return;
+    }
+
     const submitBtn = document.getElementById('submit-btn');
     submitBtn.disabled = true;
     submitBtn.textContent = 'Submitting…';

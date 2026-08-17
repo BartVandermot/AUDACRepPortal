@@ -62,6 +62,9 @@
   .exceptions h3 { margin: 0 0 10px; font-size: 13px; color: var(--red); text-transform: uppercase; letter-spacing: .4px; }
   .exceptions ul { margin: 0; padding-left: 18px; font-size: 13px; color: #7a1f1a; }
   .exceptions .none { color: var(--green); font-size: 13px; }
+  .exceptions-amber { background: var(--amber-bg); border-radius: 4px; padding: 18px 22px; margin-top: 12px; }
+  .exceptions-amber h3 { margin: 0 0 10px; font-size: 13px; color: var(--amber); text-transform: uppercase; letter-spacing: .4px; }
+  .exceptions-amber ul { margin: 0; padding-left: 18px; font-size: 13px; color: #6b4a00; }
 
   #loading-note { font-size: 13px; color: #aaa; padding: 20px 0; }
 </style>
@@ -103,6 +106,7 @@
 
     <h2 class="section-title">Exceptions</h2>
     <div class="exceptions" id="exceptions-box"></div>
+    <div class="exceptions-amber" id="dormant-box" style="display:none;"></div>
 
     <h2 class="section-title">6-Month Trends</h2>
     <div class="charts-grid">
@@ -199,6 +203,49 @@
     ).join('')}</ul>`;
   }
 
+  // Read-only mirror of the same dormant-accounts signal managers see on
+  // /dashboard -- computed here rather than shared with it since this is a
+  // different static page (one file per view). Needs crm_accounts SELECT for
+  // the executive role, which manager-only until this feature was added.
+  function trailingMonths(month, n) {
+    const [y, m] = month.split('-').map(Number);
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      let yy = y, mm = m - i;
+      while (mm < 1) { mm += 12; yy -= 1; }
+      out.push(`${yy}-${String(mm).padStart(2, '0')}`);
+    }
+    return out;
+  }
+
+  async function renderDormantAccounts(month, scorecardRows) {
+    const months = trailingMonths(month, 3);
+    const [{ data: accounts }, { data: acts }] = await Promise.all([
+      client.from('crm_accounts').select('external_id, name, rep_firm_id').not('rep_firm_id', 'is', null),
+      client.from('activity_entries').select('rep_firm_id, account_external_id').in('reporting_month', months).not('account_external_id', 'is', null),
+    ]);
+    const touchedByFirm = new Map();
+    (acts || []).forEach(a => {
+      if (!touchedByFirm.has(a.rep_firm_id)) touchedByFirm.set(a.rep_firm_id, new Set());
+      touchedByFirm.get(a.rep_firm_id).add(a.account_external_id);
+    });
+    const dormantByFirm = new Map();
+    (accounts || []).forEach(a => {
+      const touched = touchedByFirm.get(a.rep_firm_id);
+      if (touched && touched.has(a.external_id)) return;
+      if (!dormantByFirm.has(a.rep_firm_id)) dormantByFirm.set(a.rep_firm_id, 0);
+      dormantByFirm.set(a.rep_firm_id, dormantByFirm.get(a.rep_firm_id) + 1);
+    });
+
+    const box = document.getElementById('dormant-box');
+    const entries = [...dormantByFirm.entries()].filter(([, n]) => n > 0);
+    if (!entries.length) { box.style.display = 'none'; return; }
+    const total = entries.reduce((s, [, n]) => s + n, 0);
+    const firmName = (id) => (scorecardRows.find(r => r.rep_firm_id === id) || {}).firm_name || '(unknown firm)';
+    box.style.display = 'block';
+    box.innerHTML = `<h3>Dormant Accounts</h3><ul><li><strong>${total} account${total === 1 ? '' : 's'}</strong> with no linked activity in the last 3 months: ${entries.map(([id, n]) => `${firmName(id)} (${n})`).join(', ')}.</li></ul>`;
+  }
+
   let charts = {};
   function renderCharts(months, seriesByMonth) {
     const labels = months;
@@ -235,6 +282,7 @@
     renderKpis(rows, month);
     renderScorecard(rows);
     renderExceptions(rows);
+    await renderDormantAccounts(month, rows);
 
     const months = [];
     for (let i = 5; i >= 0; i--) months.push(priorMonth(month, i));
