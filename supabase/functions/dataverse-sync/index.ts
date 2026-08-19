@@ -1,17 +1,18 @@
-// Syncs Accounts and Contacts from Dynamics 365 / Dataverse into crm_accounts /
-// crm_contacts. Auth: caller must be a signed-in manager (checked below);
-// Dataverse access itself uses the OAuth2 client-credentials (S2S) flow against
-// a dedicated Entra ID app registration + Dataverse Application User with a
-// read-only security role (Account, Contact, Opportunity, Product, Country
-// lookup, Account type). Secrets are read from the function's own environment
-// -- never passed through the client.
+// Syncs Accounts, Contacts, and Opportunities from Dynamics 365 / Dataverse
+// into crm_accounts / crm_contacts / pipeline_entries. Auth: caller must be a
+// signed-in manager (checked below); Dataverse access itself uses the OAuth2
+// client-credentials (S2S) flow against a dedicated Entra ID app registration
+// + Dataverse Application User with a read-only security role (Account,
+// Contact, Opportunity, Product, Country lookup, Account type). Secrets are
+// read from the function's own environment -- never passed through the client.
 //
 // Processes one small page per invocation (Edge Functions have a per-call CPU
-// budget; pulling a whole org's worth of Accounts/Contacts in one call blew
-// through it). The caller drives the pagination loop: POST { phase, cursor }
-// and keep calling with the returned nextCursor until done=true, first for
-// phase "accounts" then phase "contacts" (contacts resolve their rep firm by
-// looking up their already-synced parent account in crm_accounts).
+// budget; pulling a whole org's worth of records in one call blew through
+// it). The caller drives the pagination loop: POST { phase, cursor } and keep
+// calling with the returned nextCursor until done=true. Phase order matters:
+// "accounts" first, then "contacts" and "opportunities" (both resolve their
+// rep firm by looking up their already-synced parent/customer account in
+// crm_accounts).
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
@@ -142,6 +143,11 @@ const ACCOUNTS_SELECT = [
 
 const CONTACTS_SELECT = ["contactid", "fullname", "emailaddress1", "_parentcustomerid_value", "modifiedon"].join(",");
 
+const OPPORTUNITIES_SELECT = [
+  "opportunityid", "name", "estimatedvalue", "estimatedclosedate", "createdon",
+  "statuscode", "statecode", "_customerid_value",
+].join(",");
+
 // We only care about active US/Canada accounts (rep territories are US states).
 // The Country entity's Web API relationship/attribute names aren't readable by this
 // Application User (its security role lacks the metadata-read privilege, confirmed
@@ -168,12 +174,27 @@ const CONTACTS_URL_LEVELS = [
   { level: "none", url: CONTACTS_URL_BASE },
 ];
 
+// Opportunities don't carry their own address -- "US/Canada" is inherited from
+// the customer account via the same country-lookup GUID, same relationship
+// pattern as the contacts filter above (customerid is polymorphic account/
+// contact; this only reaches the account side via customerid_account, so an
+// opportunity whose customer is a bare Contact record, not an Account, won't
+// match this filter and falls through the ladder to "active_only"/"none").
+// statecode eq 0 means Open -- closed Won/Lost opportunities aren't imported
+// as pipeline, matching what "Pipeline" means on the scorecard.
+const OPPORTUNITIES_URL_BASE = `${DATAVERSE_ORG_URL}/api/data/v9.2/opportunities?$select=${OPPORTUNITIES_SELECT}`;
+const OPPORTUNITIES_URL_LEVELS = [
+  { level: "full", url: `${OPPORTUNITIES_URL_BASE}&$filter=statecode eq 0 and (customerid_account/_scp_countrylookup_value eq ${COUNTRY_GUID_US} or customerid_account/_scp_countrylookup_value eq ${COUNTRY_GUID_CA})` },
+  { level: "active_only", url: `${OPPORTUNITIES_URL_BASE}&$filter=statecode eq 0` },
+  { level: "none", url: OPPORTUNITIES_URL_BASE },
+];
+
 // Diagnostic-only counts, so the actual expected record counts can be checked before
 // running a real sync. Dataverse's bare /$count sub-path doesn't support $filter at
 // all in this org (confirmed: fails identically regardless of filter content) --
 // uses ?$count=true on the base collection instead and reads @odata.count.
-async function fetchFilteredCount(entity: "accounts" | "contacts", filter: string | null, token: string): Promise<number | null> {
-  const idField = entity === "contacts" ? "contactid" : "accountid";
+async function fetchFilteredCount(entity: "accounts" | "contacts" | "opportunities", filter: string | null, token: string): Promise<number | null> {
+  const idField = entity === "contacts" ? "contactid" : entity === "opportunities" ? "opportunityid" : "accountid";
   const url = filter
     ? `${DATAVERSE_ORG_URL}/api/data/v9.2/${entity}?$select=${idField}&$count=true&$filter=${encodeURIComponent(filter)}`
     : `${DATAVERSE_ORG_URL}/api/data/v9.2/${entity}?$select=${idField}&$count=true`;
@@ -189,17 +210,22 @@ async function getCounts(): Promise<Record<string, any>> {
   const token = await getDataverseToken();
   const accFilter = `statecode eq 0 and (_scp_countrylookup_value eq ${COUNTRY_GUID_US} or _scp_countrylookup_value eq ${COUNTRY_GUID_CA})`;
   const conFilter = `statecode eq 0 and (parentcustomerid_account/_scp_countrylookup_value eq ${COUNTRY_GUID_US} or parentcustomerid_account/_scp_countrylookup_value eq ${COUNTRY_GUID_CA})`;
-  const [accFull, accActive, accNone, conFull, conActive, conNone] = await Promise.all([
+  const oppFilter = `statecode eq 0 and (customerid_account/_scp_countrylookup_value eq ${COUNTRY_GUID_US} or customerid_account/_scp_countrylookup_value eq ${COUNTRY_GUID_CA})`;
+  const [accFull, accActive, accNone, conFull, conActive, conNone, oppFull, oppActive, oppNone] = await Promise.all([
     fetchFilteredCount("accounts", accFilter, token),
     fetchFilteredCount("accounts", "statecode eq 0", token),
     fetchFilteredCount("accounts", null, token),
     fetchFilteredCount("contacts", conFilter, token),
     fetchFilteredCount("contacts", "statecode eq 0", token),
     fetchFilteredCount("contacts", null, token),
+    fetchFilteredCount("opportunities", oppFilter, token),
+    fetchFilteredCount("opportunities", "statecode eq 0", token),
+    fetchFilteredCount("opportunities", null, token),
   ]);
   return {
     accounts: { activeUsCanada: accFull, activeOnly: accActive, total: accNone },
     contacts: { activeUsCanada: conFull, activeOnly: conActive, total: conNone },
+    opportunities: { openUsCanada: oppFull, openOnly: oppActive, total: oppNone },
   };
 }
 
@@ -231,7 +257,7 @@ Deno.serve(async (req: Request) => {
       return jsonResponse(await getCounts());
     }
 
-    const phase = payload.phase === "contacts" ? "contacts" : "accounts";
+    const phase = payload.phase === "contacts" ? "contacts" : payload.phase === "opportunities" ? "opportunities" : "accounts";
     const cursor = payload.cursor || null;
 
     const token = await getDataverseToken();
@@ -319,7 +345,7 @@ Deno.serve(async (req: Request) => {
         noState,
         filterLevel,
       });
-    } else {
+    } else if (phase === "contacts") {
       let rows: any[], nextLink: string | null, filterLevel: string | null;
       if (cursor) {
         const page = await fetchOnePage(cursor, token);
@@ -367,6 +393,71 @@ Deno.serve(async (req: Request) => {
         nextCursor: nextLink,
         processed: upserts.length,
         matchedToFirm,
+        filterLevel,
+      });
+    } else {
+      let rows: any[], nextLink: string | null, filterLevel: string | null;
+      if (cursor) {
+        const page = await fetchOnePage(cursor, token);
+        if (page.status !== 200) throw new Error(`Dataverse request failed: ${page.status} ${page.bodyText}`);
+        rows = page.rows; nextLink = page.nextLink; filterLevel = null;
+      } else {
+        const first = await fetchFirstPageLadder(OPPORTUNITIES_URL_LEVELS, token);
+        rows = first.rows; nextLink = first.nextLink; filterLevel = first.filterLevel;
+      }
+
+      // customerid is polymorphic (account or contact); only the account side
+      // resolves a rep firm here -- an opportunity whose customer is a bare
+      // Contact record has no account to look up and is skipped (counted in
+      // skippedNoFirm), same as an account we've never synced/matched to a firm.
+      const customerIds = [...new Set(rows.map((r: any) => r._customerid_value).filter(Boolean))];
+      let accountById = new Map<string, { name: string; repFirmId: string | null }>();
+      if (customerIds.length) {
+        const { data: accts } = await svc.from("crm_accounts").select("external_id, name, rep_firm_id").in("external_id", customerIds);
+        accountById = new Map((accts || []).map((a: any) => [a.external_id, { name: a.name, repFirmId: a.rep_firm_id }]));
+      }
+
+      const month = new Date().toISOString().slice(0, 7);
+      let matchedToFirm = 0, skippedNoFirm = 0;
+      const upserts: any[] = [];
+      for (const r of rows) {
+        const customerId = r._customerid_value || null;
+        const account = customerId ? accountById.get(customerId) : undefined;
+        const repFirmId = account?.repFirmId || null;
+        // pipeline_entries.rep_firm_id is not-null (unlike crm_contacts), so an
+        // opportunity that can't resolve a firm has nowhere to go -- skipped
+        // rather than silently dropped into the wrong firm's pipeline.
+        if (!repFirmId) { skippedNoFirm++; continue; }
+        matchedToFirm++;
+        const accountName = account?.name
+          || r["_customerid_value@OData.Community.Display.V1.FormattedValue"]
+          || "Unknown";
+        upserts.push({
+          rep_firm_id: repFirmId,
+          reporting_month: month,
+          account_name: accountName,
+          account_external_id: customerId,
+          project_name: r.name || null,
+          stage: r["statuscode@OData.Community.Display.V1.FormattedValue"] ?? null,
+          value_usd: r.estimatedvalue ?? null,
+          created_date: r.createdon ? String(r.createdon).slice(0, 10) : null,
+          expected_close_date: r.estimatedclosedate ? String(r.estimatedclosedate).slice(0, 10) : null,
+          crm_id: r.opportunityid,
+        });
+      }
+
+      if (upserts.length) {
+        const { error } = await svc.from("pipeline_entries").upsert(upserts, { onConflict: "crm_id,reporting_month" });
+        if (error) throw new Error(`pipeline_entries upsert failed: ${error.message}`);
+      }
+
+      return jsonResponse({
+        phase: "opportunities",
+        done: !nextLink,
+        nextCursor: nextLink,
+        processed: upserts.length,
+        matchedToFirm,
+        skippedNoFirm,
         filterLevel,
       });
     }

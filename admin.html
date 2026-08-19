@@ -196,7 +196,12 @@
 
   <div class="tab-panel" id="tab-pipeline">
     <h2 class="section-title">Pipeline</h2>
-    <div class="upload-hint">D365 export (.xlsx or .csv) — imported for the reporting month selected on the Education tab.</div>
+    <div class="action-row" style="margin-top:0;">
+      <button class="audac-btn" id="sync-opportunities-btn">Sync Opportunities from CRM</button>
+    </div>
+    <div class="upload-hint">Pulls open Opportunities (US/Canada only, resolved via their customer account's rep firm) live from Dynamics 365. Requires CRM Accounts to have been synced first, so opportunities can resolve to a rep firm. Each sync tags entries with the current reporting month — the file upload below stays available as a fallback for a specific past month.</div>
+    <div id="status-opportunities"></div>
+    <div class="upload-hint" style="margin-top:22px;">D365 export (.xlsx or .csv) — imported for the reporting month selected on the Education tab.</div>
     <input type="file" accept=".csv,.xlsx,.xls" id="file-pipeline">
     <div id="mapping-area-pipeline"></div>
     <div id="status-pipeline"></div>
@@ -1014,6 +1019,7 @@
     });
     document.getElementById('sync-crm-btn').addEventListener('click', runCrmSync);
     document.getElementById('check-counts-btn').addEventListener('click', runCheckCounts);
+    document.getElementById('sync-opportunities-btn').addEventListener('click', runOpportunitySync);
   }
 
   async function runCheckCounts() {
@@ -1030,7 +1036,8 @@
       statusEl.className = 'upload-status ok';
       statusEl.textContent =
         `Accounts in Dataverse — active US/Canada: ${fmt(data.accounts.activeUsCanada)}, active (any country): ${fmt(data.accounts.activeOnly)}, total: ${fmt(data.accounts.total)}. ` +
-        `Contacts in Dataverse — active US/Canada accounts: ${fmt(data.contacts.activeUsCanada)}, active (any): ${fmt(data.contacts.activeOnly)}, total: ${fmt(data.contacts.total)}.`;
+        `Contacts in Dataverse — active US/Canada accounts: ${fmt(data.contacts.activeUsCanada)}, active (any): ${fmt(data.contacts.activeOnly)}, total: ${fmt(data.contacts.total)}. ` +
+        `Opportunities in Dataverse — open US/Canada: ${fmt(data.opportunities.openUsCanada)}, open (any country): ${fmt(data.opportunities.openOnly)}, total: ${fmt(data.opportunities.total)}.`;
     } catch (err) {
       statusEl.className = 'upload-status err';
       statusEl.textContent = 'Count check failed: ' + err.message;
@@ -1113,6 +1120,49 @@
     } finally {
       btn.disabled = false;
       btn.textContent = 'Sync from CRM';
+    }
+  }
+
+  // Open opportunities only (statecode eq 0 server-side), scoped to US/Canada
+  // via the customer account's country -- same ladder-fallback filter pattern
+  // as accounts/contacts, same single-phase pagination loop. Depends on CRM
+  // Accounts already being synced, since rep firm is resolved by looking up
+  // the opportunity's customer account in crm_accounts, not re-derived here.
+  async function runOpportunitySync() {
+    const statusEl = document.getElementById('status-opportunities');
+    const btn = document.getElementById('sync-opportunities-btn');
+    btn.disabled = true;
+    statusEl.className = '';
+    statusEl.textContent = '';
+
+    try {
+      const filterNote = (level) => level === 'full' ? '' :
+        level === 'active_only' ? ' [country filter unavailable — pulled all open opportunities, not just US/Canada]' :
+        level === 'none' ? ' [WARNING: no server-side filter applied — pulled every opportunity regardless of status or country]' : '';
+
+      let cursor = null;
+      let total = 0, matched = 0, skippedNoFirm = 0, level = 'full';
+      let firstPage = true;
+      do {
+        btn.textContent = `Syncing opportunities… (${total} so far)`;
+        const res = await invokeCrmSync({ phase: 'opportunities', cursor });
+        total += res.processed;
+        matched += res.matchedToFirm;
+        skippedNoFirm += res.skippedNoFirm;
+        if (firstPage) { level = res.filterLevel || 'full'; firstPage = false; }
+        cursor = res.nextCursor;
+      } while (cursor);
+
+      statusEl.className = 'upload-status ' + (level === 'none' ? 'err' : matched ? 'ok' : 'warn');
+      statusEl.textContent =
+        `Synced ${total} opportunit${total === 1 ? 'y' : 'ies'}${filterNote(level)} — ${matched} matched to a rep firm and imported, ` +
+        `${skippedNoFirm} skipped (customer account not yet synced or not matched to a rep firm).`;
+    } catch (err) {
+      statusEl.className = 'upload-status err';
+      statusEl.textContent = 'Opportunity sync failed: ' + err.message;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Sync Opportunities from CRM';
     }
   }
 
