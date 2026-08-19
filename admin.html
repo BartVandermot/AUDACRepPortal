@@ -199,8 +199,9 @@
     <div class="action-row" style="margin-top:0;">
       <button class="audac-btn" id="sync-opportunities-btn">Sync Opportunities from CRM</button>
     </div>
-    <div class="upload-hint">Pulls open Opportunities (US/Canada only, resolved via their customer account's rep firm) live from Dynamics 365. Requires CRM Accounts to have been synced first, so opportunities can resolve to a rep firm. Each sync tags entries with the current reporting month — the file upload below stays available as a fallback for a specific past month.</div>
+    <div class="upload-hint">Pulls open Opportunities (US/Canada only, per the Opportunity's own Country Lookup field) live from Dynamics 365. Since almost every opportunity is filed under Intellimix as the customer, rep firm is resolved via, in order: the Involved Installer account, the rep name in the Contact field (matched against the assignments below), then the free-typed Location field. Each sync tags entries with the current reporting month — the file upload below stays available as a fallback for a specific past month.</div>
     <div id="status-opportunities"></div>
+    <div id="rep-alias-area-opportunities"></div>
     <div class="upload-hint" style="margin-top:22px;">D365 export (.xlsx or .csv) — imported for the reporting month selected on the Education tab.</div>
     <input type="file" accept=".csv,.xlsx,.xls" id="file-pipeline">
     <div id="mapping-area-pipeline"></div>
@@ -931,6 +932,7 @@
 
   function normalize(s) { return String(s).toLowerCase().replace(/[^a-z0-9]/g, ''); }
   function normalizeCompany(s) { return String(s || '').trim().toLowerCase(); }
+  function normalizePersonName(s) { return String(s || '').trim().toLowerCase(); }
   function normalizeEmail(s) { return String(s || '').trim().toLowerCase(); }
 
   function allMappingFields(fields) {
@@ -1124,16 +1126,19 @@
   }
 
   // Open opportunities only (statecode eq 0 server-side), scoped to US/Canada
-  // via the customer account's country -- same ladder-fallback filter pattern
-  // as accounts/contacts, same single-phase pagination loop. Depends on CRM
-  // Accounts already being synced, since rep firm is resolved by looking up
-  // the opportunity's customer account in crm_accounts, not re-derived here.
+  // via the opportunity's own Country Lookup field. Rep firm is resolved
+  // server-side in priority order (Involved Installer account, then the
+  // Contact field's rep name against rep_person_aliases, then the free-typed
+  // Location field) -- this just accumulates the per-page stats the server
+  // reports and, if any rep names came back unrecognized, offers to assign
+  // them so the next sync run picks them up.
   async function runOpportunitySync() {
     const statusEl = document.getElementById('status-opportunities');
     const btn = document.getElementById('sync-opportunities-btn');
     btn.disabled = true;
     statusEl.className = '';
     statusEl.textContent = '';
+    document.getElementById('rep-alias-area-opportunities').innerHTML = '';
 
     try {
       const filterNote = (level) => level === 'full' ? '' :
@@ -1141,22 +1146,35 @@
         level === 'none' ? ' [WARNING: no server-side filter applied — pulled every opportunity regardless of status or country]' : '';
 
       let cursor = null;
-      let total = 0, matched = 0, skippedNoFirm = 0, level = 'full';
+      let total = 0, byInstaller = 0, byRepName = 0, byLocation = 0, excluded = 0, skippedNoMatch = 0, level = 'full';
       let firstPage = true;
+      const unmatchedByName = new Map();
       do {
         btn.textContent = `Syncing opportunities… (${total} so far)`;
         const res = await invokeCrmSync({ phase: 'opportunities', cursor });
-        total += res.processed;
-        matched += res.matchedToFirm;
-        skippedNoFirm += res.skippedNoFirm;
+        total += res.processed + res.skippedNoMatch + res.excludedByRepName;
+        byInstaller += res.matchedByInstaller;
+        byRepName += res.matchedByRepName;
+        byLocation += res.matchedByLocation;
+        excluded += res.excludedByRepName;
+        skippedNoMatch += res.skippedNoMatch;
+        (res.unmatchedContactNames || []).forEach(({ name, count }) => {
+          unmatchedByName.set(name, (unmatchedByName.get(name) || 0) + count);
+        });
         if (firstPage) { level = res.filterLevel || 'full'; firstPage = false; }
         cursor = res.nextCursor;
       } while (cursor);
 
+      const matched = byInstaller + byRepName + byLocation;
       statusEl.className = 'upload-status ' + (level === 'none' ? 'err' : matched ? 'ok' : 'warn');
       statusEl.textContent =
-        `Synced ${total} opportunit${total === 1 ? 'y' : 'ies'}${filterNote(level)} — ${matched} matched to a rep firm and imported, ` +
-        `${skippedNoFirm} skipped (customer account not yet synced or not matched to a rep firm).`;
+        `Synced ${total} open US/Canada opportunit${total === 1 ? 'y' : 'ies'}${filterNote(level)} — ${matched} matched to a rep firm and imported ` +
+        `(${byInstaller} via installer account, ${byRepName} via rep name, ${byLocation} via location), ` +
+        `${excluded} excluded (rep name marked not a tracked rep), ${skippedNoMatch} unresolved.`;
+
+      if (unmatchedByName.size) {
+        renderRepPersonAliasAssignment(unmatchedByName);
+      }
     } catch (err) {
       statusEl.className = 'upload-status err';
       statusEl.textContent = 'Opportunity sync failed: ' + err.message;
@@ -1164,6 +1182,50 @@
       btn.disabled = false;
       btn.textContent = 'Sync Opportunities from CRM';
     }
+  }
+
+  // Mirrors renderAliasAssignment's company-alias flow, keyed on a rep's name
+  // instead of a company. Doesn't re-run the sync automatically after saving
+  // -- assignments apply the next time "Sync Opportunities" is clicked, same
+  // as how a fresh CSV company alias only applies to that same import.
+  function renderRepPersonAliasAssignment(unmatchedByName) {
+    const area = document.getElementById('rep-alias-area-opportunities');
+    const firmOptions = ['<option value="">Skip — not a tracked rep</option>']
+      .concat(firmsCache.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`)).join('');
+
+    area.innerHTML = `
+      <div class="dd-sub-title" style="margin-top:18px;">Unrecognized Rep Names — Assign to a Rep Firm</div>
+      <div class="upload-hint">These names from the Opportunity Contact field haven't been mapped to a rep firm yet, so those opportunities were skipped. Assign each once and re-run the sync to import them.</div>
+      <div class="mapping-grid" style="grid-template-columns: 1fr 260px;">
+        ${[...unmatchedByName.entries()].map(([name, count]) => `
+          <label>${escapeHtml(name)} <span class="muted">(${count} opportunit${count === 1 ? 'y' : 'ies'})</span></label>
+          <select data-person-name="${escapeHtml(name)}">${firmOptions}</select>
+        `).join('')}
+      </div>
+      <div class="action-row">
+        <button class="audac-btn" data-action="save-rep-aliases">Save Assignments</button>
+        <span class="ae-status" id="rep-alias-save-status"></span>
+      </div>
+    `;
+    area.querySelector('[data-action="save-rep-aliases"]').addEventListener('click', async () => {
+      const selects = [...area.querySelectorAll('select[data-person-name]')];
+      const upserts = selects.map(sel => ({
+        person_name_key: normalizePersonName(sel.dataset.personName),
+        display_name: sel.dataset.personName,
+        rep_firm_id: sel.value || null,
+        updated_by: currentUser.id,
+        updated_at: new Date().toISOString(),
+      }));
+      const saveStatus = document.getElementById('rep-alias-save-status');
+      const { error } = await client.from('rep_person_aliases').upsert(upserts, { onConflict: 'person_name_key' });
+      if (error) {
+        saveStatus.style.color = 'var(--red)';
+        saveStatus.textContent = 'Failed to save: ' + error.message;
+        return;
+      }
+      saveStatus.style.color = 'var(--green)';
+      saveStatus.textContent = 'Saved — click "Sync Opportunities from CRM" again to import them.';
+    });
   }
 
   async function handleFile(sourceConfig, file) {

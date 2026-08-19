@@ -10,9 +10,11 @@
 // budget; pulling a whole org's worth of records in one call blew through
 // it). The caller drives the pagination loop: POST { phase, cursor } and keep
 // calling with the returned nextCursor until done=true. Phase order matters:
-// "accounts" first, then "contacts" and "opportunities" (both resolve their
-// rep firm by looking up their already-synced parent/customer account in
-// crm_accounts).
+// "accounts" first -- "contacts" resolves rep firm via its parent account in
+// crm_accounts; "opportunities" resolves rep firm via (in priority order) its
+// Involved Installer account, a manager-maintained rep-name mapping keyed off
+// the Contact field, or the free-typed Location field, since almost every
+// opportunity is filed under Intellimix as the customer account.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
@@ -40,6 +42,14 @@ const US_STATE_NAMES: Record<string, string> = {
 };
 const US_STATE_CODES = new Set(Object.values(US_STATE_NAMES));
 
+const CA_PROVINCE_NAMES: Record<string, string> = {
+  alberta: "AB", "british columbia": "BC", manitoba: "MB", "new brunswick": "NB",
+  "newfoundland and labrador": "NL", "nova scotia": "NS", ontario: "ON",
+  "prince edward island": "PE", quebec: "QC", saskatchewan: "SK",
+  "northwest territories": "NT", nunavut: "NU", yukon: "YT",
+};
+const CA_PROVINCE_CODES = new Set(Object.values(CA_PROVINCE_NAMES));
+
 function normalizeState(raw: unknown): string | null {
   if (!raw) return null;
   const s = String(raw).trim();
@@ -63,9 +73,56 @@ function normalizeCompany(raw: unknown): string {
   return String(raw || "").trim().toLowerCase();
 }
 
+function normalizePersonName(raw: unknown): string {
+  return String(raw || "").trim().toLowerCase();
+}
+
 function normalizeEmail(raw: unknown): string | null {
   const v = String(raw || "").trim().toLowerCase();
   return v || null;
+}
+
+// Location is a free-typed project address/city, not a structured field, so
+// this is necessarily best-effort: try the whole string as a state/province
+// first (e.g. "PA"), then each comma-separated segment from the end (e.g.
+// "Toronto, Ontario" -> "Ontario", "Orlando, Florida" -> "Florida"), then any
+// individual token. A city-only value ("Montreal", "Ottawa") or something
+// non-geographic ("Unknown", "Carter County") intentionally returns no match
+// rather than guessing -- ambiguous free text should fall through to being
+// reported as unresolved, not silently assigned to the wrong firm.
+function extractLocationTerritory(raw: unknown): { code: string; country: "US" | "CA" } | null {
+  const text = String(raw || "").trim();
+  if (!text) return null;
+
+  function tryMatch(segment: string): { code: string; country: "US" | "CA" } | null {
+    const s = segment.trim();
+    if (!s) return null;
+    if (s.length === 2) {
+      const up = s.toUpperCase();
+      if (US_STATE_CODES.has(up)) return { code: up, country: "US" };
+      if (CA_PROVINCE_CODES.has(up)) return { code: up, country: "CA" };
+    }
+    const low = s.toLowerCase();
+    if (US_STATE_NAMES[low]) return { code: US_STATE_NAMES[low], country: "US" };
+    if (CA_PROVINCE_NAMES[low]) return { code: CA_PROVINCE_NAMES[low], country: "CA" };
+    return null;
+  }
+
+  const whole = tryMatch(text);
+  if (whole) return whole;
+
+  const parts = text.split(",").map((p) => p.trim()).filter(Boolean).reverse();
+  for (const part of parts) {
+    const m = tryMatch(part);
+    if (m) return m;
+  }
+
+  const tokens = text.split(/[\s,]+/).filter(Boolean);
+  for (const tok of tokens) {
+    const m = tryMatch(tok);
+    if (m) return m;
+  }
+  return null;
 }
 
 async function getDataverseToken(): Promise<string> {
@@ -145,7 +202,9 @@ const CONTACTS_SELECT = ["contactid", "fullname", "emailaddress1", "_parentcusto
 
 const OPPORTUNITIES_SELECT = [
   "opportunityid", "name", "estimatedvalue", "estimatedclosedate", "createdon",
-  "statuscode", "statecode", "_customerid_value",
+  "statuscode", "statecode",
+  "_pvs_involvedinstallerid_value", "_parentcontactid_value",
+  "pvs_opportunitylocation", "_pvs_countrylookup_value",
 ].join(",");
 
 // We only care about active US/Canada accounts (rep territories are US states).
@@ -174,17 +233,18 @@ const CONTACTS_URL_LEVELS = [
   { level: "none", url: CONTACTS_URL_BASE },
 ];
 
-// Opportunities don't carry their own address -- "US/Canada" is inherited from
-// the customer account via the same country-lookup GUID, same relationship
-// pattern as the contacts filter above (customerid is polymorphic account/
-// contact; this only reaches the account side via customerid_account, so an
-// opportunity whose customer is a bare Contact record, not an Account, won't
-// match this filter and falls through the ladder to "active_only"/"none").
+// Opportunities carry their own Country Lookup field (a separate custom field
+// from the one on Account -- _pvs_countrylookup_value here vs.
+// _scp_countrylookup_value on accounts/contacts -- but pointing at the same
+// underlying Country records, so the same two GUIDs apply). This is more
+// accurate than deriving country from the customer account anyway: almost
+// every opportunity is filed under Intellimix as the customer, which reflects
+// the billing entity, not where the actual project is located.
 // statecode eq 0 means Open -- closed Won/Lost opportunities aren't imported
 // as pipeline, matching what "Pipeline" means on the scorecard.
 const OPPORTUNITIES_URL_BASE = `${DATAVERSE_ORG_URL}/api/data/v9.2/opportunities?$select=${OPPORTUNITIES_SELECT}`;
 const OPPORTUNITIES_URL_LEVELS = [
-  { level: "full", url: `${OPPORTUNITIES_URL_BASE}&$filter=statecode eq 0 and (customerid_account/_scp_countrylookup_value eq ${COUNTRY_GUID_US} or customerid_account/_scp_countrylookup_value eq ${COUNTRY_GUID_CA})` },
+  { level: "full", url: `${OPPORTUNITIES_URL_BASE}&$filter=statecode eq 0 and (_pvs_countrylookup_value eq ${COUNTRY_GUID_US} or _pvs_countrylookup_value eq ${COUNTRY_GUID_CA})` },
   { level: "active_only", url: `${OPPORTUNITIES_URL_BASE}&$filter=statecode eq 0` },
   { level: "none", url: OPPORTUNITIES_URL_BASE },
 ];
@@ -210,7 +270,7 @@ async function getCounts(): Promise<Record<string, any>> {
   const token = await getDataverseToken();
   const accFilter = `statecode eq 0 and (_scp_countrylookup_value eq ${COUNTRY_GUID_US} or _scp_countrylookup_value eq ${COUNTRY_GUID_CA})`;
   const conFilter = `statecode eq 0 and (parentcustomerid_account/_scp_countrylookup_value eq ${COUNTRY_GUID_US} or parentcustomerid_account/_scp_countrylookup_value eq ${COUNTRY_GUID_CA})`;
-  const oppFilter = `statecode eq 0 and (customerid_account/_scp_countrylookup_value eq ${COUNTRY_GUID_US} or customerid_account/_scp_countrylookup_value eq ${COUNTRY_GUID_CA})`;
+  const oppFilter = `statecode eq 0 and (_pvs_countrylookup_value eq ${COUNTRY_GUID_US} or _pvs_countrylookup_value eq ${COUNTRY_GUID_CA})`;
   const [accFull, accActive, accNone, conFull, conActive, conNone, oppFull, oppActive, oppNone] = await Promise.all([
     fetchFilteredCount("accounts", accFilter, token),
     fetchFilteredCount("accounts", "statecode eq 0", token),
@@ -406,37 +466,65 @@ Deno.serve(async (req: Request) => {
         rows = first.rows; nextLink = first.nextLink; filterLevel = first.filterLevel;
       }
 
-      // customerid is polymorphic (account or contact); only the account side
-      // resolves a rep firm here -- an opportunity whose customer is a bare
-      // Contact record has no account to look up and is skipped (counted in
-      // skippedNoFirm), same as an account we've never synced/matched to a firm.
-      const customerIds = [...new Set(rows.map((r: any) => r._customerid_value).filter(Boolean))];
-      let accountById = new Map<string, { name: string; repFirmId: string | null }>();
-      if (customerIds.length) {
-        const { data: accts } = await svc.from("crm_accounts").select("external_id, name, rep_firm_id").in("external_id", customerIds);
-        accountById = new Map((accts || []).map((a: any) => [a.external_id, { name: a.name, repFirmId: a.rep_firm_id }]));
+      // Almost every opportunity is filed under Intellimix as the customer
+      // account, which doesn't identify a rep firm -- rep firm is resolved
+      // in priority order instead: (1) Involved Installer, the actual dealer
+      // account, looked up in crm_accounts; (2) the Contact field, which
+      // Melissa already uses to record which rep person is handling the
+      // deal, matched against a manager-maintained name->firm mapping; (3)
+      // the free-typed Location field, parsed for a state/province. An
+      // opportunity that resolves none of these has nowhere to go (unlike
+      // crm_contacts, pipeline_entries.rep_firm_id is not-null) and is
+      // skipped, with its contact name surfaced so a manager can assign it.
+      const installerIds = [...new Set(rows.map((r: any) => r._pvs_involvedinstallerid_value).filter(Boolean))];
+      let installerById = new Map<string, { name: string; repFirmId: string | null }>();
+      if (installerIds.length) {
+        const { data: accts } = await svc.from("crm_accounts").select("external_id, name, rep_firm_id").in("external_id", installerIds);
+        installerById = new Map((accts || []).map((a: any) => [a.external_id, { name: a.name, repFirmId: a.rep_firm_id }]));
       }
 
+      const { data: aliases } = await svc.from("rep_person_aliases").select("person_name_key, rep_firm_id");
+      const personAliasByKey = new Map<string, string | null>((aliases || []).map((a: any) => [a.person_name_key, a.rep_firm_id]));
+
+      const { data: firms } = await svc.from("rep_firms").select("id, states").eq("status", "active");
+      const firmsCache = firms || [];
+
       const month = new Date().toISOString().slice(0, 7);
-      let matchedToFirm = 0, skippedNoFirm = 0;
+      let matchedByInstaller = 0, matchedByRepName = 0, matchedByLocation = 0, excludedByRepName = 0, skippedNoMatch = 0;
+      const unmatchedContactNames = new Map<string, number>();
       const upserts: any[] = [];
+
       for (const r of rows) {
-        const customerId = r._customerid_value || null;
-        const account = customerId ? accountById.get(customerId) : undefined;
-        const repFirmId = account?.repFirmId || null;
-        // pipeline_entries.rep_firm_id is not-null (unlike crm_contacts), so an
-        // opportunity that can't resolve a firm has nowhere to go -- skipped
-        // rather than silently dropped into the wrong firm's pipeline.
-        if (!repFirmId) { skippedNoFirm++; continue; }
-        matchedToFirm++;
-        const accountName = account?.name
-          || r["_customerid_value@OData.Community.Display.V1.FormattedValue"]
-          || "Unknown";
+        const installerId = r._pvs_involvedinstallerid_value || null;
+        const installer = installerId ? installerById.get(installerId) : undefined;
+        const contactName = r["_parentcontactid_value@OData.Community.Display.V1.FormattedValue"] || null;
+        const contactNameKey = contactName ? normalizePersonName(contactName) : null;
+
+        let repFirmId: string | null = null;
+        if (installer?.repFirmId) {
+          repFirmId = installer.repFirmId;
+          matchedByInstaller++;
+        } else if (contactNameKey && personAliasByKey.has(contactNameKey)) {
+          const aliasFirmId = personAliasByKey.get(contactNameKey) || null;
+          if (aliasFirmId) { repFirmId = aliasFirmId; matchedByRepName++; }
+          else { excludedByRepName++; }
+        } else {
+          const territory = extractLocationTerritory(r.pvs_opportunitylocation);
+          const firm = territory ? firmsCache.find((f: any) => Array.isArray(f.states) && f.states.includes(territory.code)) : null;
+          if (firm) { repFirmId = firm.id; matchedByLocation++; }
+          else {
+            skippedNoMatch++;
+            if (contactName) unmatchedContactNames.set(contactName, (unmatchedContactNames.get(contactName) || 0) + 1);
+          }
+        }
+
+        if (!repFirmId) continue;
+
         upserts.push({
           rep_firm_id: repFirmId,
           reporting_month: month,
-          account_name: accountName,
-          account_external_id: customerId,
+          account_name: installer?.name || contactName || r.name || "Unknown",
+          account_external_id: installerId,
           project_name: r.name || null,
           stage: r["statuscode@OData.Community.Display.V1.FormattedValue"] ?? null,
           value_usd: r.estimatedvalue ?? null,
@@ -456,8 +544,12 @@ Deno.serve(async (req: Request) => {
         done: !nextLink,
         nextCursor: nextLink,
         processed: upserts.length,
-        matchedToFirm,
-        skippedNoFirm,
+        matchedByInstaller,
+        matchedByRepName,
+        matchedByLocation,
+        excludedByRepName,
+        skippedNoMatch,
+        unmatchedContactNames: [...unmatchedContactNames.entries()].map(([name, count]) => ({ name, count })),
         filterLevel,
       });
     }
