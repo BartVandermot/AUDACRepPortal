@@ -199,7 +199,7 @@
     <div class="action-row" style="margin-top:0;">
       <button class="audac-btn" id="sync-opportunities-btn">Sync Opportunities from CRM</button>
     </div>
-    <div class="upload-hint">Pulls open Opportunities (US/Canada only, per the Opportunity's own Country Lookup field) live from Dynamics 365. Since almost every opportunity is filed under Intellimix as the customer, rep firm is resolved via, in order: the Involved Installer account, the rep name in the Contact field (matched against the assignments below), then the free-typed Location field. Each sync tags entries with the current reporting month — the file upload below stays available as a fallback for a specific past month.</div>
+    <div class="upload-hint">Pulls Opportunities (US/Canada only, per the Opportunity's own Country Lookup field) live from Dynamics 365 — Open, Won, and Lost alike, so a deal's outcome stays visible once it closes instead of disappearing from the sync. Since almost every opportunity is filed under Intellimix as the customer, rep firm is resolved via, in order: the Involved Installer account, the rep name in the Contact field (matched against the assignments below), then the free-typed Location field. Open deals are tagged with the current reporting month (a fresh "still open" snapshot each sync); Won/Lost deals are tagged with the month they actually closed, so a win/loss lands on the scorecard for when it really happened. The file upload below stays available as a fallback for a specific past month.</div>
     <div id="status-opportunities"></div>
     <div id="rep-alias-area-opportunities"></div>
     <div class="upload-hint" style="margin-top:22px;">D365 export (.xlsx or .csv) — imported for the reporting month selected on the Education tab.</div>
@@ -1039,7 +1039,7 @@
       statusEl.textContent =
         `Accounts in Dataverse — active US/Canada: ${fmt(data.accounts.activeUsCanada)}, active (any country): ${fmt(data.accounts.activeOnly)}, total: ${fmt(data.accounts.total)}. ` +
         `Contacts in Dataverse — active US/Canada accounts: ${fmt(data.contacts.activeUsCanada)}, active (any): ${fmt(data.contacts.activeOnly)}, total: ${fmt(data.contacts.total)}. ` +
-        `Opportunities in Dataverse — open US/Canada: ${fmt(data.opportunities.openUsCanada)}, open (any country): ${fmt(data.opportunities.openOnly)}, total: ${fmt(data.opportunities.total)}.`;
+        `Opportunities in Dataverse — US/Canada (any status): ${fmt(data.opportunities.usCanada)}, total (any country): ${fmt(data.opportunities.total)}.`;
     } catch (err) {
       statusEl.className = 'upload-status err';
       statusEl.textContent = 'Count check failed: ' + err.message;
@@ -1125,13 +1125,13 @@
     }
   }
 
-  // Open opportunities only (statecode eq 0 server-side), scoped to US/Canada
-  // via the opportunity's own Country Lookup field. Rep firm is resolved
-  // server-side in priority order (Involved Installer account, then the
-  // Contact field's rep name against rep_person_aliases, then the free-typed
-  // Location field) -- this just accumulates the per-page stats the server
-  // reports and, if any rep names came back unrecognized, offers to assign
-  // them so the next sync run picks them up.
+  // All opportunities (Open, Won, Lost), scoped to US/Canada via the
+  // opportunity's own Country Lookup field. Rep firm is resolved server-side
+  // in priority order (Involved Installer account, then the Contact field's
+  // rep name against rep_person_aliases, then the free-typed Location field)
+  // -- this just accumulates the per-page stats the server reports and, if
+  // any rep names came back unrecognized, offers to assign them so the next
+  // sync run picks them up.
   async function runOpportunitySync() {
     const statusEl = document.getElementById('status-opportunities');
     const btn = document.getElementById('sync-opportunities-btn');
@@ -1142,11 +1142,11 @@
 
     try {
       const filterNote = (level) => level === 'full' ? '' :
-        level === 'active_only' ? ' [country filter unavailable — pulled all open opportunities, not just US/Canada]' :
-        level === 'none' ? ' [WARNING: no server-side filter applied — pulled every opportunity regardless of status or country]' : '';
+        level === 'none' ? ' [WARNING: no server-side filter applied — pulled opportunities from every country, not just US/Canada]' : '';
 
       let cursor = null;
       let total = 0, byInstaller = 0, byRepName = 0, byLocation = 0, excluded = 0, skippedNoMatch = 0, level = 'full';
+      let openCount = 0, wonCount = 0, lostCount = 0;
       let firstPage = true;
       const unmatchedByName = new Map();
       do {
@@ -1158,6 +1158,9 @@
         byLocation += res.matchedByLocation;
         excluded += res.excludedByRepName;
         skippedNoMatch += res.skippedNoMatch;
+        openCount += res.openCount;
+        wonCount += res.wonCount;
+        lostCount += res.lostCount;
         (res.unmatchedContactNames || []).forEach(({ name, count }) => {
           unmatchedByName.set(name, (unmatchedByName.get(name) || 0) + count);
         });
@@ -1168,8 +1171,9 @@
       const matched = byInstaller + byRepName + byLocation;
       statusEl.className = 'upload-status ' + (level === 'none' ? 'err' : matched ? 'ok' : 'warn');
       statusEl.textContent =
-        `Synced ${total} open US/Canada opportunit${total === 1 ? 'y' : 'ies'}${filterNote(level)} — ${matched} matched to a rep firm and imported ` +
-        `(${byInstaller} via installer account, ${byRepName} via rep name, ${byLocation} via location), ` +
+        `Synced ${total} US/Canada opportunit${total === 1 ? 'y' : 'ies'}${filterNote(level)} — ${matched} matched to a rep firm and imported ` +
+        `(${byInstaller} via installer account, ${byRepName} via rep name, ${byLocation} via location): ` +
+        `${openCount} open, ${wonCount} won, ${lostCount} lost. ` +
         `${excluded} excluded (rep name marked not a tracked rep), ${skippedNoMatch} unresolved.`;
 
       if (unmatchedByName.size) {

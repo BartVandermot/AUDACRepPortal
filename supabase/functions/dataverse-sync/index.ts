@@ -201,8 +201,8 @@ const ACCOUNTS_SELECT = [
 const CONTACTS_SELECT = ["contactid", "fullname", "emailaddress1", "_parentcustomerid_value", "modifiedon"].join(",");
 
 const OPPORTUNITIES_SELECT = [
-  "opportunityid", "name", "estimatedvalue", "estimatedclosedate", "createdon",
-  "statuscode", "statecode",
+  "opportunityid", "name", "estimatedvalue", "actualvalue", "estimatedclosedate",
+  "actualclosedate", "createdon", "statuscode", "statecode",
   "_pvs_involvedinstallerid_value", "_parentcontactid_value",
   "pvs_opportunitylocation", "_pvs_countrylookup_value",
 ].join(",");
@@ -240,12 +240,13 @@ const CONTACTS_URL_LEVELS = [
 // accurate than deriving country from the customer account anyway: almost
 // every opportunity is filed under Intellimix as the customer, which reflects
 // the billing entity, not where the actual project is located.
-// statecode eq 0 means Open -- closed Won/Lost opportunities aren't imported
-// as pipeline, matching what "Pipeline" means on the scorecard.
+// No status filter -- Won and Lost opportunities are pulled too (see the
+// per-row status handling below), not just Open, since losing that outcome
+// the moment a deal closes would throw away real information (win rate,
+// actual vs. estimated value, which reps are actually closing).
 const OPPORTUNITIES_URL_BASE = `${DATAVERSE_ORG_URL}/api/data/v9.2/opportunities?$select=${OPPORTUNITIES_SELECT}`;
 const OPPORTUNITIES_URL_LEVELS = [
-  { level: "full", url: `${OPPORTUNITIES_URL_BASE}&$filter=statecode eq 0 and (_pvs_countrylookup_value eq ${COUNTRY_GUID_US} or _pvs_countrylookup_value eq ${COUNTRY_GUID_CA})` },
-  { level: "active_only", url: `${OPPORTUNITIES_URL_BASE}&$filter=statecode eq 0` },
+  { level: "full", url: `${OPPORTUNITIES_URL_BASE}&$filter=_pvs_countrylookup_value eq ${COUNTRY_GUID_US} or _pvs_countrylookup_value eq ${COUNTRY_GUID_CA}` },
   { level: "none", url: OPPORTUNITIES_URL_BASE },
 ];
 
@@ -270,8 +271,8 @@ async function getCounts(): Promise<Record<string, any>> {
   const token = await getDataverseToken();
   const accFilter = `statecode eq 0 and (_scp_countrylookup_value eq ${COUNTRY_GUID_US} or _scp_countrylookup_value eq ${COUNTRY_GUID_CA})`;
   const conFilter = `statecode eq 0 and (parentcustomerid_account/_scp_countrylookup_value eq ${COUNTRY_GUID_US} or parentcustomerid_account/_scp_countrylookup_value eq ${COUNTRY_GUID_CA})`;
-  const oppFilter = `statecode eq 0 and (_pvs_countrylookup_value eq ${COUNTRY_GUID_US} or _pvs_countrylookup_value eq ${COUNTRY_GUID_CA})`;
-  const [accFull, accActive, accNone, conFull, conActive, conNone, oppFull, oppActive, oppNone] = await Promise.all([
+  const oppFilter = `_pvs_countrylookup_value eq ${COUNTRY_GUID_US} or _pvs_countrylookup_value eq ${COUNTRY_GUID_CA}`;
+  const [accFull, accActive, accNone, conFull, conActive, conNone, oppUsCanada, oppNone] = await Promise.all([
     fetchFilteredCount("accounts", accFilter, token),
     fetchFilteredCount("accounts", "statecode eq 0", token),
     fetchFilteredCount("accounts", null, token),
@@ -279,13 +280,12 @@ async function getCounts(): Promise<Record<string, any>> {
     fetchFilteredCount("contacts", "statecode eq 0", token),
     fetchFilteredCount("contacts", null, token),
     fetchFilteredCount("opportunities", oppFilter, token),
-    fetchFilteredCount("opportunities", "statecode eq 0", token),
     fetchFilteredCount("opportunities", null, token),
   ]);
   return {
     accounts: { activeUsCanada: accFull, activeOnly: accActive, total: accNone },
     contacts: { activeUsCanada: conFull, activeOnly: conActive, total: conNone },
-    opportunities: { openUsCanada: oppFull, openOnly: oppActive, total: oppNone },
+    opportunities: { usCanada: oppUsCanada, total: oppNone },
   };
 }
 
@@ -489,8 +489,11 @@ Deno.serve(async (req: Request) => {
       const { data: firms } = await svc.from("rep_firms").select("id, states").eq("status", "active");
       const firmsCache = firms || [];
 
-      const month = new Date().toISOString().slice(0, 7);
+      // Dataverse's standard Opportunity statecode option set: 0 Open, 1 Won, 2 Lost.
+      const STATUS_BY_STATECODE: Record<number, "Open" | "Won" | "Lost"> = { 0: "Open", 1: "Won", 2: "Lost" };
+      const syncMonth = new Date().toISOString().slice(0, 7);
       let matchedByInstaller = 0, matchedByRepName = 0, matchedByLocation = 0, excludedByRepName = 0, skippedNoMatch = 0;
+      let openCount = 0, wonCount = 0, lostCount = 0;
       const unmatchedContactNames = new Map<string, number>();
       const upserts: any[] = [];
 
@@ -520,16 +523,35 @@ Deno.serve(async (req: Request) => {
 
         if (!repFirmId) continue;
 
+        const status = STATUS_BY_STATECODE[r.statecode] ?? null;
+        if (status === "Won") wonCount++;
+        else if (status === "Lost") lostCount++;
+        else openCount++;
+
+        // Open deals are tagged with the current sync month -- each monthly
+        // sync is a fresh snapshot of "still open as of now", same as every
+        // other reporting_month in this app. A closed deal instead gets the
+        // month it actually closed in, so a win/loss lands on the scorecard
+        // for the month it really happened, not whichever month someone
+        // happened to run the sync -- otherwise running the first sync in
+        // September would misattribute a June win to September.
+        const reportingMonth = status === "Open"
+          ? syncMonth
+          : (r.actualclosedate ? String(r.actualclosedate).slice(0, 7) : syncMonth);
+
         upserts.push({
           rep_firm_id: repFirmId,
-          reporting_month: month,
+          reporting_month: reportingMonth,
           account_name: installer?.name || contactName || r.name || "Unknown",
           account_external_id: installerId,
           project_name: r.name || null,
           stage: r["statuscode@OData.Community.Display.V1.FormattedValue"] ?? null,
+          status,
           value_usd: r.estimatedvalue ?? null,
+          actual_value_usd: r.actualvalue ?? null,
           created_date: r.createdon ? String(r.createdon).slice(0, 10) : null,
           expected_close_date: r.estimatedclosedate ? String(r.estimatedclosedate).slice(0, 10) : null,
+          actual_close_date: r.actualclosedate ? String(r.actualclosedate).slice(0, 10) : null,
           crm_id: r.opportunityid,
         });
       }
@@ -549,6 +571,9 @@ Deno.serve(async (req: Request) => {
         matchedByLocation,
         excludedByRepName,
         skippedNoMatch,
+        openCount,
+        wonCount,
+        lostCount,
         unmatchedContactNames: [...unmatchedContactNames.entries()].map(([name, count]) => ({ name, count })),
         filterLevel,
       });

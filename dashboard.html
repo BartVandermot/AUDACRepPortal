@@ -679,20 +679,46 @@
   // activityRows is the same firm+month's activity_entries -- pipeline rows are
   // CSV-imported, not rep-submitted, so linking to "which activity led to this"
   // is a manual pick a manager makes from that set, not something auto-derived.
+  //
+  // status is null on older rows (CSV imports predate this column, and the
+  // sync's first version was Open-only) -- treated as Open throughout, same
+  // as the RAG scorecard's own pipeline aggregation does.
   function renderPipelineTable(rows, activityRows) {
     if (!rows.length) return '<div class="empty-note">No pipeline entries for this period.</div>';
     const activityOptions = (activityRows || []).map(a =>
       `<option value="${a.id}">${a.entry_date} — ${escapeHtml(a.account_name)} (${a.activity_type})</option>`
     ).join('');
-    return `<table class="detail"><thead><tr>
-      <th>Account</th><th>Project</th><th>Stage</th><th>Value</th><th>Expected Close</th><th>Linked Activity</th>
-    </tr></thead><tbody>${rows.map(r => `
-      <tr data-pipeline-id="${r.id}"><td>${escapeHtml(r.account_name)}</td><td>${escapeHtml(r.project_name || '')}</td><td>${escapeHtml(r.stage || '')}</td>
-      <td>${fmtMoney(r.value_usd)}</td><td>${r.expected_close_date || ''}</td>
+    const summary = renderPipelineSummary(rows);
+    return summary + `<table class="detail"><thead><tr>
+      <th>Account</th><th>Project</th><th>Status</th><th>Stage</th><th>Value</th><th>Expected Close</th><th>Actual Close</th><th>Linked Activity</th>
+    </tr></thead><tbody>${rows.map(r => {
+      const status = r.status || 'Open';
+      const badgeClass = status === 'Won' ? 'rag-green' : status === 'Lost' ? 'rag-red' : 'rag-amber';
+      const shownValue = status === 'Won' && r.actual_value_usd != null ? r.actual_value_usd : r.value_usd;
+      return `
+      <tr data-pipeline-id="${r.id}"><td>${escapeHtml(r.account_name)}</td><td>${escapeHtml(r.project_name || '')}</td>
+      <td><span class="rag-badge ${badgeClass}">${escapeHtml(status)}</span></td>
+      <td>${escapeHtml(r.stage || '')}</td>
+      <td>${fmtMoney(shownValue)}</td><td>${r.expected_close_date || ''}</td><td>${r.actual_close_date || ''}</td>
       <td><select class="pipeline-link-select" data-pipeline-link="${r.id}">
         <option value="">— none —</option>${activityOptions}
       </select></td></tr>
-    `).join('')}</tbody></table>`;
+    `;
+    }).join('')}</tbody></table>`;
+  }
+
+  function renderPipelineSummary(rows) {
+    const buckets = { Open: { count: 0, value: 0 }, Won: { count: 0, value: 0 }, Lost: { count: 0, value: 0 } };
+    rows.forEach(r => {
+      const status = r.status || 'Open';
+      const bucket = buckets[status] || buckets.Open;
+      bucket.count += 1;
+      bucket.value += Number((status === 'Won' && r.actual_value_usd != null ? r.actual_value_usd : r.value_usd) || 0);
+    });
+    return `<div class="upload-hint" style="margin-top:0;">
+      ${buckets.Open.count} open (${fmtMoney(buckets.Open.value)}), ` +
+      `${buckets.Won.count} won (${fmtMoney(buckets.Won.value)}), ` +
+      `${buckets.Lost.count} lost (${fmtMoney(buckets.Lost.value)})</div>`;
   }
 
   // Sets each row's <select> to its current related_activity_entry_id AFTER the
