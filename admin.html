@@ -37,6 +37,13 @@
     font-family: 'Montserrat', sans-serif; font-size: 14px; padding: 9px 12px;
     border: 1px solid #ddd; border-radius: 3px; background: #fff; color: var(--audac-black);
   }
+  #rep-alias-new-name {
+    font-family: 'Montserrat', sans-serif; font-size: 13px; padding: 9px 12px; min-width: 280px;
+    border: 1px solid #ddd; border-radius: 3px; background: #fff; color: var(--audac-black);
+  }
+  select.rep-alias-firm-select, #rep-alias-new-firm {
+    font-family: 'Montserrat', sans-serif; font-size: 13px; padding: 7px 10px; border: 1px solid #ddd; border-radius: 3px; max-width: 240px;
+  }
   h2.section-title { font-size: 15px; font-weight: 700; color: var(--audac-black); text-transform: uppercase; letter-spacing: .5px; margin: 32px 0 14px; }
 
   .tab-bar { display: flex; gap: 8px; margin-bottom: 26px; border-bottom: 1px solid #eee; flex-wrap: wrap; }
@@ -201,7 +208,18 @@
     </div>
     <div class="upload-hint">Pulls Opportunities (US/Canada only, per the Opportunity's own Country Lookup field) live from Dynamics 365 — Open, Won, and Lost alike, so a deal's outcome stays visible once it closes instead of disappearing from the sync. Since almost every opportunity is filed under Intellimix as the customer, rep firm is resolved via, in order: the Involved Installer account, the rep name in the Contact field (matched against the assignments below), then the free-typed Location field. Open deals are tagged with the current reporting month (a fresh "still open" snapshot each sync); Won/Lost deals are tagged with the month they actually closed, so a win/loss lands on the scorecard for when it really happened. The file upload below stays available as a fallback for a specific past month.</div>
     <div id="status-opportunities"></div>
-    <div id="rep-alias-area-opportunities"></div>
+
+    <div class="dd-sub-title" style="margin-top:22px;">Rep Name → Firm Mappings</div>
+    <div class="upload-hint">Maps a rep's name (as it appears in the Opportunity Contact field) to their firm, so future syncs resolve automatically. Add a name here any time — you don't need to wait for a sync to surface it — or assign one a sync couldn't resolve; those appear below with no firm selected yet. Changes save as soon as you pick a firm.</div>
+    <table class="detail"><thead><tr><th>Rep Name</th><th>Rep Firm</th><th></th></tr></thead>
+      <tbody id="rep-alias-rows"></tbody>
+    </table>
+    <div class="action-row">
+      <input type="text" id="rep-alias-new-name" placeholder="Rep's name, exactly as it appears in CRM">
+      <select id="rep-alias-new-firm"></select>
+      <button type="button" class="audac-btn-outline" id="rep-alias-add-btn">Add Mapping</button>
+    </div>
+
     <div class="upload-hint" style="margin-top:22px;">D365 export (.xlsx or .csv) — imported for the reporting month selected on the Education tab.</div>
     <input type="file" accept=".csv,.xlsx,.xls" id="file-pipeline">
     <div id="mapping-area-pipeline"></div>
@@ -243,6 +261,7 @@
   let attachmentCountByEntry = new Map();
   let auditLogCache = [];
   let selectedActivityIds = new Set();
+  let repPersonAliasCache = [];
 
   const CONTACT_TYPES = ['Dealer', 'Consultant', 'End User'];
   const ACTIVITY_TYPES = [
@@ -1138,7 +1157,6 @@
     btn.disabled = true;
     statusEl.className = '';
     statusEl.textContent = '';
-    document.getElementById('rep-alias-area-opportunities').innerHTML = '';
 
     try {
       const filterNote = (level) => level === 'full' ? '' :
@@ -1176,9 +1194,17 @@
         `${openCount} open, ${wonCount} won, ${lostCount} lost. ` +
         `${excluded} excluded (rep name marked not a tracked rep), ${skippedNoMatch} unresolved.`;
 
-      if (unmatchedByName.size) {
-        renderRepPersonAliasAssignment(unmatchedByName);
-      }
+      // Newly-unresolved names join the persistent table below (unsaved --
+      // no row exists yet, shown with no firm selected) rather than a
+      // one-off popup, so they don't vanish the moment the manager
+      // navigates away or runs the sync again before assigning them.
+      unmatchedByName.forEach((count, name) => {
+        const key = normalizePersonName(name);
+        if (!repPersonAliasCache.some(a => a.personNameKey === key)) {
+          repPersonAliasCache.push({ personNameKey: key, displayName: name, repFirmId: null, saved: false, count });
+        }
+      });
+      renderRepPersonAliasesTable();
     } catch (err) {
       statusEl.className = 'upload-status err';
       statusEl.textContent = 'Opportunity sync failed: ' + err.message;
@@ -1188,49 +1214,121 @@
     }
   }
 
-  // Mirrors renderAliasAssignment's company-alias flow, keyed on a rep's name
-  // instead of a company. Doesn't re-run the sync automatically after saving
-  // -- assignments apply the next time "Sync Opportunities" is clicked, same
-  // as how a fresh CSV company alias only applies to that same import.
-  function renderRepPersonAliasAssignment(unmatchedByName) {
-    const area = document.getElementById('rep-alias-area-opportunities');
-    const firmOptions = ['<option value="">Skip — not a tracked rep</option>']
+  // Persistent (not tied to any one sync run) rep-name -> firm mapping table.
+  // Loaded on init so it's visible and editable at any time -- a manager can
+  // add a name before ever running a sync, and existing/newly-unresolved
+  // names stay in the same table across page loads instead of disappearing
+  // the moment the one-off post-sync panel this replaced was navigated away
+  // from. Each row auto-saves on change, same pattern as reps.html's
+  // firm-assign dropdown.
+  async function loadRepPersonAliases() {
+    const { data, error } = await client.from('rep_person_aliases').select('*').order('display_name');
+    if (error) return;
+    repPersonAliasCache = (data || []).map(a => ({
+      personNameKey: a.person_name_key, displayName: a.display_name, repFirmId: a.rep_firm_id, saved: true,
+    }));
+  }
+
+  function renderRepPersonAliasesTable() {
+    const tbody = document.getElementById('rep-alias-rows');
+    const firmOptions = ['<option value="">-- not yet assigned --</option>', '<option value="skip">Skip — not a tracked rep</option>']
       .concat(firmsCache.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`)).join('');
 
-    area.innerHTML = `
-      <div class="dd-sub-title" style="margin-top:18px;">Unrecognized Rep Names — Assign to a Rep Firm</div>
-      <div class="upload-hint">These names from the Opportunity Contact field haven't been mapped to a rep firm yet, so those opportunities were skipped. Assign each once and re-run the sync to import them.</div>
-      <div class="mapping-grid" style="grid-template-columns: 1fr 260px;">
-        ${[...unmatchedByName.entries()].map(([name, count]) => `
-          <label>${escapeHtml(name)} <span class="muted">(${count} opportunit${count === 1 ? 'y' : 'ies'})</span></label>
-          <select data-person-name="${escapeHtml(name)}">${firmOptions}</select>
-        `).join('')}
-      </div>
-      <div class="action-row">
-        <button class="audac-btn" data-action="save-rep-aliases">Save Assignments</button>
-        <span class="ae-status" id="rep-alias-save-status"></span>
-      </div>
-    `;
-    area.querySelector('[data-action="save-rep-aliases"]').addEventListener('click', async () => {
-      const selects = [...area.querySelectorAll('select[data-person-name]')];
-      const upserts = selects.map(sel => ({
-        person_name_key: normalizePersonName(sel.dataset.personName),
-        display_name: sel.dataset.personName,
-        rep_firm_id: sel.value || null,
-        updated_by: currentUser.id,
-        updated_at: new Date().toISOString(),
-      }));
-      const saveStatus = document.getElementById('rep-alias-save-status');
-      const { error } = await client.from('rep_person_aliases').upsert(upserts, { onConflict: 'person_name_key' });
-      if (error) {
-        saveStatus.style.color = 'var(--red)';
-        saveStatus.textContent = 'Failed to save: ' + error.message;
-        return;
-      }
-      saveStatus.style.color = 'var(--green)';
-      saveStatus.textContent = 'Saved — click "Sync Opportunities from CRM" again to import them.';
+    if (!repPersonAliasCache.length) {
+      tbody.innerHTML = '<tr><td colspan="3" class="empty-note">No rep names mapped yet.</td></tr>';
+    } else {
+      tbody.innerHTML = repPersonAliasCache.map(a => `
+        <tr data-person-key="${escapeHtml(a.personNameKey)}">
+          <td>${escapeHtml(a.displayName)}${a.count ? ` <span class="muted">(${a.count} opportunit${a.count === 1 ? 'y' : 'ies'} last sync)</span>` : ''}</td>
+          <td>
+            <select class="rep-alias-firm-select" data-person-key="${escapeHtml(a.personNameKey)}">${firmOptions}</select>
+            <span class="ae-status"></span>
+          </td>
+          <td>${a.saved ? `<button type="button" class="link-btn danger" data-remove-alias="${escapeHtml(a.personNameKey)}">Remove</button>` : ''}</td>
+        </tr>
+      `).join('');
+    }
+
+    tbody.querySelectorAll('select.rep-alias-firm-select').forEach(sel => {
+      const key = sel.dataset.personKey;
+      const alias = repPersonAliasCache.find(a => a.personNameKey === key);
+      sel.value = alias.saved ? (alias.repFirmId || 'skip') : '';
+      // The status span is passed by reference rather than re-queried by key --
+      // a name containing a quote character would break a selector built from
+      // raw (unescaped) text at runtime.
+      sel.addEventListener('change', () => saveRepPersonAlias(key, sel.value, sel.nextElementSibling));
+    });
+    tbody.querySelectorAll('[data-remove-alias]').forEach(btn => {
+      btn.addEventListener('click', () => removeRepPersonAlias(btn.dataset.removeAlias));
     });
   }
+
+  async function saveRepPersonAlias(personNameKey, selectValue, statusEl) {
+    if (!selectValue) return; // the placeholder itself can't be re-selected, but guard anyway
+    const alias = repPersonAliasCache.find(a => a.personNameKey === personNameKey);
+    if (!alias) return;
+    const repFirmId = selectValue === 'skip' ? null : selectValue;
+    const { error } = await client.from('rep_person_aliases').upsert(
+      { person_name_key: personNameKey, display_name: alias.displayName, rep_firm_id: repFirmId, updated_by: currentUser.id, updated_at: new Date().toISOString() },
+      { onConflict: 'person_name_key' },
+    );
+    if (error) {
+      if (statusEl) { statusEl.style.color = 'var(--red)'; statusEl.textContent = 'Failed: ' + error.message; }
+      return;
+    }
+    const wasUnsaved = !alias.saved;
+    alias.repFirmId = repFirmId;
+    alias.saved = true;
+    if (statusEl) { statusEl.style.color = 'var(--green)'; statusEl.textContent = 'Saved'; }
+    // A full re-render here would immediately wipe the "Saved" message just
+    // set above -- only a row going from unsaved to saved needs a DOM change
+    // (gaining a Remove button), so patch that in place instead of rebuilding
+    // the whole table.
+    if (wasUnsaved) {
+      const row = document.querySelector(`tr[data-person-key] select[data-person-key="${CSS.escape(personNameKey)}"]`)?.closest('tr');
+      const actionCell = row?.lastElementChild;
+      if (actionCell && !actionCell.querySelector('[data-remove-alias]')) {
+        actionCell.innerHTML = `<button type="button" class="link-btn danger" data-remove-alias="${escapeHtml(personNameKey)}">Remove</button>`;
+        actionCell.querySelector('[data-remove-alias]').addEventListener('click', () => removeRepPersonAlias(personNameKey));
+      }
+    }
+  }
+
+  async function removeRepPersonAlias(personNameKey) {
+    if (!confirm('Remove this mapping? Opportunities from this rep will go back to unresolved on the next sync.')) return;
+    const { error } = await client.from('rep_person_aliases').delete().eq('person_name_key', personNameKey);
+    if (error) { alert('Failed to remove: ' + error.message); return; }
+    repPersonAliasCache = repPersonAliasCache.filter(a => a.personNameKey !== personNameKey);
+    renderRepPersonAliasesTable();
+  }
+
+  function populateRepAliasNewFirmSelect() {
+    const sel = document.getElementById('rep-alias-new-firm');
+    sel.innerHTML = ['<option value="skip">Skip — not a tracked rep</option>']
+      .concat(firmsCache.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`)).join('');
+  }
+
+  document.getElementById('rep-alias-add-btn').addEventListener('click', async () => {
+    const nameInput = document.getElementById('rep-alias-new-name');
+    const firmSelect = document.getElementById('rep-alias-new-firm');
+    const displayName = nameInput.value.trim();
+    if (!displayName) { alert('Enter the rep\'s name first.'); return; }
+    const personNameKey = normalizePersonName(displayName);
+    if (repPersonAliasCache.some(a => a.personNameKey === personNameKey)) {
+      alert('That name is already in the table below — assign it there instead.');
+      return;
+    }
+    const repFirmId = firmSelect.value === 'skip' ? null : firmSelect.value;
+    const { error } = await client.from('rep_person_aliases').upsert(
+      { person_name_key: personNameKey, display_name: displayName, rep_firm_id: repFirmId, updated_by: currentUser.id, updated_at: new Date().toISOString() },
+      { onConflict: 'person_name_key' },
+    );
+    if (error) { alert('Failed to save: ' + error.message); return; }
+    repPersonAliasCache.push({ personNameKey, displayName, repFirmId, saved: true });
+    renderRepPersonAliasesTable();
+    nameInput.value = '';
+    firmSelect.value = 'skip';
+  });
 
   async function handleFile(sourceConfig, file) {
     if (!file) return;
@@ -1560,6 +1658,9 @@
     await loadFirms();
     wireUploadInputs();
     populateActivitySearchFilters();
+    populateRepAliasNewFirmSelect();
+    await loadRepPersonAliases();
+    renderRepPersonAliasesTable();
     const nowMonth = currentMonthValue();
     document.getElementById('activity-search-to').value = nowMonth;
     document.getElementById('activity-search-from').value = trailingMonths(nowMonth, 6)[5];
