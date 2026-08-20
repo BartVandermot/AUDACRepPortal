@@ -53,9 +53,32 @@
   table.rep-table th { background: var(--audac-section-bg); color: var(--audac-black); font-weight: 700; text-transform: uppercase; font-size: 10.5px; letter-spacing: .5px; }
   select.firm-assign { font-family: 'Montserrat', sans-serif; font-size: 12.5px; padding: 6px 8px; border: 1px solid #ddd; border-radius: 3px; max-width: 240px; }
   .admin-badge { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; padding: 2px 8px; border-radius: 10px; background: var(--green-bg); color: var(--green); margin-left: 8px; }
+  .needs-review-badge { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; padding: 2px 8px; border-radius: 10px; background: var(--amber-bg); color: var(--amber); margin-left: 8px; }
   .save-note { font-size: 11px; margin-left: 8px; }
   .muted { color: #bbb; }
   #loading-note { font-size: 13px; color: #aaa; padding: 20px 0; }
+
+  h2.section-title { font-size: 15px; font-weight: 700; color: var(--audac-black); text-transform: uppercase; letter-spacing: .5px; margin: 40px 0 14px; padding-top: 20px; border-top: 1px solid #eee; }
+  table.detail { width: 100%; border-collapse: collapse; background: #fff; font-size: 12.5px; }
+  table.detail th, table.detail td { padding: 8px 10px; border-bottom: 1px solid #eee; text-align: left; }
+  table.detail th { background: #f1f1f1; }
+  .empty-note { font-size: 12.5px; color: #aaa; padding: 10px 2px; }
+  .link-btn { background: none; border: none; padding: 0; font: inherit; font-size: 12px; cursor: pointer; text-decoration: underline; color: var(--audac-black); margin-right: 10px; }
+  .link-btn.danger { color: var(--red); }
+  .ae-status { font-size: 12px; margin-left: 8px; }
+  .action-row { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+  #rep-alias-new-name {
+    font-family: 'Montserrat', sans-serif; font-size: 13px; padding: 9px 12px; min-width: 280px;
+    border: 1px solid #ddd; border-radius: 3px; background: #fff; color: var(--audac-black);
+  }
+  select.rep-alias-firm-select, #rep-alias-new-firm {
+    font-family: 'Montserrat', sans-serif; font-size: 13px; padding: 7px 10px; border: 1px solid #ddd; border-radius: 3px; max-width: 240px;
+  }
+  button.audac-btn-outline {
+    background: transparent; color: var(--audac-black); border: 1.5px solid var(--audac-black);
+    padding: 9px 16px; font-family: 'Montserrat', sans-serif; font-weight: 500; font-size: 12.5px;
+    letter-spacing: .4px; text-transform: uppercase; cursor: pointer; border-radius: 3px;
+  }
 </style>
 </head>
 <body>
@@ -111,6 +134,23 @@
         <tbody id="reps-body"></tbody>
       </table>
     </div>
+
+    <h2 class="section-title">Rep Name → Firm Mappings</h2>
+    <p class="upload-hint">Maps a rep's name — as Melissa types it into the Opportunity Contact field in CRM — to their firm, so the CRM opportunity sync resolves it automatically. Any name a sync can't otherwise resolve (it isn't the account's Involved Installer, and isn't already a synced CRM contact linked to a firm) is added here automatically and flagged <strong>Needs review</strong> until you decide; add a name yourself any time. Changes save as soon as you pick a firm.</p>
+
+    <div class="result-count" id="alias-result-count"></div>
+
+    <div style="overflow-x:auto;">
+      <table class="detail">
+        <thead><tr><th>Rep Name</th><th>Rep Firm</th><th></th></tr></thead>
+        <tbody id="rep-alias-rows"></tbody>
+      </table>
+    </div>
+    <div class="action-row">
+      <input type="text" id="rep-alias-new-name" placeholder="Rep's name, exactly as it appears in CRM">
+      <select id="rep-alias-new-firm"></select>
+      <button type="button" class="audac-btn-outline" id="rep-alias-add-btn">Add Mapping</button>
+    </div>
   </div>
 </main>
 
@@ -120,12 +160,16 @@
   const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
   const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+  let currentUser = null;
   let firmsCache = [];
   let repsCache = [];
+  let repPersonAliasCache = [];
 
   function escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
   }
+
+  function normalizePersonName(s) { return String(s || '').trim().toLowerCase(); }
 
   async function guard() {
     const { data: { session } } = await client.auth.getSession();
@@ -229,6 +273,124 @@
   document.getElementById('search-input').addEventListener('input', renderReps);
   document.getElementById('firm-filter').addEventListener('change', renderReps);
 
+  // ---------- Rep Name -> Firm mappings ----------
+  // Resolves a CRM opportunity's Contact-field rep name to a firm when the
+  // Involved Installer account and the contact's own synced CRM record don't
+  // already resolve it (see dataverse-sync's opportunities phase). Every row
+  // here already exists in the DB by the time it's loaded -- a sync inserts
+  // an unreviewed placeholder itself for any name it can't otherwise
+  // resolve, so there's no separate "unsaved, client-side only" row state to
+  // track here, unlike the transient panel this replaced.
+  async function loadRepPersonAliases() {
+    const { data, error } = await client.from('rep_person_aliases').select('*').order('reviewed', { ascending: true }).order('display_name');
+    if (error) return;
+    repPersonAliasCache = (data || []).map(a => ({
+      personNameKey: a.person_name_key, displayName: a.display_name, repFirmId: a.rep_firm_id, reviewed: a.reviewed,
+    }));
+  }
+
+  function aliasResultCountText() {
+    const needsReview = repPersonAliasCache.filter(a => !a.reviewed).length;
+    return `${repPersonAliasCache.length} name${repPersonAliasCache.length === 1 ? '' : 's'} mapped, ${needsReview} needing review`;
+  }
+
+  function renderRepPersonAliasesTable() {
+    const tbody = document.getElementById('rep-alias-rows');
+    document.getElementById('alias-result-count').textContent = aliasResultCountText();
+    const firmOptions = ['<option value="">-- not yet reviewed --</option>', '<option value="skip">Skip — not a tracked rep</option>']
+      .concat(firmsCache.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`)).join('');
+
+    if (!repPersonAliasCache.length) {
+      tbody.innerHTML = '<tr><td colspan="3" class="empty-note">No rep names mapped yet.</td></tr>';
+    } else {
+      tbody.innerHTML = repPersonAliasCache.map(a => `
+        <tr data-person-key="${escapeHtml(a.personNameKey)}">
+          <td>${escapeHtml(a.displayName)}${!a.reviewed ? '<span class="needs-review-badge">Needs review</span>' : ''}</td>
+          <td>
+            <select class="rep-alias-firm-select" data-person-key="${escapeHtml(a.personNameKey)}">${firmOptions}</select>
+            <span class="ae-status"></span>
+          </td>
+          <td><button type="button" class="link-btn danger" data-remove-alias="${escapeHtml(a.personNameKey)}">Remove</button></td>
+        </tr>
+      `).join('');
+    }
+
+    tbody.querySelectorAll('select.rep-alias-firm-select').forEach(sel => {
+      const key = sel.dataset.personKey;
+      const alias = repPersonAliasCache.find(a => a.personNameKey === key);
+      sel.value = alias.reviewed ? (alias.repFirmId || 'skip') : '';
+      // Passed by reference rather than re-queried by key -- a name containing
+      // a quote character would break a selector built from raw text at runtime.
+      sel.addEventListener('change', () => saveRepPersonAlias(key, sel.value, sel.nextElementSibling));
+    });
+    tbody.querySelectorAll('[data-remove-alias]').forEach(btn => {
+      btn.addEventListener('click', () => removeRepPersonAlias(btn.dataset.removeAlias));
+    });
+  }
+
+  async function saveRepPersonAlias(personNameKey, selectValue, statusEl) {
+    if (!selectValue) return; // the placeholder option itself can't be re-selected, but guard anyway
+    const alias = repPersonAliasCache.find(a => a.personNameKey === personNameKey);
+    if (!alias) return;
+    const repFirmId = selectValue === 'skip' ? null : selectValue;
+    const { error } = await client.from('rep_person_aliases').upsert(
+      { person_name_key: personNameKey, display_name: alias.displayName, rep_firm_id: repFirmId, reviewed: true, updated_by: currentUser.id, updated_at: new Date().toISOString() },
+      { onConflict: 'person_name_key' },
+    );
+    if (error) {
+      if (statusEl) { statusEl.style.color = 'var(--red)'; statusEl.textContent = 'Failed: ' + error.message; }
+      return;
+    }
+    const wasUnreviewed = !alias.reviewed;
+    alias.repFirmId = repFirmId;
+    alias.reviewed = true;
+    if (statusEl) { statusEl.style.color = 'var(--green)'; statusEl.textContent = 'Saved'; }
+    // A full re-render here would immediately wipe the "Saved" message just set
+    // above -- only a row moving from unreviewed to reviewed needs a DOM change
+    // (dropping the badge), so patch that in place instead of rebuilding the table.
+    if (wasUnreviewed) {
+      const row = document.querySelector(`tr[data-person-key] select[data-person-key="${CSS.escape(personNameKey)}"]`)?.closest('tr');
+      row?.querySelector('.needs-review-badge')?.remove();
+      document.getElementById('alias-result-count').textContent = aliasResultCountText();
+    }
+  }
+
+  async function removeRepPersonAlias(personNameKey) {
+    if (!confirm('Remove this mapping? Opportunities from this rep will go back to unresolved on the next sync.')) return;
+    const { error } = await client.from('rep_person_aliases').delete().eq('person_name_key', personNameKey);
+    if (error) { alert('Failed to remove: ' + error.message); return; }
+    repPersonAliasCache = repPersonAliasCache.filter(a => a.personNameKey !== personNameKey);
+    renderRepPersonAliasesTable();
+  }
+
+  function populateRepAliasNewFirmSelect() {
+    const sel = document.getElementById('rep-alias-new-firm');
+    sel.innerHTML = ['<option value="skip">Skip — not a tracked rep</option>']
+      .concat(firmsCache.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`)).join('');
+  }
+
+  document.getElementById('rep-alias-add-btn').addEventListener('click', async () => {
+    const nameInput = document.getElementById('rep-alias-new-name');
+    const firmSelect = document.getElementById('rep-alias-new-firm');
+    const displayName = nameInput.value.trim();
+    if (!displayName) { alert('Enter the rep\'s name first.'); return; }
+    const personNameKey = normalizePersonName(displayName);
+    if (repPersonAliasCache.some(a => a.personNameKey === personNameKey)) {
+      alert('That name is already in the table above — assign it there instead.');
+      return;
+    }
+    const repFirmId = firmSelect.value === 'skip' ? null : firmSelect.value;
+    const { error } = await client.from('rep_person_aliases').upsert(
+      { person_name_key: personNameKey, display_name: displayName, rep_firm_id: repFirmId, reviewed: true, updated_by: currentUser.id, updated_at: new Date().toISOString() },
+      { onConflict: 'person_name_key' },
+    );
+    if (error) { alert('Failed to save: ' + error.message); return; }
+    repPersonAliasCache.push({ personNameKey, displayName, repFirmId, reviewed: true });
+    renderRepPersonAliasesTable();
+    nameInput.value = '';
+    firmSelect.value = 'skip';
+  });
+
   async function loadAll() {
     const [firmsRes, repsRes] = await Promise.all([
       client.from('rep_firms').select('id, name').eq('status', 'active').order('name'),
@@ -247,6 +409,10 @@
     renderKpis();
     renderReps();
 
+    populateRepAliasNewFirmSelect();
+    await loadRepPersonAliases();
+    renderRepPersonAliasesTable();
+
     document.getElementById('loading-note').style.display = 'none';
     document.getElementById('content').style.display = 'block';
   }
@@ -254,6 +420,7 @@
   (async function init() {
     const g = await guard();
     if (!g) return;
+    currentUser = g.user;
     document.getElementById('user-email').textContent = g.profile.email;
     await loadAll();
   })();

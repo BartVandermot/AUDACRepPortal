@@ -12,9 +12,10 @@
 // calling with the returned nextCursor until done=true. Phase order matters:
 // "accounts" first -- "contacts" resolves rep firm via its parent account in
 // crm_accounts; "opportunities" resolves rep firm via (in priority order) its
-// Involved Installer account, a manager-maintained rep-name mapping keyed off
-// the Contact field, or the free-typed Location field, since almost every
-// opportunity is filed under Intellimix as the customer account.
+// Involved Installer account, a manager's reviewed decision in
+// rep_person_aliases, the Contact's own resolved firm via crm_contacts, or
+// the free-typed Location field, since almost every opportunity is filed
+// under Intellimix as the customer account.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
@@ -467,15 +468,20 @@ Deno.serve(async (req: Request) => {
       }
 
       // Almost every opportunity is filed under Intellimix as the customer
-      // account, which doesn't identify a rep firm -- rep firm is resolved
-      // in priority order instead: (1) Involved Installer, the actual dealer
-      // account, looked up in crm_accounts; (2) the Contact field, which
-      // Melissa already uses to record which rep person is handling the
-      // deal, matched against a manager-maintained name->firm mapping; (3)
-      // the free-typed Location field, parsed for a state/province. An
-      // opportunity that resolves none of these has nowhere to go (unlike
+      // account, which doesn't identify a rep firm -- rep firm is resolved in
+      // priority order instead: (1) Involved Installer, the actual dealer
+      // account, looked up in crm_accounts; (2) an explicit, reviewed manager
+      // decision in rep_person_aliases (a deliberate call, including "not a
+      // tracked rep", always wins over an automatic guess); (3) the Contact's
+      // own resolved firm via crm_contacts -- that contact was already synced
+      // and territory-matched to a firm by the accounts/contacts phases, so
+      // this is a real signal, not a guess, for any name nobody's reviewed
+      // yet; (4) the free-typed Location field, parsed for a state/province.
+      // An opportunity that resolves none of these has nowhere to go (unlike
       // crm_contacts, pipeline_entries.rep_firm_id is not-null) and is
-      // skipped, with its contact name surfaced so a manager can assign it.
+      // skipped -- an unreviewed placeholder is inserted for its contact name
+      // (if it doesn't already have a row) so it's visible on /reps without
+      // anyone needing to be watching this sync's live output.
       const installerIds = [...new Set(rows.map((r: any) => r._pvs_involvedinstallerid_value).filter(Boolean))];
       let installerById = new Map<string, { name: string; repFirmId: string | null }>();
       if (installerIds.length) {
@@ -483,8 +489,17 @@ Deno.serve(async (req: Request) => {
         installerById = new Map((accts || []).map((a: any) => [a.external_id, { name: a.name, repFirmId: a.rep_firm_id }]));
       }
 
-      const { data: aliases } = await svc.from("rep_person_aliases").select("person_name_key, rep_firm_id");
-      const personAliasByKey = new Map<string, string | null>((aliases || []).map((a: any) => [a.person_name_key, a.rep_firm_id]));
+      const contactIds = [...new Set(rows.map((r: any) => r._parentcontactid_value).filter(Boolean))];
+      let contactById = new Map<string, { repFirmId: string | null }>();
+      if (contactIds.length) {
+        const { data: contacts } = await svc.from("crm_contacts").select("external_id, rep_firm_id").in("external_id", contactIds);
+        contactById = new Map((contacts || []).map((c: any) => [c.external_id, { repFirmId: c.rep_firm_id }]));
+      }
+
+      const { data: aliases } = await svc.from("rep_person_aliases").select("person_name_key, rep_firm_id, reviewed");
+      const personAliasByKey = new Map<string, { repFirmId: string | null; reviewed: boolean }>(
+        (aliases || []).map((a: any) => [a.person_name_key, { repFirmId: a.rep_firm_id, reviewed: a.reviewed }]),
+      );
 
       const { data: firms } = await svc.from("rep_firms").select("id, states").eq("status", "active");
       const firmsCache = firms || [];
@@ -492,32 +507,40 @@ Deno.serve(async (req: Request) => {
       // Dataverse's standard Opportunity statecode option set: 0 Open, 1 Won, 2 Lost.
       const STATUS_BY_STATECODE: Record<number, "Open" | "Won" | "Lost"> = { 0: "Open", 1: "Won", 2: "Lost" };
       const syncMonth = new Date().toISOString().slice(0, 7);
-      let matchedByInstaller = 0, matchedByRepName = 0, matchedByLocation = 0, excludedByRepName = 0, skippedNoMatch = 0;
+      let matchedByInstaller = 0, matchedByRepName = 0, matchedByContactAccount = 0, matchedByLocation = 0, excludedByRepName = 0, skippedNoMatch = 0;
       let openCount = 0, wonCount = 0, lostCount = 0;
-      const unmatchedContactNames = new Map<string, number>();
+      const newPlaceholders = new Map<string, string>(); // person_name_key -> display_name
       const upserts: any[] = [];
 
       for (const r of rows) {
         const installerId = r._pvs_involvedinstallerid_value || null;
         const installer = installerId ? installerById.get(installerId) : undefined;
+        const contactId = r._parentcontactid_value || null;
         const contactName = r["_parentcontactid_value@OData.Community.Display.V1.FormattedValue"] || null;
         const contactNameKey = contactName ? normalizePersonName(contactName) : null;
+        const alias = contactNameKey ? personAliasByKey.get(contactNameKey) : undefined;
+        const reviewedDecision = alias?.reviewed ? alias : undefined;
 
         let repFirmId: string | null = null;
         if (installer?.repFirmId) {
           repFirmId = installer.repFirmId;
           matchedByInstaller++;
-        } else if (contactNameKey && personAliasByKey.has(contactNameKey)) {
-          const aliasFirmId = personAliasByKey.get(contactNameKey) || null;
-          if (aliasFirmId) { repFirmId = aliasFirmId; matchedByRepName++; }
+        } else if (reviewedDecision) {
+          if (reviewedDecision.repFirmId) { repFirmId = reviewedDecision.repFirmId; matchedByRepName++; }
           else { excludedByRepName++; }
         } else {
-          const territory = extractLocationTerritory(r.pvs_opportunitylocation);
-          const firm = territory ? firmsCache.find((f: any) => Array.isArray(f.states) && f.states.includes(territory.code)) : null;
-          if (firm) { repFirmId = firm.id; matchedByLocation++; }
-          else {
-            skippedNoMatch++;
-            if (contactName) unmatchedContactNames.set(contactName, (unmatchedContactNames.get(contactName) || 0) + 1);
+          const contact = contactId ? contactById.get(contactId) : undefined;
+          if (contact?.repFirmId) {
+            repFirmId = contact.repFirmId;
+            matchedByContactAccount++;
+          } else {
+            const territory = extractLocationTerritory(r.pvs_opportunitylocation);
+            const firm = territory ? firmsCache.find((f: any) => Array.isArray(f.states) && f.states.includes(territory.code)) : null;
+            if (firm) { repFirmId = firm.id; matchedByLocation++; }
+            else {
+              skippedNoMatch++;
+              if (contactNameKey && contactName && !alias) newPlaceholders.set(contactNameKey, contactName);
+            }
           }
         }
 
@@ -561,6 +584,16 @@ Deno.serve(async (req: Request) => {
         if (error) throw new Error(`pipeline_entries upsert failed: ${error.message}`);
       }
 
+      // ignoreDuplicates so this never clobbers an existing decision (assigned
+      // or explicitly excluded) -- only ever inserts a fresh row for a name
+      // that has none yet.
+      if (newPlaceholders.size) {
+        const placeholderRows = [...newPlaceholders.entries()].map(([key, name]) => ({
+          person_name_key: key, display_name: name, rep_firm_id: null, reviewed: false,
+        }));
+        await svc.from("rep_person_aliases").upsert(placeholderRows, { onConflict: "person_name_key", ignoreDuplicates: true });
+      }
+
       return jsonResponse({
         phase: "opportunities",
         done: !nextLink,
@@ -568,13 +601,13 @@ Deno.serve(async (req: Request) => {
         processed: upserts.length,
         matchedByInstaller,
         matchedByRepName,
+        matchedByContactAccount,
         matchedByLocation,
         excludedByRepName,
         skippedNoMatch,
         openCount,
         wonCount,
         lostCount,
-        unmatchedContactNames: [...unmatchedContactNames.entries()].map(([name, count]) => ({ name, count })),
         filterLevel,
       });
     }
