@@ -58,6 +58,7 @@
   .badge-parent.via-parent { background: var(--green-bg); color: var(--green); }
   .badge-parent.via-state { background: var(--amber-bg); color: var(--amber); }
   .badge-parent.via-manual { background: #eee; color: #777; }
+  .badge-parent.override { background: #eee; color: #777; }
   .muted { color: #bbb; }
 
   tr.contacts-row td { background: var(--audac-section-bg); padding: 14px 20px; }
@@ -153,6 +154,7 @@
   const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
   const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+  let currentUser = null;
   let firmsCache = [];
   let accountsCache = [];
   let contactCountByAccount = new Map();
@@ -223,7 +225,7 @@
 
     document.getElementById('result-count').textContent = `Showing ${rows.length} of ${accountsCache.length} accounts`;
 
-    const firmOptions = ['<option value="">— Unassigned —</option>']
+    const firmOptions = ['<option value="auto">Auto (recompute)</option>', '<option value="">Unassigned</option>']
       .concat(firmsCache.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`)).join('');
 
     const tbody = document.getElementById('accounts-body');
@@ -231,9 +233,11 @@
       const viaParent = a.rep_firm_id && firmsCache.some(f => f.id === a.rep_firm_id && f.crm_account_external_id === a.parent_account_external_id);
       const badge = a.source === 'manual'
         ? '<span class="badge-parent via-manual">added by rep</span>'
-        : a.rep_firm_id
-          ? `<span class="badge-parent ${viaParent ? 'via-parent' : 'via-state'}">${viaParent ? 'via parent' : 'via state'}</span>`
-          : '';
+        : a.rep_firm_overridden
+          ? '<span class="badge-parent override">manual override</span>'
+          : a.rep_firm_id
+            ? `<span class="badge-parent ${viaParent ? 'via-parent' : 'via-state'}">${viaParent ? 'via parent' : 'via state'}</span>`
+            : '';
       const contactCount = contactCountByAccount.get(a.external_id) || 0;
       const isOpen = expandedIds.has(a.external_id);
       const caret = isOpen ? '▾' : '▸';
@@ -262,22 +266,45 @@
     tbody.querySelectorAll('select.firm-assign').forEach(sel => {
       const accountId = sel.dataset.account;
       const acc = accountsCache.find(a => a.external_id === accountId);
-      sel.value = acc?.rep_firm_id || '';
-      sel.addEventListener('change', () => assignFirm(accountId, sel.value || null));
+      sel.value = acc?.rep_firm_overridden ? (acc.rep_firm_id || '') : 'auto';
+      sel.addEventListener('change', () => assignFirm(accountId, sel.value));
     });
     tbody.querySelectorAll('[data-toggle]').forEach(btn => {
       btn.addEventListener('click', () => toggleContacts(btn.dataset.toggle));
     });
   }
 
-  async function assignFirm(accountExternalId, firmId) {
-    const { error } = await client.from('crm_accounts').update({ rep_firm_id: firmId }).eq('external_id', accountExternalId);
+  // "Auto" clears the override and recomputes the same way the sync would
+  // (parent-account match first, then state match) so the field doesn't sit
+  // stale until the next sync; picking a specific firm or "Unassigned" sets
+  // rep_firm_overridden so the sync's accounts phase leaves this row alone
+  // going forward instead of silently recomputing over the correction.
+  function recomputeAutoRepFirmId(acc) {
+    const viaParent = acc.parent_account_external_id
+      ? firmsCache.find(f => f.crm_account_external_id === acc.parent_account_external_id)
+      : null;
+    if (viaParent) return viaParent.id;
+    if (acc.state_code && acc.country_code === 'US') {
+      const viaState = firmsCache.find(f => Array.isArray(f.states) && f.states.includes(acc.state_code));
+      if (viaState) return viaState.id;
+    }
+    return null;
+  }
+
+  async function assignFirm(accountExternalId, selectValue) {
     const acc = accountsCache.find(a => a.external_id === accountExternalId);
+    if (!acc) return;
+    const overridden = selectValue !== 'auto';
+    const repFirmId = overridden ? (selectValue || null) : recomputeAutoRepFirmId(acc);
+    const { error } = await client.from('crm_accounts').update({
+      rep_firm_id: repFirmId, rep_firm_overridden: overridden, updated_by: currentUser.id, updated_at: new Date().toISOString(),
+    }).eq('external_id', accountExternalId);
     if (error) {
       alert('Could not update rep firm assignment: ' + error.message);
       return;
     }
-    if (acc) acc.rep_firm_id = firmId;
+    acc.rep_firm_id = repFirmId;
+    acc.rep_firm_overridden = overridden;
     renderKpis();
     renderAccounts();
   }
@@ -386,8 +413,8 @@
 
   async function loadAll() {
     const [firmsRes, accountsRes, contactsRes] = await Promise.all([
-      client.from('rep_firms').select('id, name, crm_account_external_id').eq('status', 'active').order('name'),
-      client.from('crm_accounts').select('external_id, name, street, city, state_raw, state_code, zip, country_code, website, relationship_type, business_type, audac_partner_type, classification, rep_firm_id, parent_account_external_id, source').order('name'),
+      client.from('rep_firms').select('id, name, crm_account_external_id, states').eq('status', 'active').order('name'),
+      client.from('crm_accounts').select('external_id, name, street, city, state_raw, state_code, zip, country_code, website, relationship_type, business_type, audac_partner_type, classification, rep_firm_id, rep_firm_overridden, parent_account_external_id, source').order('name'),
       client.from('crm_contacts').select('parent_account_external_id'),
     ]);
 
@@ -415,6 +442,7 @@
   (async function init() {
     const g = await guard();
     if (!g) return;
+    currentUser = g.user;
     document.getElementById('user-email').textContent = g.profile.email;
     await loadAll();
   })();

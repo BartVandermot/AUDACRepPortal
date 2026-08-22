@@ -345,26 +345,46 @@ Deno.serve(async (req: Request) => {
         return firm ? firm.id : null;
       }
 
+      // A manager can manually correct one account's rep firm on the CRM
+      // Data page -- rep_firm_overridden marks that so this sync leaves
+      // rep_firm_id alone for that row instead of blindly recomputing it
+      // from the parent account/state every time, which would otherwise
+      // silently undo the correction (the same fix already applied to
+      // crm_contacts in migration 0020).
+      const accountIdsThisPage = rows.map((r: any) => r.accountid);
+      let acctOverriddenById = new Map<string, { repFirmId: string | null }>();
+      if (accountIdsThisPage.length) {
+        const { data: existing } = await svc.from("crm_accounts").select("external_id, rep_firm_id").in("external_id", accountIdsThisPage).eq("rep_firm_overridden", true);
+        acctOverriddenById = new Map((existing || []).map((a: any) => [a.external_id, { repFirmId: a.rep_firm_id }]));
+      }
+
       // Rep firms are themselves Accounts under Intellimix -- an account whose
       // parentaccountid IS one of those rep-firm accounts is authoritatively that
       // firm's, no state-guessing needed. State matching is only a fallback for
       // accounts not under a rep firm parent (or whose parent isn't one we know).
-      let matchedByParent = 0, matchedByState = 0, outOfTerritory = 0, noState = 0;
+      let matchedByParent = 0, matchedByState = 0, outOfTerritory = 0, noState = 0, preservedOverrides = 0;
       const upserts = rows
         .filter((r: any) => r.name)
         .map((r: any) => {
           const stateCode = normalizeState(r.address1_stateorprovince);
           const countryText = r["_scp_countrylookup_value@OData.Community.Display.V1.FormattedValue"] ?? null;
           const countryCode = normalizeCountry(countryText);
-
           const parentId = r._parentaccountid_value || null;
-          let repFirmId = parentId ? firmIdByCrmAccountId.get(parentId) ?? null : null;
-          if (repFirmId) matchedByParent++;
-          else {
-            repFirmId = resolveFirmIdByState(stateCode, countryCode);
-            if (repFirmId) matchedByState++;
-            else if (stateCode && countryCode === "US") outOfTerritory++;
-            else noState++;
+
+          const overridden = acctOverriddenById.get(r.accountid);
+          let repFirmId: string | null;
+          if (overridden) {
+            repFirmId = overridden.repFirmId;
+            preservedOverrides++;
+          } else {
+            repFirmId = parentId ? firmIdByCrmAccountId.get(parentId) ?? null : null;
+            if (repFirmId) matchedByParent++;
+            else {
+              repFirmId = resolveFirmIdByState(stateCode, countryCode);
+              if (repFirmId) matchedByState++;
+              else if (stateCode && countryCode === "US") outOfTerritory++;
+              else noState++;
+            }
           }
 
           return {
@@ -384,6 +404,7 @@ Deno.serve(async (req: Request) => {
             classification: r["accountclassificationcode@OData.Community.Display.V1.FormattedValue"] ?? null,
             parent_account_external_id: parentId,
             rep_firm_id: repFirmId,
+            rep_firm_overridden: !!overridden,
             updated_by: userData.user.id,
             updated_at: new Date().toISOString(),
           };
@@ -404,6 +425,7 @@ Deno.serve(async (req: Request) => {
         matchedByState,
         outOfTerritory,
         noState,
+        preservedOverrides,
         filterLevel,
       });
     } else if (phase === "contacts") {

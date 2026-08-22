@@ -1120,7 +1120,7 @@
         level === 'none' ? ' [WARNING: no server-side filter applied — pulled the full table]' : '';
 
       let cursor = null;
-      let accTotal = 0, accMatchedByParent = 0, accMatchedByState = 0, accOutOfTerritory = 0, accNoState = 0, accLevel = 'full';
+      let accTotal = 0, accMatchedByParent = 0, accMatchedByState = 0, accOutOfTerritory = 0, accNoState = 0, accPreservedOverrides = 0, accLevel = 'full';
       let firstAccountsPage = true;
       do {
         btn.textContent = `Syncing accounts… (${accTotal} so far)`;
@@ -1130,6 +1130,7 @@
         accMatchedByState += res.matchedByState || 0;
         accOutOfTerritory += res.outOfTerritory;
         accNoState += res.noState;
+        accPreservedOverrides += res.preservedOverrides || 0;
         if (firstAccountsPage) { accLevel = res.filterLevel || 'full'; firstAccountsPage = false; }
         cursor = res.nextCursor;
       } while (cursor);
@@ -1153,7 +1154,7 @@
       statusEl.className = 'upload-status ' + (accLevel === 'none' || conLevel === 'none' ? 'err' : accMatched ? 'ok' : 'warn');
       statusEl.textContent =
         `Synced ${accTotal} account(s)${filterNote(accLevel)} — ${accMatched} matched to a rep firm ` +
-        `(${accMatchedByParent} via parent account, ${accMatchedByState} via state), ` +
+        `(${accMatchedByParent} via parent account, ${accMatchedByState} via state, ${accPreservedOverrides} kept as manually corrected on this page), ` +
         `${accOutOfTerritory} outside configured territories, ${accNoState} missing/unrecognized state. ` +
         `Synced ${conTotal} contact(s)${filterNote(conLevel)} — ${conMatched} have a rep firm ` +
         `(${conPreservedOverrides} kept as manually corrected on the Reps page, the rest inherited from their account).`;
