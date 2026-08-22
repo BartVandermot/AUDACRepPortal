@@ -105,6 +105,10 @@
   .action-row { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
   .dd-sub-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--audac-black); margin: 18px 0 8px; }
   #loading-note { font-size: 13px; color: #aaa; padding: 20px 0; }
+  .status-badge { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; padding: 2px 8px; border-radius: 10px; }
+  .status-badge.open { background: var(--amber-bg); color: var(--amber); }
+  .status-badge.won { background: var(--green-bg); color: var(--green); }
+  .status-badge.lost { background: var(--red-bg); color: var(--red); }
 </style>
 </head>
 <body>
@@ -201,9 +205,41 @@
     <div class="action-row" style="margin-top:0;">
       <button class="audac-btn" id="sync-opportunities-btn">Sync Opportunities from CRM</button>
     </div>
-    <div class="upload-hint">Pulls Opportunities (US/Canada only, per the Opportunity's own Country Lookup field) live from Dynamics 365 — Open, Won, and Lost alike, so a deal's outcome stays visible once it closes instead of disappearing from the sync. Since almost every opportunity is filed under Intellimix as the customer, rep firm is resolved via, in order: the Involved Installer account, a manager's reviewed decision on the Reps page, the CRM contact's own resolved firm, then the free-typed Location field. Open deals are tagged with the current reporting month (a fresh "still open" snapshot each sync); Won/Lost deals are tagged with the month they actually closed, so a win/loss lands on the scorecard for when it really happened. The file upload below stays available as a fallback for a specific past month.</div>
+    <div class="upload-hint">Pulls Opportunities (US/Canada only, per the Opportunity's own Country Lookup field) live from Dynamics 365 — Open, Won, and Lost alike, so a deal's outcome stays visible once it closes instead of disappearing from the sync. Since almost every opportunity is filed under Intellimix as the customer, rep firm is resolved via, in order: the Involved Installer account, a manager's reviewed decision on the Reps page, the CRM contact's own resolved firm, then the free-typed Location field. Open deals are tagged with the month they were <strong>created</strong> in CRM (a stable, one-row-ever assignment, not a fresh snapshot every sync); Won/Lost deals are tagged with the month they actually closed, so a win/loss lands on the scorecard for when it really happened. The file upload below stays available as a fallback for a specific past month.</div>
     <div id="status-opportunities"></div>
     <div class="admin-pointer">Unrecognized rep names from a sync, and the Rep Name → Firm mapping table, now live on the <a href="/reps">Reps</a> page — that's also where Melissa manages rep logins, so all rep-contact administration is in one place.</div>
+
+    <div class="dd-sub-title" style="margin-top:22px;">Synced Opportunities</div>
+    <div class="upload-hint">Every opportunity currently in the pipeline from the CRM sync above (not the CSV-imported pipeline data below).</div>
+    <div class="toolbar" style="margin-bottom:12px;">
+      <div>
+        <label for="opp-search-input">Search</label>
+        <input type="text" id="opp-search-input" placeholder="Project, account…">
+      </div>
+      <div>
+        <label for="opp-search-firm">Rep Firm</label>
+        <select id="opp-search-firm"><option value="">All</option></select>
+      </div>
+      <div>
+        <label for="opp-search-status">Status</label>
+        <select id="opp-search-status">
+          <option value="">All</option>
+          <option value="Open">Open</option>
+          <option value="Won">Won</option>
+          <option value="Lost">Lost</option>
+        </select>
+      </div>
+    </div>
+    <div class="result-count" id="opp-search-count"></div>
+    <div style="overflow-x:auto;">
+      <table class="detail">
+        <thead><tr>
+          <th>Project</th><th>Account</th><th>Rep Firm</th><th>Status</th><th>Stage</th>
+          <th>Est. Value</th><th>Actual Value</th><th>Created</th><th>Expected Close</th><th>Actual Close</th><th>Reporting Month</th>
+        </tr></thead>
+        <tbody id="opp-search-results"></tbody>
+      </table>
+    </div>
 
     <div class="upload-hint" style="margin-top:22px;">D365 export (.xlsx or .csv) — imported for the reporting month selected on the Education tab.</div>
     <input type="file" accept=".csv,.xlsx,.xls" id="file-pipeline">
@@ -246,6 +282,7 @@
   let attachmentCountByEntry = new Map();
   let auditLogCache = [];
   let selectedActivityIds = new Set();
+  let pipelineEntriesCache = [];
 
   const CONTACT_TYPES = ['Dealer', 'Consultant', 'End User'];
   const ACTIVITY_TYPES = [
@@ -1098,13 +1135,14 @@
       } while (cursor);
 
       cursor = null;
-      let conTotal = 0, conMatched = 0, conLevel = 'full';
+      let conTotal = 0, conMatched = 0, conPreservedOverrides = 0, conLevel = 'full';
       let firstContactsPage = true;
       do {
         btn.textContent = `Syncing contacts… (${conTotal} so far)`;
         const res = await invokeCrmSync({ phase: 'contacts', cursor });
         conTotal += res.processed;
         conMatched += res.matchedToFirm;
+        conPreservedOverrides += res.preservedOverrides || 0;
         if (firstContactsPage) { conLevel = res.filterLevel || 'full'; firstContactsPage = false; }
         cursor = res.nextCursor;
       } while (cursor);
@@ -1117,7 +1155,8 @@
         `Synced ${accTotal} account(s)${filterNote(accLevel)} — ${accMatched} matched to a rep firm ` +
         `(${accMatchedByParent} via parent account, ${accMatchedByState} via state), ` +
         `${accOutOfTerritory} outside configured territories, ${accNoState} missing/unrecognized state. ` +
-        `Synced ${conTotal} contact(s)${filterNote(conLevel)} — ${conMatched} inherited a rep firm from their account.`;
+        `Synced ${conTotal} contact(s)${filterNote(conLevel)} — ${conMatched} have a rep firm ` +
+        `(${conPreservedOverrides} kept as manually corrected on the Reps page, the rest inherited from their account).`;
     } catch (err) {
       statusEl.className = 'upload-status err';
       statusEl.textContent = 'CRM sync failed: ' + err.message;
@@ -1175,6 +1214,8 @@
         `${openCount} open, ${wonCount} won, ${lostCount} lost. ` +
         `${excluded} excluded (rep name marked not a tracked rep), ${skippedNoMatch} unresolved` +
         (skippedNoMatch ? ' — assign the remaining names on the Reps page.' : '.');
+
+      await loadPipelineEntries();
     } catch (err) {
       statusEl.className = 'upload-status err';
       statusEl.textContent = 'Opportunity sync failed: ' + err.message;
@@ -1183,6 +1224,75 @@
       btn.textContent = 'Sync Opportunities from CRM';
     }
   }
+
+  // ---------- Synced Opportunities overview ----------
+  // Reads pipeline_entries rows that came from the CRM sync (crm_id set) --
+  // the CSV-imported pipeline data below has its own workflow and isn't
+  // mixed into this view.
+  async function loadPipelineEntries() {
+    const { data, error } = await client.from('pipeline_entries').select('*').not('crm_id', 'is', null).order('created_date', { ascending: false });
+    if (error) {
+      document.getElementById('opp-search-results').innerHTML = `<tr><td colspan="11" class="empty-note">Failed to load: ${escapeHtml(error.message)}</td></tr>`;
+      return;
+    }
+    pipelineEntriesCache = data || [];
+    renderPipelineEntries();
+  }
+
+  function populateOppSearchFirmFilter() {
+    const sel = document.getElementById('opp-search-firm');
+    const current = sel.value;
+    sel.innerHTML = '<option value="">All</option>' + firmsCache.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`).join('');
+    sel.value = current || '';
+  }
+
+  function getFilteredPipelineEntries() {
+    const q = document.getElementById('opp-search-input').value.trim().toLowerCase();
+    const firmFilter = document.getElementById('opp-search-firm').value;
+    const statusFilter = document.getElementById('opp-search-status').value;
+
+    let rows = pipelineEntriesCache;
+    if (firmFilter) rows = rows.filter(r => r.rep_firm_id === firmFilter);
+    if (statusFilter) rows = rows.filter(r => (r.status || 'Open') === statusFilter);
+    if (q) rows = rows.filter(r => `${r.project_name || ''} ${r.account_name || ''}`.toLowerCase().includes(q));
+    return rows;
+  }
+
+  function renderPipelineEntries() {
+    const rows = getFilteredPipelineEntries();
+    document.getElementById('opp-search-count').textContent = `Showing ${rows.length} of ${pipelineEntriesCache.length} synced opportunities`;
+
+    const tbody = document.getElementById('opp-search-results');
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="11" class="empty-note">No synced opportunities match the current filters.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(r => {
+      const status = r.status || 'Open';
+      const badgeClass = status === 'Won' ? 'won' : status === 'Lost' ? 'lost' : 'open';
+      const firmName = (firmsCache.find(f => f.id === r.rep_firm_id) || {}).name || '';
+      const fmtMoney = (v) => v == null ? '' : Number(v).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+      return `
+        <tr>
+          <td>${escapeHtml(r.project_name || '')}</td>
+          <td>${escapeHtml(r.account_name || '')}</td>
+          <td>${escapeHtml(firmName)}</td>
+          <td><span class="status-badge ${badgeClass}">${status}</span></td>
+          <td>${escapeHtml(r.stage || '')}</td>
+          <td>${fmtMoney(r.value_usd)}</td>
+          <td>${fmtMoney(r.actual_value_usd)}</td>
+          <td>${r.created_date || ''}</td>
+          <td>${r.expected_close_date || ''}</td>
+          <td>${r.actual_close_date || ''}</td>
+          <td>${r.reporting_month || ''}</td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  document.getElementById('opp-search-input').addEventListener('input', renderPipelineEntries);
+  document.getElementById('opp-search-firm').addEventListener('change', renderPipelineEntries);
+  document.getElementById('opp-search-status').addEventListener('change', renderPipelineEntries);
 
   async function handleFile(sourceConfig, file) {
     if (!file) return;
@@ -1512,11 +1622,12 @@
     await loadFirms();
     wireUploadInputs();
     populateActivitySearchFilters();
+    populateOppSearchFirmFilter();
     const nowMonth = currentMonthValue();
     document.getElementById('activity-search-to').value = nowMonth;
     document.getElementById('activity-search-from').value = trailingMonths(nowMonth, 6)[5];
     await fetchAllAttachmentCounts();
-    await Promise.all([loadActivitySearchRange(), loadAuditLog()]);
+    await Promise.all([loadActivitySearchRange(), loadAuditLog(), loadPipelineEntries()]);
     switchTab((window.location.hash || '').replace('#', ''));
   })();
 </script>

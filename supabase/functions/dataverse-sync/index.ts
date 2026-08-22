@@ -424,12 +424,25 @@ Deno.serve(async (req: Request) => {
         parentFirmById = new Map((parents || []).map((p: any) => [p.external_id, p.rep_firm_id]));
       }
 
-      let matchedToFirm = 0;
+      // A manager can manually correct one contact's rep firm on the Reps
+      // page -- rep_firm_overridden marks that so this sync leaves rep_firm_id
+      // alone for that row instead of blindly recomputing it from the parent
+      // account every time, which would otherwise silently undo the correction.
+      const contactIdsThisPage = rows.map((r: any) => r.contactid);
+      let overriddenById = new Map<string, { repFirmId: string | null }>();
+      if (contactIdsThisPage.length) {
+        const { data: existing } = await svc.from("crm_contacts").select("external_id, rep_firm_id").in("external_id", contactIdsThisPage).eq("rep_firm_overridden", true);
+        overriddenById = new Map((existing || []).map((c: any) => [c.external_id, { repFirmId: c.rep_firm_id }]));
+      }
+
+      let matchedToFirm = 0, preservedOverrides = 0;
       const upserts = rows
         .filter((r: any) => r.fullname || r.emailaddress1)
         .map((r: any) => {
           const parentId = r._parentcustomerid_value || null;
-          const repFirmId = parentId ? parentFirmById.get(parentId) ?? null : null;
+          const overridden = overriddenById.get(r.contactid);
+          const repFirmId = overridden ? overridden.repFirmId : (parentId ? parentFirmById.get(parentId) ?? null : null);
+          if (overridden) preservedOverrides++;
           if (repFirmId) matchedToFirm++;
           return {
             external_id: r.contactid,
@@ -438,6 +451,7 @@ Deno.serve(async (req: Request) => {
             email_key: normalizeEmail(r.emailaddress1),
             parent_account_external_id: parentId,
             rep_firm_id: repFirmId,
+            rep_firm_overridden: !!overridden,
             updated_by: userData.user.id,
             updated_at: new Date().toISOString(),
           };
@@ -454,6 +468,7 @@ Deno.serve(async (req: Request) => {
         nextCursor: nextLink,
         processed: upserts.length,
         matchedToFirm,
+        preservedOverrides,
         filterLevel,
       });
     } else {
@@ -551,15 +566,18 @@ Deno.serve(async (req: Request) => {
         else if (status === "Lost") lostCount++;
         else openCount++;
 
-        // Open deals are tagged with the current sync month -- each monthly
-        // sync is a fresh snapshot of "still open as of now", same as every
-        // other reporting_month in this app. A closed deal instead gets the
-        // month it actually closed in, so a win/loss lands on the scorecard
-        // for the month it really happened, not whichever month someone
-        // happened to run the sync -- otherwise running the first sync in
-        // September would misattribute a June win to September.
+        // An open deal is tagged with the month it was CREATED in CRM, not
+        // whichever month a sync happens to run -- that makes reporting_month
+        // a stable, one-row-per-opportunity assignment (re-syncing later
+        // upserts the same row instead of leaving behind a stale snapshot
+        // under every month someone happened to click Sync) and reads as
+        // "how much pipeline did we generate in month X," which is the more
+        // useful number than "how much is open as of right now." A closed
+        // deal instead gets the month it actually closed in, so a win/loss
+        // lands on the scorecard for when it really happened, not when it
+        // was first opened.
         const reportingMonth = status === "Open"
-          ? syncMonth
+          ? (r.createdon ? String(r.createdon).slice(0, 7) : syncMonth)
           : (r.actualclosedate ? String(r.actualclosedate).slice(0, 7) : syncMonth);
 
         upserts.push({
