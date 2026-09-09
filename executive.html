@@ -135,14 +135,20 @@
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
   }
 
+  // Uses getUser() rather than getSession() -- getSession() reads the persisted
+  // session from local storage without confirming it against the Auth server,
+  // so a query fired right after it resolves can race the client's own
+  // internal auth-header setup and silently come back empty under RLS
+  // (no error, just 0 rows) instead of throwing. getUser() forces a real round
+  // trip, so by the time it resolves the client is guaranteed fully attached.
   async function guard() {
-    const { data: { session } } = await client.auth.getSession();
-    if (!session) { window.location.href = '/login'; return null; }
-    const { data: profile } = await client.from('profiles').select('role, email').eq('id', session.user.id).maybeSingle();
+    const { data: { user }, error: userErr } = await client.auth.getUser();
+    if (userErr || !user) { window.location.href = '/login'; return null; }
+    const { data: profile } = await client.from('profiles').select('role, email').eq('id', user.id).maybeSingle();
     if (!profile) { window.location.href = '/login'; return null; }
     if (profile.role === 'manager') { window.location.href = '/dashboard'; return null; }
     if (profile.role !== 'executive') { window.location.href = '/login'; return null; }
-    return { user: session.user, profile };
+    return { user, profile };
   }
 
   document.getElementById('signout-btn').addEventListener('click', async () => {
