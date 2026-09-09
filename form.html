@@ -361,7 +361,7 @@
       clearContact(block);
       const q = input.value.trim();
       if (q.length < 2) { list.hidden = true; return; }
-      const { data, error } = await client.rpc('search_crm_accounts', { p_query: q, p_limit: 8 });
+      const { data, error } = await client.rpc('search_crm_accounts', { p_query: q, p_firm_id: firmSelect.value || null, p_limit: 8 });
       const matches = error ? [] : (data || []);
       list.innerHTML = matches.map(a => `
         <div class="combo-item" data-external-id="${escapeHtml(a.external_id)}" data-name="${escapeHtml(a.name)}">
@@ -395,7 +395,7 @@
     const statusEl = block.querySelector('.contact-status');
 
     function selectContact(c) {
-      input.value = c.full_name || c.email || '';
+      input.value = c.full_name || '';
       block.dataset.contactExternalId = c.external_id;
       statusEl.textContent = '✓ Linked to CRM';
       statusEl.className = 'combo-status contact-status linked';
@@ -427,16 +427,16 @@
       const accountExternalId = block.dataset.accountExternalId;
       const q = input.value.trim();
       if (!accountExternalId) { list.hidden = true; return; }
-      const { data, error } = await client.rpc('search_crm_contacts', { p_account_external_id: accountExternalId });
+      const { data, error } = await client.rpc('search_crm_contacts', { p_account_external_id: accountExternalId, p_firm_id: firmSelect.value || null });
       let matches = error ? [] : (data || []);
       if (q) {
         const nq = q.toLowerCase();
-        matches = matches.filter(c => (c.full_name || '').toLowerCase().includes(nq) || (c.email || '').toLowerCase().includes(nq));
+        matches = matches.filter(c => (c.full_name || '').toLowerCase().includes(nq));
       }
       const newItem = q ? `<div class="combo-item combo-item-new" data-new="1">+ Add "${escapeHtml(q)}" as a new contact</div>` : '';
       list.innerHTML = matches.slice(0, 8).map(c => `
         <div class="combo-item" data-external-id="${escapeHtml(c.external_id)}" data-name="${escapeHtml(c.full_name || '')}">
-          ${escapeHtml(c.full_name || '(no name)')}${c.email ? ` <span class="combo-item-sub">${escapeHtml(c.email)}</span>` : ''}
+          ${escapeHtml(c.full_name || '(no name)')}
         </div>
       `).join('') + newItem;
       list.hidden = !matches.length && !q;
