@@ -257,14 +257,11 @@
 
   <div class="tab-panel" id="tab-crm_accounts">
     <h2 class="section-title">CRM Accounts</h2>
-    <div class="upload-hint">CRM Accounts export (.xlsx or .csv) — resolves rep firm by state.</div>
     <div class="action-row" style="margin-top:0;">
       <button class="audac-btn" id="sync-crm-btn">Sync from CRM</button>
       <button class="audac-btn-outline" id="check-counts-btn">Check CRM Counts</button>
     </div>
-    <div class="upload-hint">Pulls Accounts &amp; Contacts live from Dynamics 365 (Dataverse) via the app's secure server-side connection — the file upload below stays available as a fallback.</div>
-    <input type="file" accept=".csv,.xlsx,.xls" id="file-crm_accounts">
-    <div id="mapping-area-crm_accounts"></div>
+    <div class="upload-hint">Pulls Accounts &amp; Contacts live from Dynamics 365 (Dataverse) via the app's secure server-side connection.</div>
     <div id="status-crm_accounts"></div>
   </div>
 </main>
@@ -839,22 +836,6 @@
   // a saved alias table (rep_firm_aliases) rather than a direct name match.
   const SOURCES = [
     {
-      source: 'crm_accounts', label: 'CRM Accounts', table: 'crm_accounts',
-      isAccounts: true,
-      fields: [
-        { key: 'account_name', label: 'Account Name', required: true },
-        { key: 'external_id', label: 'External/CRM ID', required: false },
-        { key: 'street', label: 'Street Address', required: false },
-        { key: 'city', label: 'City', required: false },
-        { key: 'state', label: 'State / Province', required: false },
-        { key: 'zip', label: 'ZIP / Postal Code', required: false },
-        { key: 'country', label: 'Country', required: false },
-        { key: 'website', label: 'Website', required: false },
-        { key: 'relationship_type', label: 'Relationship Type', required: false },
-        { key: 'business_type', label: 'Business Type', required: false },
-      ],
-    },
-    {
       source: 'education', label: 'Education Records', table: 'education_records',
       fields: [
         { key: 'company', label: 'Company / Dealer Name', required: true, resolutionOnly: true },
@@ -894,45 +875,6 @@
   const aliasCache = { loaded: false, byKey: new Map() };
   const accountsCache = { loaded: false, byKey: new Map() };
   const contactsCache = { loaded: false, byEmail: new Map() };
-
-  const US_STATE_NAMES = {
-    alabama: 'AL', alaska: 'AK', arizona: 'AZ', arkansas: 'AR', california: 'CA', colorado: 'CO',
-    connecticut: 'CT', delaware: 'DE', 'district of columbia': 'DC', florida: 'FL', georgia: 'GA',
-    hawaii: 'HI', idaho: 'ID', illinois: 'IL', indiana: 'IN', iowa: 'IA', kansas: 'KS', kentucky: 'KY',
-    louisiana: 'LA', maine: 'ME', maryland: 'MD', massachusetts: 'MA', michigan: 'MI', minnesota: 'MN',
-    mississippi: 'MS', missouri: 'MO', montana: 'MT', nebraska: 'NE', nevada: 'NV', 'new hampshire': 'NH',
-    'new jersey': 'NJ', 'new mexico': 'NM', 'new york': 'NY', 'north carolina': 'NC', 'north dakota': 'ND',
-    ohio: 'OH', oklahoma: 'OK', oregon: 'OR', pennsylvania: 'PA', 'rhode island': 'RI',
-    'south carolina': 'SC', 'south dakota': 'SD', tennessee: 'TN', texas: 'TX', utah: 'UT', vermont: 'VT',
-    virginia: 'VA', washington: 'WA', 'west virginia': 'WV', wisconsin: 'WI', wyoming: 'WY',
-    'puerto rico': 'PR', guam: 'GU',
-  };
-  const US_STATE_CODES = new Set(Object.values(US_STATE_NAMES));
-
-  function normalizeState(raw) {
-    if (!raw) return null;
-    const s = String(raw).trim();
-    if (!s) return null;
-    if (s.length === 2 && US_STATE_CODES.has(s.toUpperCase())) return s.toUpperCase();
-    return US_STATE_NAMES[s.toLowerCase()] || null;
-  }
-
-  function normalizeCountry(raw) {
-    if (!raw) return null;
-    const s = String(raw).trim();
-    if (!s) return null;
-    if (s.length === 2) return s.toUpperCase();
-    const nl = s.toLowerCase();
-    if (nl.includes('united states')) return 'US';
-    if (nl === 'canada') return 'CA';
-    return null;
-  }
-
-  function resolveFirmIdByState(stateCode, countryCode) {
-    if (!stateCode || countryCode !== 'US') return null;
-    const firm = firmsCache.find(f => Array.isArray(f.states) && f.states.includes(stateCode));
-    return firm ? firm.id : null;
-  }
 
   function parseCSV(text) {
     text = text.replace(/^﻿/, '');
@@ -1402,11 +1344,6 @@
       );
     }
 
-    if (sourceConfig.isAccounts) {
-      await importCrmAccounts(sourceConfig, mapping);
-      return;
-    }
-
     const { headers, rows } = uploadState[sourceConfig.source];
     const companyIdx = headers.indexOf(mapping.company);
     const emailIdx = mapping.email ? headers.indexOf(mapping.email) : -1;
@@ -1435,92 +1372,6 @@
     }
 
     await finishImport(sourceConfig, mapping);
-  }
-
-  async function importCrmAccounts(sourceConfig, mapping) {
-    const { headers, rows } = uploadState[sourceConfig.source];
-    const statusEl = document.getElementById(`status-${sourceConfig.source}`);
-
-    function val(key, r) {
-      const h = mapping[key];
-      const idx = h ? headers.indexOf(h) : -1;
-      const v = idx >= 0 ? r[idx] : null;
-      return (v === undefined || v === null || String(v).trim() === '') ? null : String(v).trim();
-    }
-
-    const toUpsert = [];
-    let matched = 0, outOfTerritory = 0, noState = 0;
-    for (const r of rows) {
-      const name = val('account_name', r);
-      if (!name) continue;
-      const stateRaw = val('state', r);
-      const countryRaw = val('country', r);
-      const stateCode = normalizeState(stateRaw);
-      const countryCode = normalizeCountry(countryRaw);
-      const repFirmId = resolveFirmIdByState(stateCode, countryCode);
-      if (repFirmId) matched++;
-      else if (stateCode && countryCode === 'US') outOfTerritory++;
-      else noState++;
-
-      toUpsert.push({
-        external_id: val('external_id', r),
-        name,
-        name_key: normalizeCompany(name),
-        street: val('street', r),
-        city: val('city', r),
-        state_raw: stateRaw,
-        state_code: stateCode,
-        zip: val('zip', r),
-        country_code: countryCode,
-        website: val('website', r),
-        relationship_type: val('relationship_type', r),
-        business_type: val('business_type', r),
-        rep_firm_id: repFirmId,
-        updated_by: currentUser.id,
-        updated_at: new Date().toISOString(),
-      });
-    }
-
-    if (!toUpsert.length) {
-      statusEl.className = 'upload-status err';
-      statusEl.textContent = 'No rows with an account name were found to import.';
-      return;
-    }
-
-    // name_key isn't a unique constraint (Dataverse can have two distinct accounts
-    // sharing a name), so this can't use upsert's onConflict directly. Instead: look
-    // up any existing row per name_key and update it by id; insert the rest as new.
-    const nameKeys = [...new Set(toUpsert.map(r => r.name_key))];
-    const { data: existing } = await client.from('crm_accounts').select('id, name_key').in('name_key', nameKeys);
-    const existingIdByNameKey = new Map((existing || []).map(r => [r.name_key, r.id]));
-
-    const toUpdate = [], toInsert = [];
-    for (const r of toUpsert) {
-      const existingId = existingIdByNameKey.get(r.name_key);
-      if (existingId) toUpdate.push({ ...r, id: existingId });
-      else toInsert.push(r);
-    }
-
-    if (toUpdate.length) {
-      const { error } = await client.from('crm_accounts').upsert(toUpdate, { onConflict: 'id' });
-      if (error) {
-        statusEl.className = 'upload-status err';
-        statusEl.textContent = 'Import failed: ' + error.message;
-        return;
-      }
-    }
-    if (toInsert.length) {
-      const { error } = await client.from('crm_accounts').insert(toInsert);
-      if (error) {
-        statusEl.className = 'upload-status err';
-        statusEl.textContent = 'Import failed: ' + error.message;
-        return;
-      }
-    }
-    await loadCrmAccounts(true);
-    statusEl.className = 'upload-status ' + (matched ? 'ok' : 'warn');
-    statusEl.textContent = `Upserted ${toUpsert.length} account(s). ${matched} matched to a rep firm by state, ` +
-      `${outOfTerritory} recognized (US) but outside configured territories, ${noState} missing/unrecognized state.`;
   }
 
   function renderAliasAssignment(sourceConfig, area, mapping, distinctCompanies) {
