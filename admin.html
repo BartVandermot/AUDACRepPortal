@@ -1324,6 +1324,59 @@
     return idx >= 0 ? typeConvert(row[idx], field.type) : null;
   }
 
+  // Single source of truth for "which rep firm does this row belong to", shared
+  // by beginImport's pre-scan (decides whether Melissa needs to be asked anything)
+  // and finishImport's actual resolution -- these used to be two separate,
+  // slightly-different implementations, which is exactly how a firm whose CRM
+  // account/contacts were synced but never resolved to a territory (known to
+  // CRM, "resolved" to null) could slip past the pre-scan as "already handled"
+  // and then get silently dropped at import time instead of ever being offered
+  // for assignment.
+  //
+  // Returns one of:
+  //   { status: 'resolved', repFirmId }        -- a real firm, import normally
+  //   { status: 'blank', repFirmId: null|id }   -- identified (contact/account/alias
+  //                                                 all consulted), but no firm to
+  //                                                 assign (or a prior explicit
+  //                                                 "not rep-tracked" decision) --
+  //                                                 import with rep_firm_id left blank
+  //   { status: 'ask', companyKey, companyDisplay } -- a company with no firm mapping
+  //                                                     yet and no explicit prior
+  //                                                     decision on file -- offer it
+  //                                                     to Melissa before importing
+  //   { status: 'error' }                       -- no company name AND no contact
+  //                                                 match -- nothing to identify this
+  //                                                 row by at all
+  function classifyCompanyResolution(row, companyIdx, emailIdx, accountsByKey, aliasByKey, contactsByEmail) {
+    const emailKey = emailIdx >= 0 ? normalizeEmail(row[emailIdx]) : null;
+    const hasContactMatch = !!(emailKey && contactsByEmail && contactsByEmail.has(emailKey));
+    if (hasContactMatch) {
+      const firmId = contactsByEmail.get(emailKey);
+      if (firmId) return { status: 'resolved', repFirmId: firmId };
+    }
+    const companyRaw = companyIdx >= 0 ? String(row[companyIdx] || '').trim() : '';
+    if (!companyRaw) {
+      // No company text, but we did at least recognize the person via a CRM contact --
+      // that's still "mapped to a contact", just not to a firm yet.
+      return hasContactMatch ? { status: 'blank', repFirmId: null } : { status: 'error' };
+    }
+    const key = normalizeCompany(companyRaw);
+    // A prior decision on this company (including an explicit "not rep-tracked" skip)
+    // is authoritative -- checked ahead of the raw CRM account sync state so a real
+    // decision always wins over a stale/unresolved sync value, and Melissa is never
+    // re-asked about something she's already decided.
+    if (aliasByKey.has(key)) {
+      const firmId = aliasByKey.get(key);
+      return firmId ? { status: 'resolved', repFirmId: firmId } : { status: 'blank', repFirmId: null };
+    }
+    if (accountsByKey.has(key)) {
+      const firmId = accountsByKey.get(key);
+      if (firmId) return { status: 'resolved', repFirmId: firmId };
+      return { status: 'ask', companyKey: key, companyDisplay: companyRaw }; // synced from CRM, territory not resolved yet
+    }
+    return { status: 'ask', companyKey: key, companyDisplay: companyRaw }; // never seen before
+  }
+
   async function beginImport(sourceConfig, area, mappingAlreadySaved) {
     const mapping = readMappingFromUI(sourceConfig, area);
     const missingRequired = allMappingFields(sourceConfig.fields).filter(leaf => {
@@ -1353,17 +1406,8 @@
 
     const distinctCompanies = new Map(); // normalized -> display text
     for (const r of rows) {
-      // Row already resolvable via a matched CRM contact email — no need to ask about its company.
-      if (contactsByEmail && emailIdx >= 0) {
-        const emailKey = normalizeEmail(r[emailIdx]);
-        if (emailKey && contactsByEmail.has(emailKey)) continue;
-      }
-      const raw = String(r[companyIdx] || '').trim();
-      if (!raw) continue;
-      const key = normalizeCompany(raw);
-      // Already resolvable via the CRM accounts extract or a prior manual assignment — no need to ask again.
-      if (accountsByKey.has(key) || aliasByKey.has(key)) continue;
-      if (!distinctCompanies.has(key)) distinctCompanies.set(key, raw);
+      const res = classifyCompanyResolution(r, companyIdx, emailIdx, accountsByKey, aliasByKey, contactsByEmail);
+      if (res.status === 'ask' && !distinctCompanies.has(res.companyKey)) distinctCompanies.set(res.companyKey, res.companyDisplay);
     }
 
     if (distinctCompanies.size > 0) {
@@ -1380,8 +1424,8 @@
       .concat(firmsCache.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`)).join('');
 
     aliasArea.innerHTML = `
-      <div class="dd-sub-title" style="margin-top:18px;">New Companies Found — Assign to a Rep Firm</div>
-      <div class="upload-hint">These company/dealer names haven't been seen before. Pick the rep firm each belongs to (or skip it) — this is remembered for future uploads.</div>
+      <div class="dd-sub-title" style="margin-top:18px;">Companies Without a Rep Firm — Assign One</div>
+      <div class="upload-hint">These company/dealer names aren't yet mapped to a rep firm (either never seen before, or synced from CRM but not yet resolved to a territory). Pick the rep firm each belongs to, or leave "Skip" if it's not rep-tracked — either way this is remembered for future uploads and the row still imports, just with a blank rep firm if skipped.</div>
       <div class="mapping-grid" style="grid-template-columns: 1fr 260px;">
         ${[...distinctCompanies.entries()].map(([key, display]) => `
           <label>${escapeHtml(display)}</label>
@@ -1425,23 +1469,14 @@
     const statusEl = document.getElementById(`status-${sourceConfig.source}`);
 
     const toInsert = [];
-    let skippedNoFirm = 0, skippedMissingFields = 0;
+    let skippedUnidentifiable = 0, skippedMissingFields = 0, unmappedFirmCount = 0;
     const requiredFields = sourceConfig.fields.filter(f => f.required && !f.resolutionOnly);
 
     for (const r of rows) {
-      // A matched CRM contact (by email) is more precise than company-name resolution, so it wins when available.
-      let repFirmId;
-      if (contactsByEmail && emailIdx >= 0) {
-        const emailKey = normalizeEmail(r[emailIdx]);
-        if (emailKey && contactsByEmail.has(emailKey)) repFirmId = contactsByEmail.get(emailKey);
-      }
-      if (repFirmId === undefined) {
-        const companyRaw = String(r[companyIdx] || '').trim();
-        const key = companyRaw ? normalizeCompany(companyRaw) : null;
-        if (key && accountsByKey.has(key)) repFirmId = accountsByKey.get(key);
-        else if (key && aliasByKey.has(key)) repFirmId = aliasByKey.get(key);
-      }
-      if (!repFirmId) { skippedNoFirm++; continue; }
+      const res = classifyCompanyResolution(r, companyIdx, emailIdx, accountsByKey, aliasByKey, contactsByEmail);
+      if (res.status === 'error') { skippedUnidentifiable++; continue; }
+      const repFirmId = res.repFirmId || null;
+      if (!repFirmId) unmappedFirmCount++;
 
       const record = { rep_firm_id: repFirmId, reporting_month: month };
       for (const f of sourceConfig.fields) {
@@ -1454,7 +1489,7 @@
 
     if (!toInsert.length) {
       statusEl.className = 'upload-status err';
-      statusEl.textContent = `No rows imported. ${skippedNoFirm} skipped (company excluded/unmapped), ${skippedMissingFields} skipped (missing required data).`;
+      statusEl.textContent = `No rows imported. ${skippedUnidentifiable} could not be matched to any contact or account, ${skippedMissingFields} skipped (missing required data).`;
       return;
     }
 
@@ -1464,10 +1499,11 @@
       statusEl.textContent = 'Import failed: ' + error.message;
       return;
     }
-    const skippedTotal = skippedNoFirm + skippedMissingFields;
-    statusEl.className = 'upload-status ' + (skippedTotal ? 'warn' : 'ok');
-    statusEl.textContent = `Imported ${toInsert.length} row(s) for ${month}.` +
-      (skippedTotal ? ` ${skippedNoFirm} skipped (excluded company), ${skippedMissingFields} skipped (missing required data).` : '');
+    statusEl.className = 'upload-status ' + (skippedUnidentifiable ? 'err' : (skippedMissingFields || unmappedFirmCount ? 'warn' : 'ok'));
+    statusEl.textContent = `Imported ${toInsert.length} row(s) for ${month}` +
+      (unmappedFirmCount ? ` (${unmappedFirmCount} without a rep firm mapping)` : '') + '.' +
+      (skippedUnidentifiable ? ` ${skippedUnidentifiable} row(s) could not be matched to any contact or account and were not imported.` : '') +
+      (skippedMissingFields ? ` ${skippedMissingFields} skipped (missing required data).` : '');
   }
 
   // ---------- Init ----------
