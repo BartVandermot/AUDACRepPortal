@@ -845,6 +845,11 @@
         { key: 'completion_date', label: 'Completion Date', required: false, type: 'date' },
         { key: 'certificate_url', label: 'Certificate URL', required: false },
       ],
+      // Same person + course + completion date is the same real certificate no matter
+      // which reporting month it gets filed under (or which rep firm it now resolves
+      // to), so this is checked across all months -- exactly the shape of the "same
+      // file re-uploaded" incident this exists to catch.
+      duplicateKey: { fields: ['person_name', 'course_name', 'completion_date'], scopeToMonth: false },
     },
     {
       source: 'pipeline', label: 'Pipeline', table: 'pipeline_entries',
@@ -858,6 +863,11 @@
         { key: 'expected_close_date', label: 'Expected Close Date', required: false, type: 'date' },
         { key: 'crm_id', label: 'CRM ID', required: false },
       ],
+      // created_date is a fixed historical fact from the source CRM export, so the
+      // same account + project + created_date reappearing is the file being
+      // re-uploaded, not a legitimately recurring monthly value -- checked across
+      // all months, same reasoning as education.
+      duplicateKey: { fields: ['account_name', 'project_name', 'created_date'], scopeToMonth: false },
     },
     {
       source: 'sellout', label: 'Sell-out', table: 'sellout_records',
@@ -868,6 +878,10 @@
         { key: 'quantity', label: 'Quantity', required: false, type: 'number' },
         { key: 'revenue_usd', label: 'Revenue (USD)', required: false, type: 'number' },
       ],
+      // Unlike education/pipeline, the same dealer selling the same SKU is expected
+      // to reappear every month -- that's normal sell-through, not a duplicate. Only
+      // seeing it twice within the SAME reporting month is the re-upload signal.
+      duplicateKey: { fields: ['dealer_name', 'product_sku'], scopeToMonth: true },
     },
   ];
 
@@ -1468,6 +1482,15 @@
     return parts.slice(0, STATUS_SUMMARY_LIST_CAP).join(', ') + `, +${parts.length - STATUS_SUMMARY_LIST_CAP} more`;
   }
 
+  // Builds a normalized lookup key from a record (or an existing DB row -- same
+  // column names either way) across the given fields, for duplicate-import detection.
+  function buildDuplicateKey(record, fields) {
+    return fields.map(f => {
+      const v = record[f];
+      return (v === null || v === undefined) ? '' : String(v).trim().toLowerCase();
+    }).join('|');
+  }
+
   async function finishImport(sourceConfig, mapping) {
     const { headers, rows } = uploadState[sourceConfig.source];
     const accountsByKey = await loadCrmAccounts();
@@ -1478,9 +1501,7 @@
     const month = importMonthInput.value;
     const statusEl = document.getElementById(`status-${sourceConfig.source}`);
 
-    const toInsert = [];
-    const firmCounts = new Map(); // rep_firm_id -> count of imported rows matched to it
-    const blankCompanies = new Map(); // display name -> count of imported rows with no firm
+    let candidates = []; // { record, companyLabel }
     const unidentifiableFileRows = []; // 1-indexed spreadsheet row numbers (header = row 1)
     let skippedMissingFields = 0;
     const requiredFields = sourceConfig.fields.filter(f => f.required && !f.resolutionOnly);
@@ -1496,26 +1517,65 @@
       }
       if (requiredFields.some(f => record[f.key] === null || record[f.key] === undefined)) { skippedMissingFields++; return; }
 
-      toInsert.push(record);
-      if (record.rep_firm_id) {
-        firmCounts.set(record.rep_firm_id, (firmCounts.get(record.rep_firm_id) || 0) + 1);
-      } else {
-        const label = (companyIdx >= 0 ? String(r[companyIdx] || '').trim() : '') || '(no company name)';
-        blankCompanies.set(label, (blankCompanies.get(label) || 0) + 1);
-      }
+      const companyLabel = (companyIdx >= 0 ? String(r[companyIdx] || '').trim() : '') || '(no company name)';
+      candidates.push({ record, companyLabel });
     });
 
-    if (!toInsert.length) {
+    if (!candidates.length) {
       statusEl.className = 'upload-status err';
       statusEl.textContent = `No rows imported. ${unidentifiableFileRows.length} could not be matched to any contact or account, ${skippedMissingFields} skipped (missing required data).`;
       return;
     }
 
+    // Guard against re-uploading a file whose rows are already in the database --
+    // built after a real duplicate upload silently doubled 51 real certificates,
+    // because nothing checked whether this data was already there.
+    let duplicateCount = 0;
+    if (sourceConfig.duplicateKey) {
+      const { fields: keyFields, scopeToMonth } = sourceConfig.duplicateKey;
+      let existingQuery = client.from(sourceConfig.table).select(keyFields.join(','));
+      if (scopeToMonth) existingQuery = existingQuery.eq('reporting_month', month);
+      const { data: existingRows } = await existingQuery;
+      const existingKeys = new Set((existingRows || []).map(row => buildDuplicateKey(row, keyFields)));
+
+      const freshCandidates = candidates.filter(c => !existingKeys.has(buildDuplicateKey(c.record, keyFields)));
+      duplicateCount = candidates.length - freshCandidates.length;
+
+      if (duplicateCount > 0) {
+        const proceed = confirm(
+          `${duplicateCount} of ${candidates.length} row(s) in this file already appear to be imported ` +
+          `(matching ${keyFields.map(f => f.replace(/_/g, ' ')).join(' + ')}${scopeToMonth ? ' for ' + month : ''}). ` +
+          `They'll be skipped automatically so nothing gets duplicated.\n\n` +
+          `Import the other ${freshCandidates.length} row(s)?`
+        );
+        if (!proceed) {
+          statusEl.className = 'upload-status warn';
+          statusEl.textContent = `Import cancelled — ${duplicateCount} row(s) looked like duplicates of existing records. Nothing was imported.`;
+          return;
+        }
+        candidates = freshCandidates;
+      }
+    }
+
+    if (!candidates.length) {
+      statusEl.className = 'upload-status warn';
+      statusEl.textContent = `No new rows to import — all ${duplicateCount} row(s) in this file already exist.`;
+      return;
+    }
+
+    const toInsert = candidates.map(c => c.record);
     const { error } = await client.from(sourceConfig.table).insert(toInsert);
     if (error) {
       statusEl.className = 'upload-status err';
       statusEl.textContent = 'Import failed: ' + error.message;
       return;
+    }
+
+    const firmCounts = new Map(); // rep_firm_id -> count of imported rows matched to it
+    const blankCompanies = new Map(); // display name -> count of imported rows with no firm
+    for (const { record, companyLabel } of candidates) {
+      if (record.rep_firm_id) firmCounts.set(record.rep_firm_id, (firmCounts.get(record.rep_firm_id) || 0) + 1);
+      else blankCompanies.set(companyLabel, (blankCompanies.get(companyLabel) || 0) + 1);
     }
 
     const firmNameById = new Map(firmsCache.map(f => [f.id, f.name]));
@@ -1531,10 +1591,11 @@
     const details = [];
     if (matchedTotal) details.push(`<li>${matchedTotal} matched to a rep firm — ${formatSummaryList(matchedParts)}</li>`);
     if (blankTotal) details.push(`<li>${blankTotal} imported with <strong>no rep firm mapping</strong> — ${formatSummaryList(blankParts)}</li>`);
+    if (duplicateCount) details.push(`<li>${duplicateCount} row(s) <strong>skipped</strong> — already imported previously</li>`);
     if (unidentifiableFileRows.length) details.push(`<li>${unidentifiableFileRows.length} row(s) <strong>not imported</strong> — no company or contact match at all (file row${unidentifiableFileRows.length > 1 ? 's' : ''} ${formatSummaryList(unidentifiableFileRows.map(String))})</li>`);
     if (skippedMissingFields) details.push(`<li>${skippedMissingFields} row(s) <strong>not imported</strong> — missing required data</li>`);
 
-    statusEl.className = 'upload-status ' + (unidentifiableFileRows.length ? 'err' : (skippedMissingFields || blankTotal ? 'warn' : 'ok'));
+    statusEl.className = 'upload-status ' + (unidentifiableFileRows.length ? 'err' : (skippedMissingFields || blankTotal || duplicateCount ? 'warn' : 'ok'));
     statusEl.innerHTML = `<strong>Imported ${toInsert.length} of ${rows.length} row(s) for ${month}.</strong>` +
       (details.length ? `<ul style="margin:6px 0 0 18px; padding:0;">${details.join('')}</ul>` : '');
   }
