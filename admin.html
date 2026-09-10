@@ -1458,6 +1458,16 @@
     });
   }
 
+  // Caps how many distinct items (companies, file row numbers) a status summary
+  // spells out before collapsing the rest into a "+N more" -- keeps a summary with
+  // dozens of unmapped companies or rejected rows readable instead of a wall of text.
+  const STATUS_SUMMARY_LIST_CAP = 12;
+
+  function formatSummaryList(parts) {
+    if (parts.length <= STATUS_SUMMARY_LIST_CAP) return parts.join(', ');
+    return parts.slice(0, STATUS_SUMMARY_LIST_CAP).join(', ') + `, +${parts.length - STATUS_SUMMARY_LIST_CAP} more`;
+  }
+
   async function finishImport(sourceConfig, mapping) {
     const { headers, rows } = uploadState[sourceConfig.source];
     const accountsByKey = await loadCrmAccounts();
@@ -1469,27 +1479,35 @@
     const statusEl = document.getElementById(`status-${sourceConfig.source}`);
 
     const toInsert = [];
-    let skippedUnidentifiable = 0, skippedMissingFields = 0, unmappedFirmCount = 0;
+    const firmCounts = new Map(); // rep_firm_id -> count of imported rows matched to it
+    const blankCompanies = new Map(); // display name -> count of imported rows with no firm
+    const unidentifiableFileRows = []; // 1-indexed spreadsheet row numbers (header = row 1)
+    let skippedMissingFields = 0;
     const requiredFields = sourceConfig.fields.filter(f => f.required && !f.resolutionOnly);
 
-    for (const r of rows) {
+    rows.forEach((r, i) => {
       const res = classifyCompanyResolution(r, companyIdx, emailIdx, accountsByKey, aliasByKey, contactsByEmail);
-      if (res.status === 'error') { skippedUnidentifiable++; continue; }
-      const repFirmId = res.repFirmId || null;
-      if (!repFirmId) unmappedFirmCount++;
+      if (res.status === 'error') { unidentifiableFileRows.push(i + 2); return; }
 
-      const record = { rep_firm_id: repFirmId, reporting_month: month };
+      const record = { rep_firm_id: res.repFirmId || null, reporting_month: month };
       for (const f of sourceConfig.fields) {
         if (f.resolutionOnly) continue;
         record[f.key] = buildFieldValue(f, mapping, headers, r);
       }
-      if (requiredFields.some(f => record[f.key] === null || record[f.key] === undefined)) { skippedMissingFields++; continue; }
+      if (requiredFields.some(f => record[f.key] === null || record[f.key] === undefined)) { skippedMissingFields++; return; }
+
       toInsert.push(record);
-    }
+      if (record.rep_firm_id) {
+        firmCounts.set(record.rep_firm_id, (firmCounts.get(record.rep_firm_id) || 0) + 1);
+      } else {
+        const label = (companyIdx >= 0 ? String(r[companyIdx] || '').trim() : '') || '(no company name)';
+        blankCompanies.set(label, (blankCompanies.get(label) || 0) + 1);
+      }
+    });
 
     if (!toInsert.length) {
       statusEl.className = 'upload-status err';
-      statusEl.textContent = `No rows imported. ${skippedUnidentifiable} could not be matched to any contact or account, ${skippedMissingFields} skipped (missing required data).`;
+      statusEl.textContent = `No rows imported. ${unidentifiableFileRows.length} could not be matched to any contact or account, ${skippedMissingFields} skipped (missing required data).`;
       return;
     }
 
@@ -1499,11 +1517,26 @@
       statusEl.textContent = 'Import failed: ' + error.message;
       return;
     }
-    statusEl.className = 'upload-status ' + (skippedUnidentifiable ? 'err' : (skippedMissingFields || unmappedFirmCount ? 'warn' : 'ok'));
-    statusEl.textContent = `Imported ${toInsert.length} row(s) for ${month}` +
-      (unmappedFirmCount ? ` (${unmappedFirmCount} without a rep firm mapping)` : '') + '.' +
-      (skippedUnidentifiable ? ` ${skippedUnidentifiable} row(s) could not be matched to any contact or account and were not imported.` : '') +
-      (skippedMissingFields ? ` ${skippedMissingFields} skipped (missing required data).` : '');
+
+    const firmNameById = new Map(firmsCache.map(f => [f.id, f.name]));
+    const matchedTotal = [...firmCounts.values()].reduce((a, b) => a + b, 0);
+    const blankTotal = [...blankCompanies.values()].reduce((a, b) => a + b, 0);
+    const matchedParts = [...firmCounts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([id, n]) => `${escapeHtml(firmNameById.get(id) || 'Unknown firm')} (${n})`);
+    const blankParts = [...blankCompanies.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, n]) => `${escapeHtml(name)} (${n})`);
+
+    const details = [];
+    if (matchedTotal) details.push(`<li>${matchedTotal} matched to a rep firm — ${formatSummaryList(matchedParts)}</li>`);
+    if (blankTotal) details.push(`<li>${blankTotal} imported with <strong>no rep firm mapping</strong> — ${formatSummaryList(blankParts)}</li>`);
+    if (unidentifiableFileRows.length) details.push(`<li>${unidentifiableFileRows.length} row(s) <strong>not imported</strong> — no company or contact match at all (file row${unidentifiableFileRows.length > 1 ? 's' : ''} ${formatSummaryList(unidentifiableFileRows.map(String))})</li>`);
+    if (skippedMissingFields) details.push(`<li>${skippedMissingFields} row(s) <strong>not imported</strong> — missing required data</li>`);
+
+    statusEl.className = 'upload-status ' + (unidentifiableFileRows.length ? 'err' : (skippedMissingFields || blankTotal ? 'warn' : 'ok'));
+    statusEl.innerHTML = `<strong>Imported ${toInsert.length} of ${rows.length} row(s) for ${month}.</strong>` +
+      (details.length ? `<ul style="margin:6px 0 0 18px; padding:0;">${details.join('')}</ul>` : '');
   }
 
   // ---------- Init ----------
