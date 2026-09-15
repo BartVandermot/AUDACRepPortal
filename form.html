@@ -6,6 +6,16 @@
 <title>AUDAC Rep Portal — Activity Submission</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;700&display=swap" rel="stylesheet">
+<!-- Lets a rep add this to their phone's home screen as a standalone app
+     (see manifest.json) instead of re-typing/re-finding the URL every time.
+     iOS ignores the manifest for "Add to Home Screen" and uses these
+     apple-* tags instead; Android/Chrome uses the manifest. -->
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="AUDAC Reps">
+<meta name="theme-color" content="#000000">
 <style>
   :root {
     --audac-gold: #d9a653;
