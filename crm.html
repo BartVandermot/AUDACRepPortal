@@ -46,6 +46,9 @@
   }
   .result-count { font-size: 12.5px; color: #999; margin-bottom: 10px; }
   .upload-hint { font-size: 12.5px; color: #999; margin: 0 0 20px; max-width: 720px; }
+  .page-meta-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #eee; }
+  .review-toggle { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--audac-black); cursor: pointer; }
+  #last-updated-note { font-size: 12px; color: #999; }
   h2.section-title { font-size: 15px; font-weight: 700; color: var(--audac-black); text-transform: uppercase; letter-spacing: .5px; margin: 40px 0 14px; padding-top: 20px; border-top: 1px solid #eee; }
   .manual-override-badge { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; padding: 2px 8px; border-radius: 10px; background: #eee; color: #777; margin-left: 8px; }
 
@@ -108,6 +111,14 @@
   <div id="loading-note">Loading CRM data…</div>
 
   <div id="content" style="display:none;">
+    <div class="page-meta-row">
+      <label class="review-toggle">
+        <input type="checkbox" id="needs-review-toggle" checked>
+        Show only items needing review (unassigned, manually added, or blocking pipeline sync)
+      </label>
+      <span id="last-updated-note"></span>
+    </div>
+
     <div class="kpi-row" id="kpi-row"></div>
 
     <div class="toolbar">
@@ -205,13 +216,27 @@
   let zipRangesCache = [];
   let contactCountByAccount = new Map();
   let expandedIds = new Set();
-  let contactsCache = new Map();
-  let allContactsCache = []; // flat list backing the CRM Contacts section below, separate from contactsCache's per-account nested view
+  let allContactsCache = []; // the one source of truth for every contact row on this page -- both the CRM Contacts section and each account's expand panel filter this, nothing fetches contacts separately
   let accountNameByExternalId = new Map();
   let accountsRepFirmByExternalId = new Map();
 
   function escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  }
+
+  function timeAgo(iso) {
+    if (!iso) return null;
+    const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins} minute${mins === 1 ? '' : 's'} ago`;
+    const hours = Math.round(mins / 60);
+    if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+    const days = Math.round(hours / 24);
+    return `${days} day${days === 1 ? '' : 's'} ago`;
+  }
+
+  function needsReviewOnly() {
+    return document.getElementById('needs-review-toggle').checked;
   }
 
   // Uses getUser() rather than getSession() -- getSession() reads the persisted
@@ -272,6 +297,7 @@
     if (firmFilter === '__unassigned') rows = rows.filter(a => !a.rep_firm_id);
     else if (firmFilter) rows = rows.filter(a => a.rep_firm_id === firmFilter);
     if (sourceFilter) rows = rows.filter(a => (a.source || 'dataverse') === sourceFilter);
+    if (needsReviewOnly()) rows = rows.filter(a => !a.rep_firm_id || a.source === 'manual');
     return rows;
   }
 
@@ -312,13 +338,10 @@
         </tr>
       `;
       if (!isOpen) return mainRow;
-      const contactsHtml = contactsCache.has(a.external_id)
-        ? renderContactsTable(contactsCache.get(a.external_id))
-        : '<div class="empty-note">Loading…</div>';
-      return mainRow + `<tr class="contacts-row"><td colspan="8">${contactsHtml}</td></tr>`;
+      return mainRow + `<tr class="contacts-row"><td colspan="8">${renderAccountContactsPanel(a.external_id)}</td></tr>`;
     }).join('');
 
-    tbody.querySelectorAll('select.firm-assign').forEach(sel => {
+    tbody.querySelectorAll('select.firm-assign[data-account]').forEach(sel => {
       const accountId = sel.dataset.account;
       const acc = accountsCache.find(a => a.external_id === accountId);
       sel.value = acc?.rep_firm_overridden ? (acc.rep_firm_id || '') : 'auto';
@@ -327,6 +350,7 @@
     tbody.querySelectorAll('[data-toggle]').forEach(btn => {
       btn.addEventListener('click', () => toggleContacts(btn.dataset.toggle));
     });
+    wireContactFirmSelects(tbody);
   }
 
   // "Auto" clears the override and recomputes the same way the sync would
@@ -378,37 +402,60 @@
     renderAccounts();
   }
 
-  async function toggleContacts(accountExternalId) {
-    if (expandedIds.has(accountExternalId)) {
-      expandedIds.delete(accountExternalId);
-      renderAccounts();
-      return;
-    }
-    expandedIds.add(accountExternalId);
-    renderAccounts();
-    if (contactsCache.has(accountExternalId)) return;
-
-    const { data, error } = await client
-      .from('crm_contacts')
-      .select('full_name, email, rep_firm_id')
-      .eq('parent_account_external_id', accountExternalId)
-      .order('full_name');
-
-    contactsCache.set(accountExternalId, error ? { error: error.message } : (data || []));
+  // No fetch needed -- allContactsCache already holds every contact from
+  // page load, so expanding an account is just a filter + re-render.
+  function toggleContacts(accountExternalId) {
+    if (expandedIds.has(accountExternalId)) expandedIds.delete(accountExternalId);
+    else expandedIds.add(accountExternalId);
     renderAccounts();
   }
 
-  function renderContactsTable(rows) {
-    if (rows && rows.error) return `<div class="empty-note">Failed to load contacts: ${escapeHtml(rows.error)}</div>`;
+  // Shares the exact same row shape (and firm-assign behavior) as the CRM
+  // Contacts section below -- this used to be a separate read-only Name/Email
+  // list fetched fresh on every expand; now it's the same editable view,
+  // just pre-filtered to one account, so there's one contact row template on
+  // this whole page instead of two.
+  function renderAccountContactsPanel(accountExternalId) {
+    const rows = allContactsCache.filter(c => c.parent_account_external_id === accountExternalId);
     if (!rows.length) return '<div class="empty-note">No contacts synced for this account.</div>';
-    return `<table class="detail"><thead><tr><th>Name</th><th>Email</th></tr></thead><tbody>${rows.map(r => `
-      <tr><td>${escapeHtml(r.full_name || '')}</td><td>${escapeHtml(r.email || '')}</td></tr>
-    `).join('')}</tbody></table>`;
+    return `<table class="detail"><thead><tr><th>Contact</th><th>Email</th><th>Rep Firm</th></tr></thead><tbody>${rows.map(c => contactRowHtml(c)).join('')}</tbody></table>`;
+  }
+
+  const contactFirmOptionsHtml = () => ['<option value="auto">Auto (inherit from account)</option>', '<option value="">Unassigned</option>']
+    .concat(firmsCache.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`)).join('');
+
+  // showAccount is only true in the flat CRM Contacts section below --
+  // pointless to repeat the account name in a panel that's already scoped to
+  // one account.
+  function contactRowHtml(c, { showAccount } = {}) {
+    const accountCell = showAccount ? `<td>${escapeHtml(accountNameByExternalId.get(c.parent_account_external_id) || '')}</td>` : '';
+    return `
+      <tr data-contact-id="${c.external_id}">
+        <td>${escapeHtml(c.full_name || '')}</td>
+        <td>${escapeHtml(c.email || '')}</td>
+        ${accountCell}
+        <td>
+          <select class="firm-assign" data-contact="${c.external_id}">${contactFirmOptionsHtml()}</select>
+          ${c.rep_firm_overridden ? '<span class="manual-override-badge">Manual</span>' : ''}
+          ${c.blocks_pipeline_sync ? '<span class="manual-override-badge" style="background:var(--red-bg); color:var(--red);">Blocking pipeline sync</span>' : ''}
+        </td>
+      </tr>
+    `;
+  }
+
+  function wireContactFirmSelects(container) {
+    container.querySelectorAll('select.firm-assign[data-contact]').forEach(sel => {
+      const contactId = sel.dataset.contact;
+      const contact = allContactsCache.find(c => c.external_id === contactId);
+      sel.value = contact.rep_firm_overridden ? (contact.rep_firm_id || '') : 'auto';
+      sel.addEventListener('change', () => assignContactFirm(contactId, sel.value));
+    });
   }
 
   document.getElementById('search-input').addEventListener('input', renderAccounts);
   document.getElementById('firm-filter').addEventListener('change', renderAccounts);
   document.getElementById('source-filter').addEventListener('change', renderAccounts);
+  document.getElementById('needs-review-toggle').addEventListener('change', () => { renderAccounts(); renderContactsFlatTable(); });
 
   // ---------- CRM Contacts (flat list) ----------
   // Every synced Contact as its own row, not nested under its account (the
@@ -458,6 +505,7 @@
     if (resolutionFilter === 'manual') rows = rows.filter(c => c.rep_firm_overridden);
     else if (resolutionFilter === 'auto') rows = rows.filter(c => !c.rep_firm_overridden);
     else if (resolutionFilter === 'blocking') rows = rows.filter(c => c.blocks_pipeline_sync);
+    if (needsReviewOnly()) rows = rows.filter(c => !c.rep_firm_id || c.blocks_pipeline_sync);
     return rows;
   }
 
@@ -465,33 +513,12 @@
     const rows = getFilteredContacts();
     document.getElementById('contacts-result-count').textContent = `Showing ${rows.length} of ${allContactsCache.length} contacts`;
 
-    const firmOptions = ['<option value="auto">Auto (inherit from account)</option>', '<option value="">Unassigned</option>']
-      .concat(firmsCache.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`)).join('');
-
     const tbody = document.getElementById('contacts-body');
-    if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="4" class="empty-note">No contacts match the current filters.</td></tr>';
-    } else {
-      tbody.innerHTML = rows.map(c => `
-        <tr data-contact-id="${c.external_id}">
-          <td>${escapeHtml(c.full_name || '')}</td>
-          <td>${escapeHtml(c.email || '')}</td>
-          <td>${escapeHtml(accountNameByExternalId.get(c.parent_account_external_id) || '')}</td>
-          <td>
-            <select class="firm-assign" data-contact="${c.external_id}">${firmOptions}</select>
-            ${c.rep_firm_overridden ? '<span class="manual-override-badge">Manual</span>' : ''}
-            ${c.blocks_pipeline_sync ? '<span class="manual-override-badge" style="background:var(--red-bg); color:var(--red);">Blocking pipeline sync</span>' : ''}
-          </td>
-        </tr>
-      `).join('');
-    }
+    tbody.innerHTML = rows.length
+      ? rows.map(c => contactRowHtml(c, { showAccount: true })).join('')
+      : '<tr><td colspan="4" class="empty-note">No contacts match the current filters.</td></tr>';
 
-    tbody.querySelectorAll('select.firm-assign').forEach(sel => {
-      const contactId = sel.dataset.contact;
-      const contact = allContactsCache.find(c => c.external_id === contactId);
-      sel.value = contact.rep_firm_overridden ? (contact.rep_firm_id || '') : 'auto';
-      sel.addEventListener('change', () => assignContactFirm(contactId, sel.value));
-    });
+    wireContactFirmSelects(tbody);
   }
 
   // "Auto" clears the override and immediately recomputes from the current
@@ -518,6 +545,7 @@
     contact.blocks_pipeline_sync = false;
     renderContactsKpis();
     renderContactsFlatTable();
+    renderAccounts(); // keeps this contact's row in sync if its account panel is also expanded
   }
 
   document.getElementById('contact-search-input').addEventListener('input', renderContactsFlatTable);
@@ -597,8 +625,8 @@
   async function loadAll() {
     const [firmsRes, accountsRes, contactsRes, zipRangesRes] = await Promise.all([
       client.from('rep_firms').select('id, name, crm_account_external_id, states').eq('status', 'active').order('name'),
-      client.from('crm_accounts').select('external_id, name, street, city, state_raw, state_code, zip, country_code, website, relationship_type, business_type, audac_partner_type, classification, rep_firm_id, rep_firm_overridden, parent_account_external_id, source').order('name'),
-      client.from('crm_contacts').select('external_id, full_name, email, parent_account_external_id, rep_firm_id, rep_firm_overridden, blocks_pipeline_sync').order('full_name'),
+      client.from('crm_accounts').select('external_id, name, street, city, state_raw, state_code, zip, country_code, website, relationship_type, business_type, audac_partner_type, classification, rep_firm_id, rep_firm_overridden, parent_account_external_id, source, updated_at').order('name'),
+      client.from('crm_contacts').select('external_id, full_name, email, parent_account_external_id, rep_firm_id, rep_firm_overridden, blocks_pipeline_sync, updated_at').order('full_name'),
       client.from('rep_firm_zip_ranges').select('rep_firm_id, state_code, zip3_start, zip3_end'),
     ]);
 
@@ -622,6 +650,15 @@
       if (!c.parent_account_external_id) return;
       contactCountByAccount.set(c.parent_account_external_id, (contactCountByAccount.get(c.parent_account_external_id) || 0) + 1);
     });
+
+    // Every row's updated_at is touched on every sync run (whether or not
+    // that row's data actually changed) as well as by a manual correction --
+    // so the most recent one across both tables is a reliable "how fresh is
+    // what I'm looking at" signal without needing a dedicated sync-log table.
+    const latestTimestamp = [...accountsCache, ...allContactsCache]
+      .map(r => r.updated_at).filter(Boolean).sort().pop();
+    const agoText = timeAgo(latestTimestamp);
+    document.getElementById('last-updated-note').textContent = agoText ? `Data last updated ${agoText}` : '';
 
     populateFirmFilter();
     renderKpis();
