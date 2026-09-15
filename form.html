@@ -203,6 +203,8 @@
         <button type="button" class="audac-btn-outline" id="google-signin-btn">Sign in with Google</button>
         <button type="button" class="audac-btn-outline" id="microsoft-signin-btn">Sign in with Microsoft</button>
         <input type="email" id="signin-email" placeholder="you@example.com">
+        <input type="password" id="signin-password" placeholder="Password (if you have one)">
+        <button type="button" class="audac-btn-outline" id="password-signin-btn">Sign In</button>
         <button type="button" class="audac-btn-outline" id="send-magic-link-btn">Send Magic Link</button>
         <span id="signin-status"></span>
       </div>
@@ -580,6 +582,23 @@
       provider: 'azure',
       options: { redirectTo: window.location.href.split('#')[0] },
     });
+    if (error) statusEl.textContent = 'Error: ' + error.message;
+  });
+
+  document.getElementById('password-signin-btn').addEventListener('click', async () => {
+    const email = document.getElementById('signin-email').value.trim();
+    const password = document.getElementById('signin-password').value;
+    const statusEl = document.getElementById('signin-status');
+    if (!email || !password) { statusEl.textContent = 'Enter your email and password.'; return; }
+    // Password accounts are created by a manager (Reps page) for reps whose
+    // email provider isn't Google or Microsoft -- there's no self-service
+    // sign-up for this option, unlike Google/Microsoft/magic-link above.
+    if (firmSelect.value) localStorage.setItem(PENDING_FIRM_KEY, firmSelect.value);
+    const btn = document.getElementById('password-signin-btn');
+    btn.disabled = true;
+    statusEl.textContent = 'Signing in…';
+    const { error } = await client.auth.signInWithPassword({ email, password });
+    btn.disabled = false;
     if (error) statusEl.textContent = 'Error: ' + error.message;
   });
 
