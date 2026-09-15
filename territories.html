@@ -70,7 +70,12 @@
     border-radius: 4px; cursor: pointer; transition: transform .1s ease; user-select: none;
   }
   .state-tile:hover { transform: scale(1.1); box-shadow: 0 0 0 2px var(--audac-gold); z-index: 1; position: relative; }
+  .state-tile-conflict { box-shadow: 0 0 0 2px var(--red); }
+  .state-tile-conflict:hover { box-shadow: 0 0 0 2px var(--red), 0 0 0 4px var(--audac-gold); }
   .map-legend { display: flex; flex-direction: column; gap: 7px; font-size: 12.5px; min-width: 210px; max-height: 380px; overflow-y: auto; padding-right: 4px; }
+  .map-legend .legend-note { display: flex; align-items: center; gap: 8px; color: var(--audac-text); padding-top: 6px; margin-top: 6px; border-top: 1px solid #eee; }
+  .map-legend .legend-swatch.split-demo { background: linear-gradient(to right, #999 50%, #ccc 50%); }
+  .map-legend .legend-swatch.conflict-demo { background: repeating-linear-gradient(45deg, var(--red), var(--red) 4px, #fff 4px, #fff 8px); }
   .legend-item { display: flex; align-items: center; gap: 8px; cursor: pointer; }
   .legend-item:hover { color: var(--audac-black); }
   .legend-swatch { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; }
@@ -230,20 +235,51 @@
     return `hsl(${hash % 360}, 55%, 52%)`;
   }
 
+  // A state can have 0 owners (unassigned, gray), 1 (solid color), or more
+  // (shared) -- and a shared state is either a documented postcode split
+  // (every owner has its own zip3 range here, rendered as a clean side-by-
+  // side color split) or a genuine unresolved conflict (rendered as a
+  // diagonal stripe instead, so it visually reads as "needs attention"
+  // rather than looking like an intentional division).
   function renderMap() {
     const grid = document.getElementById('usa-map-grid');
     grid.innerHTML = TILE_LAYOUT.map(t => {
-      const owner = firmsCache.find(f => Array.isArray(f.states) && f.states.includes(t.key));
-      const bg = owner ? colorForFirm(owner.name) : '#eee';
-      const color = owner ? '#fff' : '#aaa';
+      const owners = stateOwners(t.key);
       const stateName = STATE_NAME_BY_CODE.get(t.key) || t.key;
-      const title = owner ? `${stateName} — ${owner.name}` : `${stateName} — unassigned`;
-      return `<div class="state-tile" style="grid-column:${t.x + 1}; grid-row:${t.y + 1}; background:${bg}; color:${color};"
-        data-firm="${owner ? owner.id : ''}" title="${escapeHtml(title)}">${t.key}</div>`;
+
+      if (owners.length === 0) {
+        return `<div class="state-tile" style="grid-column:${t.x + 1}; grid-row:${t.y + 1}; background:#eee; color:#aaa;"
+          data-firms="" title="${escapeHtml(stateName)} — unassigned">${t.key}</div>`;
+      }
+      if (owners.length === 1) {
+        const owner = owners[0];
+        return `<div class="state-tile" style="grid-column:${t.x + 1}; grid-row:${t.y + 1}; background:${colorForFirm(owner.name)}; color:#fff;"
+          data-firms="${owner.id}" title="${escapeHtml(stateName)} — ${escapeHtml(owner.name)}">${t.key}</div>`;
+      }
+
+      const withRanges = owners.map(o => ({ owner: o, range: zipRangeFor(t.key, o.id) }));
+      const fullyDocumented = withRanges.every(r => r.range);
+      const ordered = fullyDocumented ? [...withRanges].sort((a, b) => a.range.zip3_start - b.range.zip3_start) : withRanges;
+      const colors = ordered.map(r => colorForFirm(r.owner.name));
+      const n = colors.length;
+      const bg = fullyDocumented
+        ? `linear-gradient(to right, ${colors.map((c, i) => `${c} ${(i / n) * 100}%, ${c} ${((i + 1) / n) * 100}%`).join(', ')})`
+        : `repeating-linear-gradient(45deg, ${colors[0]}, ${colors[0]} 6px, ${colors[1] || colors[0]} 6px, ${colors[1] || colors[0]} 12px)`;
+      const title = `${stateName} — split: ` + ordered.map(r => `${r.owner.name}${r.range ? ` (${r.range.zip3_start}–${r.range.zip3_end})` : ' (no postcode range set)'}`).join(' / ');
+      return `<div class="state-tile ${fullyDocumented ? '' : 'state-tile-conflict'}" style="grid-column:${t.x + 1}; grid-row:${t.y + 1}; background:${bg}; color:#fff;"
+        data-firms="${ordered.map(r => r.owner.id).join(',')}" title="${escapeHtml(title)}">${t.key}</div>`;
     }).join('');
 
     grid.querySelectorAll('.state-tile').forEach(el => {
-      if (el.dataset.firm) el.addEventListener('click', () => openStatesPanel(el.dataset.firm));
+      const firmIds = (el.dataset.firms || '').split(',').filter(Boolean);
+      if (!firmIds.length) return;
+      el.addEventListener('click', (e) => {
+        if (firmIds.length === 1) { openStatesPanel(firmIds[0]); return; }
+        const rect = el.getBoundingClientRect();
+        const frac = (e.clientX - rect.left) / rect.width;
+        const idx = Math.min(firmIds.length - 1, Math.max(0, Math.floor(frac * firmIds.length)));
+        openStatesPanel(firmIds[idx]);
+      });
     });
   }
 
@@ -256,6 +292,8 @@
       </div>
     `).join('') + `
       <div class="legend-item"><span class="legend-swatch" style="background:#eee; border:1px solid #ddd;"></span>Unassigned</div>
+      <div class="legend-note"><span class="legend-swatch split-demo"></span>Split by postcode — click either side</div>
+      <div class="legend-note"><span class="legend-swatch conflict-demo"></span>Unresolved conflict — needs a postcode range</div>
     `;
     legend.querySelectorAll('.legend-item[data-firm]').forEach(el => {
       el.addEventListener('click', () => openStatesPanel(el.dataset.firm));
