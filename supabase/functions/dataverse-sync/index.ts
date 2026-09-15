@@ -339,8 +339,31 @@ Deno.serve(async (req: Request) => {
       const firmIdByCrmAccountId = new Map<string, string>(
         firmsCache.filter((f: any) => f.crm_account_external_id).map((f: any) => [f.crm_account_external_id, f.id]),
       );
-      function resolveFirmIdByState(stateCode: string | null, countryCode: string | null): string | null {
+      // A handful of states are split between two firms by sub-region (e.g.
+      // Western vs Eastern PA) rather than assigned whole to one -- both
+      // firms list the state in their .states array, so plain matching can't
+      // tell them apart. rep_firm_zip_ranges disambiguates those specific
+      // state+firm pairs by zip3; only states that actually need it have any
+      // rows here, so this is a no-op fallback everywhere else.
+      const { data: zipRanges } = await svc.from("rep_firm_zip_ranges").select("rep_firm_id, state_code, zip3_start, zip3_end");
+      const zipRangesByState = new Map<string, { repFirmId: string; start: number; end: number }[]>();
+      for (const z of zipRanges || []) {
+        const list = zipRangesByState.get(z.state_code) || [];
+        list.push({ repFirmId: z.rep_firm_id, start: z.zip3_start, end: z.zip3_end });
+        zipRangesByState.set(z.state_code, list);
+      }
+      function resolveFirmIdByState(stateCode: string | null, countryCode: string | null, zip: string | null): string | null {
         if (!stateCode || countryCode !== "US") return null;
+        const ranges = zipRangesByState.get(stateCode);
+        if (ranges) {
+          const zip3 = zip && /^\d{3}/.test(zip) ? parseInt(zip.slice(0, 3), 10) : null;
+          if (zip3 != null) {
+            const match = ranges.find((r) => zip3 >= r.start && zip3 <= r.end);
+            if (match) return match.repFirmId;
+          }
+          // Zip missing or outside every known range for a split state -- fall
+          // through to whole-state matching below rather than guessing.
+        }
         const firm = firmsCache.find((f: any) => Array.isArray(f.states) && f.states.includes(stateCode));
         return firm ? firm.id : null;
       }
@@ -380,7 +403,7 @@ Deno.serve(async (req: Request) => {
             repFirmId = parentId ? firmIdByCrmAccountId.get(parentId) ?? null : null;
             if (repFirmId) matchedByParent++;
             else {
-              repFirmId = resolveFirmIdByState(stateCode, countryCode);
+              repFirmId = resolveFirmIdByState(stateCode, countryCode, r.address1_postalcode || null);
               if (repFirmId) matchedByState++;
               else if (stateCode && countryCode === "US") outOfTerritory++;
               else noState++;
