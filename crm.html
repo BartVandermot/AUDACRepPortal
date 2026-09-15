@@ -157,6 +157,7 @@
   let currentUser = null;
   let firmsCache = [];
   let accountsCache = [];
+  let zipRangesCache = [];
   let contactCountByAccount = new Map();
   let expandedIds = new Set();
   let contactsCache = new Map();
@@ -250,7 +251,7 @@
       const mainRow = `
         <tr data-id="${a.external_id}">
           <td><button class="row-name-btn" data-toggle="${a.external_id}"><span class="expand-caret">${caret}</span>${escapeHtml(a.name)}</button></td>
-          <td>${escapeHtml(a.city || '')}${a.city && a.state_raw ? ', ' : ''}${escapeHtml(a.state_raw || '')}</td>
+          <td>${escapeHtml(a.city || '')}${a.city && a.state_raw ? ', ' : ''}${escapeHtml(a.state_raw || '')}${a.zip ? ' ' + escapeHtml(a.zip) : ''}</td>
           <td>${escapeHtml(a.country_code || '')}</td>
           <td>${escapeHtml(a.relationship_type || '')}</td>
           <td>${escapeHtml(a.audac_partner_type || '')}</td>
@@ -291,6 +292,19 @@
       : null;
     if (viaParent) return viaParent.id;
     if (acc.state_code && acc.country_code === 'US') {
+      // Some states are split between two firms by postcode (see the
+      // territories page) -- checked before falling back to plain state
+      // matching, same order dataverse-sync uses, so "Auto" here can't
+      // silently undo the split by picking whichever firm's array happens
+      // to be checked first.
+      const ranges = zipRangesCache.filter(z => z.state_code === acc.state_code);
+      if (ranges.length) {
+        const zip3 = acc.zip && /^\d{3}/.test(acc.zip) ? parseInt(acc.zip.slice(0, 3), 10) : null;
+        if (zip3 != null) {
+          const match = ranges.find(r => zip3 >= r.zip3_start && zip3 <= r.zip3_end);
+          if (match) return match.rep_firm_id;
+        }
+      }
       const viaState = firmsCache.find(f => Array.isArray(f.states) && f.states.includes(acc.state_code));
       if (viaState) return viaState.id;
     }
@@ -418,10 +432,11 @@
   document.getElementById('export-btn').addEventListener('click', exportToExcel);
 
   async function loadAll() {
-    const [firmsRes, accountsRes, contactsRes] = await Promise.all([
+    const [firmsRes, accountsRes, contactsRes, zipRangesRes] = await Promise.all([
       client.from('rep_firms').select('id, name, crm_account_external_id, states').eq('status', 'active').order('name'),
       client.from('crm_accounts').select('external_id, name, street, city, state_raw, state_code, zip, country_code, website, relationship_type, business_type, audac_partner_type, classification, rep_firm_id, rep_firm_overridden, parent_account_external_id, source').order('name'),
       client.from('crm_contacts').select('parent_account_external_id'),
+      client.from('rep_firm_zip_ranges').select('rep_firm_id, state_code, zip3_start, zip3_end'),
     ]);
 
     if (accountsRes.error) {
@@ -431,6 +446,7 @@
 
     firmsCache = firmsRes.data || [];
     accountsCache = accountsRes.data || [];
+    zipRangesCache = zipRangesRes.data || [];
     contactCountByAccount = new Map();
     (contactsRes.data || []).forEach(c => {
       if (!c.parent_account_external_id) return;
