@@ -45,6 +45,9 @@
     border: 1px solid #ddd; border-radius: 3px; background: #fff; color: var(--audac-black); min-width: 220px;
   }
   .result-count { font-size: 12.5px; color: #999; margin-bottom: 10px; }
+  .upload-hint { font-size: 12.5px; color: #999; margin: 0 0 20px; max-width: 720px; }
+  h2.section-title { font-size: 15px; font-weight: 700; color: var(--audac-black); text-transform: uppercase; letter-spacing: .5px; margin: 40px 0 14px; padding-top: 20px; border-top: 1px solid #eee; }
+  .manual-override-badge { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; padding: 2px 8px; border-radius: 10px; background: #eee; color: #777; margin-left: 8px; }
 
   table.crm-table { width: 100%; border-collapse: collapse; background: #fff; font-size: 13px; }
   table.crm-table th, table.crm-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #eee; vertical-align: middle; }
@@ -144,6 +147,42 @@
         <tbody id="accounts-body"></tbody>
       </table>
     </div>
+
+    <h2 class="section-title">CRM Contacts</h2>
+    <p class="upload-hint">Every contact synced from CRM, with the rep firm it currently resolves to — inherited from its account above unless manually corrected here. Use this when a specific person needs a different firm than the rest of their account, or isn't a rep at all.</p>
+
+    <div class="kpi-row" id="contacts-kpi-row"></div>
+
+    <div class="toolbar">
+      <div class="field">
+        <label for="contact-search-input">Search contacts</label>
+        <input type="text" id="contact-search-input" placeholder="Name, email, account…">
+      </div>
+      <div class="field">
+        <label for="contact-firm-filter">Rep firm</label>
+        <select id="contact-firm-filter">
+          <option value="">All</option>
+          <option value="__unassigned">Unassigned</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="contact-resolution-filter">Resolution</label>
+        <select id="contact-resolution-filter">
+          <option value="">All</option>
+          <option value="manual">Manually overridden</option>
+          <option value="auto">Auto (from account)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="result-count" id="contacts-result-count"></div>
+
+    <div style="overflow-x:auto;">
+      <table class="detail">
+        <thead><tr><th>Contact</th><th>Email</th><th>Account</th><th>Rep Firm</th></tr></thead>
+        <tbody id="contacts-body"></tbody>
+      </table>
+    </div>
   </div>
 </main>
 
@@ -166,6 +205,9 @@
   let contactCountByAccount = new Map();
   let expandedIds = new Set();
   let contactsCache = new Map();
+  let allContactsCache = []; // flat list backing the CRM Contacts section below, separate from contactsCache's per-account nested view
+  let accountNameByExternalId = new Map();
+  let accountsRepFirmByExternalId = new Map();
 
   function escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
@@ -367,6 +409,111 @@
   document.getElementById('firm-filter').addEventListener('change', renderAccounts);
   document.getElementById('source-filter').addEventListener('change', renderAccounts);
 
+  // ---------- CRM Contacts (flat list) ----------
+  // Every synced Contact as its own row, not nested under its account (the
+  // Accounts table above keeps that nested view for quick browsing) -- a
+  // flat list is what's actually needed to spot and fix one wrong person
+  // without hunting through their account first. rep_firm_id here is
+  // normally inherited from the parent account (see dataverse-sync);
+  // rep_firm_overridden marks a row where a manager corrected that
+  // directly, which the sync then leaves alone instead of recomputing on
+  // every run.
+  function renderContactsKpis() {
+    const total = allContactsCache.length;
+    const assigned = allContactsCache.filter(c => c.rep_firm_id).length;
+    const overridden = allContactsCache.filter(c => c.rep_firm_overridden).length;
+    document.getElementById('contacts-kpi-row').innerHTML = `
+      <div class="kpi-tile"><div class="kpi-label">Contacts Synced</div><div class="kpi-value">${total}</div></div>
+      <div class="kpi-tile"><div class="kpi-label">Assigned to Rep Firm</div><div class="kpi-value">${assigned}</div></div>
+      <div class="kpi-tile"><div class="kpi-label">Unassigned</div><div class="kpi-value">${total - assigned}</div></div>
+      <div class="kpi-tile"><div class="kpi-label">Manually Overridden</div><div class="kpi-value">${overridden}</div></div>
+    `;
+  }
+
+  function populateContactFirmFilter() {
+    const sel = document.getElementById('contact-firm-filter');
+    const current = sel.value;
+    sel.innerHTML = '<option value="">All</option><option value="__unassigned">Unassigned</option>' +
+      firmsCache.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`).join('');
+    sel.value = current || '';
+  }
+
+  function matchesContactSearch(c, q) {
+    if (!q) return true;
+    const account = accountNameByExternalId.get(c.parent_account_external_id) || '';
+    return `${c.full_name || ''} ${c.email || ''} ${account}`.toLowerCase().includes(q);
+  }
+
+  function getFilteredContacts() {
+    const q = document.getElementById('contact-search-input').value.trim().toLowerCase();
+    const firmFilter = document.getElementById('contact-firm-filter').value;
+    const resolutionFilter = document.getElementById('contact-resolution-filter').value;
+
+    let rows = allContactsCache.filter(c => matchesContactSearch(c, q));
+    if (firmFilter === '__unassigned') rows = rows.filter(c => !c.rep_firm_id);
+    else if (firmFilter) rows = rows.filter(c => c.rep_firm_id === firmFilter);
+    if (resolutionFilter === 'manual') rows = rows.filter(c => c.rep_firm_overridden);
+    else if (resolutionFilter === 'auto') rows = rows.filter(c => !c.rep_firm_overridden);
+    return rows;
+  }
+
+  function renderContactsFlatTable() {
+    const rows = getFilteredContacts();
+    document.getElementById('contacts-result-count').textContent = `Showing ${rows.length} of ${allContactsCache.length} contacts`;
+
+    const firmOptions = ['<option value="auto">Auto (inherit from account)</option>', '<option value="">Unassigned</option>']
+      .concat(firmsCache.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`)).join('');
+
+    const tbody = document.getElementById('contacts-body');
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="empty-note">No contacts match the current filters.</td></tr>';
+    } else {
+      tbody.innerHTML = rows.map(c => `
+        <tr data-contact-id="${c.external_id}">
+          <td>${escapeHtml(c.full_name || '')}</td>
+          <td>${escapeHtml(c.email || '')}</td>
+          <td>${escapeHtml(accountNameByExternalId.get(c.parent_account_external_id) || '')}</td>
+          <td>
+            <select class="firm-assign" data-contact="${c.external_id}">${firmOptions}</select>
+            ${c.rep_firm_overridden ? '<span class="manual-override-badge">Manual</span>' : ''}
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    tbody.querySelectorAll('select.firm-assign').forEach(sel => {
+      const contactId = sel.dataset.contact;
+      const contact = allContactsCache.find(c => c.external_id === contactId);
+      sel.value = contact.rep_firm_overridden ? (contact.rep_firm_id || '') : 'auto';
+      sel.addEventListener('change', () => assignContactFirm(contactId, sel.value));
+    });
+  }
+
+  // "Auto" clears the override and immediately recomputes from the current
+  // parent account (rather than leaving a stale value until the next CRM
+  // sync); any specific firm or "Unassigned" sets rep_firm_overridden so the
+  // sync's contacts phase won't recompute over this decision later.
+  async function assignContactFirm(contactExternalId, selectValue) {
+    const contact = allContactsCache.find(c => c.external_id === contactExternalId);
+    if (!contact) return;
+    const overridden = selectValue !== 'auto';
+    const repFirmId = overridden
+      ? (selectValue || null)
+      : (accountsRepFirmByExternalId.get(contact.parent_account_external_id) || null);
+    const { error } = await client.from('crm_contacts').update({
+      rep_firm_id: repFirmId, rep_firm_overridden: overridden, updated_by: currentUser.id, updated_at: new Date().toISOString(),
+    }).eq('external_id', contactExternalId);
+    if (error) { alert('Could not update rep firm: ' + error.message); return; }
+    contact.rep_firm_id = repFirmId;
+    contact.rep_firm_overridden = overridden;
+    renderContactsKpis();
+    renderContactsFlatTable();
+  }
+
+  document.getElementById('contact-search-input').addEventListener('input', renderContactsFlatTable);
+  document.getElementById('contact-firm-filter').addEventListener('change', renderContactsFlatTable);
+  document.getElementById('contact-resolution-filter').addEventListener('change', renderContactsFlatTable);
+
   // Manually-added accounts/contacts never make it into Dataverse on their own --
   // a manager has to key them in there by hand. This gives them an .xlsx of exactly
   // what's currently filtered (name a source="Manually added" filter first to get
@@ -441,7 +588,7 @@
     const [firmsRes, accountsRes, contactsRes, zipRangesRes] = await Promise.all([
       client.from('rep_firms').select('id, name, crm_account_external_id, states').eq('status', 'active').order('name'),
       client.from('crm_accounts').select('external_id, name, street, city, state_raw, state_code, zip, country_code, website, relationship_type, business_type, audac_partner_type, classification, rep_firm_id, rep_firm_overridden, parent_account_external_id, source').order('name'),
-      client.from('crm_contacts').select('parent_account_external_id'),
+      client.from('crm_contacts').select('external_id, full_name, email, parent_account_external_id, rep_firm_id, rep_firm_overridden').order('full_name'),
       client.from('rep_firm_zip_ranges').select('rep_firm_id, state_code, zip3_start, zip3_end'),
     ]);
 
@@ -449,12 +596,19 @@
       document.getElementById('loading-note').textContent = 'Failed to load CRM accounts: ' + accountsRes.error.message;
       return;
     }
+    if (contactsRes.error) {
+      document.getElementById('loading-note').textContent = 'Failed to load CRM contacts: ' + contactsRes.error.message;
+      return;
+    }
 
     firmsCache = firmsRes.data || [];
     accountsCache = accountsRes.data || [];
     zipRangesCache = zipRangesRes.data || [];
+    allContactsCache = contactsRes.data || [];
+    accountNameByExternalId = new Map(accountsCache.map(a => [a.external_id, a.name]));
+    accountsRepFirmByExternalId = new Map(accountsCache.map(a => [a.external_id, a.rep_firm_id]));
     contactCountByAccount = new Map();
-    (contactsRes.data || []).forEach(c => {
+    allContactsCache.forEach(c => {
       if (!c.parent_account_external_id) return;
       contactCountByAccount.set(c.parent_account_external_id, (contactCountByAccount.get(c.parent_account_external_id) || 0) + 1);
     });
@@ -462,6 +616,10 @@
     populateFirmFilter();
     renderKpis();
     renderAccounts();
+
+    populateContactFirmFilter();
+    renderContactsKpis();
+    renderContactsFlatTable();
 
     document.getElementById('loading-note').style.display = 'none';
     document.getElementById('content').style.display = 'block';
