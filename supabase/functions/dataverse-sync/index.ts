@@ -220,6 +220,14 @@ const OPPORTUNITIES_SELECT = [
 const COUNTRY_GUID_US = "45adf5cd-c846-e811-a9c6-000d3a254a9a";
 const COUNTRY_GUID_CA = "c1abf5cd-c846-e811-a9c6-000d3a254a9a";
 
+// PAG Canada covers the entire country -- not a per-province territory like
+// the US states, so this is a flat country match rather than anything
+// state-list-driven. Hardcoded rather than looked up by name for the same
+// reason the COUNTRY_GUIDs above are: it's one known, essentially permanent
+// mapping, confirmed directly against rep_firms (2026-09-16) rather than
+// something worth a schema column for a single country.
+const PAG_CANADA_FIRM_ID = "c1a84e17-3e17-4af0-8f8b-47c229e8fda1";
+
 const ACCOUNTS_URL_BASE = `${DATAVERSE_ORG_URL}/api/data/v9.2/accounts?$select=${ACCOUNTS_SELECT}`;
 const ACCOUNTS_URL_LEVELS = [
   { level: "full", url: `${ACCOUNTS_URL_BASE}&$filter=statecode eq 0 and (_scp_countrylookup_value eq ${COUNTRY_GUID_US} or _scp_countrylookup_value eq ${COUNTRY_GUID_CA})` },
@@ -353,6 +361,8 @@ Deno.serve(async (req: Request) => {
         zipRangesByState.set(z.state_code, list);
       }
       function resolveFirmIdByState(stateCode: string | null, countryCode: string | null, zip: string | null): string | null {
+        // PAG Canada covers the whole country, no province breakdown needed.
+        if (countryCode === "CA") return PAG_CANADA_FIRM_ID;
         if (!stateCode || countryCode !== "US") return null;
         const ranges = zipRangesByState.get(stateCode);
         if (ranges) {
@@ -595,7 +605,11 @@ Deno.serve(async (req: Request) => {
             matchedByContactAccount++;
           } else {
             const territory = extractLocationTerritory(r.pvs_opportunitylocation);
-            const firm = territory ? firmsCache.find((f: any) => Array.isArray(f.states) && f.states.includes(territory.code)) : null;
+            // PAG Canada covers the whole country -- any parsed Canadian
+            // province/city goes straight there, no per-province matching.
+            const firm = !territory ? null
+              : territory.country === "CA" ? { id: PAG_CANADA_FIRM_ID }
+              : firmsCache.find((f: any) => Array.isArray(f.states) && f.states.includes(territory.code));
             if (firm) { repFirmId = firm.id; matchedByLocation++; }
             else {
               skippedNoMatch++;

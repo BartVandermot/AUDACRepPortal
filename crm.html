@@ -154,6 +154,11 @@
   const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
   const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+  // PAG Canada covers the whole country -- same hardcoded mapping
+  // dataverse-sync uses (a single, essentially permanent country -> firm
+  // pairing isn't worth its own schema column), kept in sync with it there.
+  const PAG_CANADA_FIRM_ID = 'c1a84e17-3e17-4af0-8f8b-47c229e8fda1';
+
   let currentUser = null;
   let firmsCache = [];
   let accountsCache = [];
@@ -291,6 +296,7 @@
       ? firmsCache.find(f => f.crm_account_external_id === acc.parent_account_external_id)
       : null;
     if (viaParent) return viaParent.id;
+    if (acc.country_code === 'CA') return PAG_CANADA_FIRM_ID;
     if (acc.state_code && acc.country_code === 'US') {
       // Some states are split between two firms by postcode (see the
       // territories page) -- checked before falling back to plain state
