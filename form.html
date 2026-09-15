@@ -484,8 +484,8 @@
   // ---------- Light auth (via the shared /login page) + My Submissions ----------
   // The public form stays fully anonymous by default (no login required to
   // submit, matching the original design). Signing in is purely opt-in, and
-  // the actual sign-in UI (Google/Microsoft/password/magic-link) lives on
-  // /login, not here -- "Sign in" below just sends the rep there and back.
+  // the actual sign-in UI (Google/Microsoft/password) lives on /login, not
+  // here -- "Sign in" below just sends the rep there and back.
   // Every sign-in gets a profiles row (role='rep') auto-created by a DB trigger
   // on auth.users -- no manager setup needed per rep. The firm the rep was on
   // when they left for /login gets self-claimed onto their profile exactly
@@ -548,8 +548,8 @@
     if (currentSession) document.getElementById('signed-in-email').textContent = currentSession.user.email;
   }
 
-  // Sign-in itself (Google/Microsoft/password/magic-link) all lives on the
-  // shared /login page now -- stash the firm the rep is currently on so
+  // Sign-in itself (Google/Microsoft/password) all lives on the shared
+  // /login page now -- stash the firm the rep is currently on so
   // login.html can hand it off via the same PENDING_FIRM_KEY mechanism, then
   // send them there. They land back here once signed in, and handleSignedIn()
   // below claims the firm from whatever login.html stashed.

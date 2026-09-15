@@ -90,7 +90,6 @@
     background: #fdeaea; color: #a33; border: 1px solid #e0b4b4;
     padding: 10px 14px; border-radius: 3px; margin-bottom: 16px; font-size: 13px;
   }
-  #magic-status { display: block; text-align: center; font-size: 12px; margin-top: 6px; min-height: 14px; }
   .footnote { text-align: center; font-size: 12px; color: #aaa; margin-top: 20px; }
 </style>
 </head>
@@ -117,12 +116,10 @@
       </div>
       <div class="field">
         <label for="password">Password</label>
-        <input type="password" id="password" autocomplete="current-password">
+        <input type="password" id="password" autocomplete="current-password" required>
       </div>
       <button type="submit" class="audac-btn" id="login-btn">Sign In</button>
     </form>
-    <button type="button" class="link-btn" id="send-magic-link-btn">Or email me a one-time sign-in link</button>
-    <span id="magic-status"></span>
 
     <div class="footnote">Sales reps, managers &amp; executives all sign in here</div>
   </div>
@@ -135,9 +132,9 @@
   const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   // A rep reaches /login from their firm-specific form link's "Sign in"
-  // button, which appends ?firm=<id>. Stash it now, before any redirect
-  // (OAuth/magic-link) wipes in-memory JS state, so form.html can claim it
-  // onto the rep's profile once they land back there signed in.
+  // button, which appends ?firm=<id>. Stash it now, before any OAuth
+  // redirect wipes in-memory JS state, so form.html can claim it onto the
+  // rep's profile once they land back there signed in.
   const PENDING_FIRM_KEY = 'audac_pending_firm_id';
   (function stashFirmParam() {
     const firm = new URLSearchParams(window.location.search).get('firm');
@@ -181,7 +178,6 @@
     errorMsg.style.display = 'none';
     const email = document.getElementById('email').value.trim();
     const password = document.getElementById('password').value;
-    if (!password) { showError('Enter your password, or use "email me a one-time sign-in link" below.'); return; }
     const btn = document.getElementById('login-btn');
     btn.disabled = true;
     btn.textContent = 'Signing In…';
@@ -217,26 +213,10 @@
     if (error) showError(error.message);
   });
 
-  document.getElementById('send-magic-link-btn').addEventListener('click', async () => {
-    errorMsg.style.display = 'none';
-    const email = document.getElementById('email').value.trim();
-    const statusEl = document.getElementById('magic-status');
-    if (!email) { statusEl.textContent = 'Enter your email above first.'; return; }
-    const btn = document.getElementById('send-magic-link-btn');
-    btn.disabled = true;
-    statusEl.textContent = 'Sending…';
-    const { error } = await client.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: window.location.href.split('#')[0] },
-    });
-    btn.disabled = false;
-    statusEl.textContent = error ? ('Error: ' + error.message) : 'Check your email for a sign-in link.';
-  });
-
   // Covers three ways a session can show up here: already signed in from a
   // prior visit, a password sign-in above (handled inline too, this is just
-  // a safety net), or landing back from an OAuth/magic-link redirect with
-  // the session in the URL hash -- supabase-js parses that hash as part of
+  // a safety net), or landing back from an OAuth redirect with the session
+  // in the URL hash -- supabase-js parses that hash as part of
   // getSession()/onAuthStateChange, so both paths need the same redirect.
   if (window.location.hash.includes('access_token')) {
     history.replaceState(null, '', window.location.pathname + window.location.search);
