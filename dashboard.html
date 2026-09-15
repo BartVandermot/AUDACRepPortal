@@ -289,11 +289,12 @@
     }
   }
 
-  // A rep self-registers via magic link with zero manager involvement -- which
-  // is the point, but it also means a manager has no passive signal that it
-  // happened. Fetched once at init (not month-scoped, so no need to recompute
-  // on month change); the alert links to /reps where the actual assignment
-  // happens, same pattern as the other two alerts linking into their drilldown.
+  // A rep self-registers (Google, Microsoft, or a password account) with zero
+  // manager involvement -- which is the point, but it also means a manager
+  // has no passive signal that it happened. Fetched once at init (not
+  // month-scoped, so no need to recompute on month change); the alert links
+  // to /reps where the actual assignment happens, same pattern as the other
+  // two alerts linking into their drilldown.
   async function loadRepSignupAlerts() {
     const { data } = await client.from('profiles').select('id, rep_firm_id, created_at').eq('role', 'rep');
     const reps = data || [];
