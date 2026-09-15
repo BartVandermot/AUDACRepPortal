@@ -52,6 +52,7 @@
   table.rep-table th, table.rep-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #eee; vertical-align: middle; }
   table.rep-table th { background: var(--audac-section-bg); color: var(--audac-black); font-weight: 700; text-transform: uppercase; font-size: 10.5px; letter-spacing: .5px; }
   select.firm-assign { font-family: 'Montserrat', sans-serif; font-size: 12.5px; padding: 6px 8px; border: 1px solid #ddd; border-radius: 3px; max-width: 240px; }
+  input.territory-input, select.crm-contact-assign { font-family: 'Montserrat', sans-serif; font-size: 12.5px; padding: 6px 8px; border: 1px solid #ddd; border-radius: 3px; width: 100%; min-width: 150px; max-width: 220px; color: var(--audac-black); }
   .admin-badge { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; padding: 2px 8px; border-radius: 10px; background: var(--green-bg); color: var(--green); margin-left: 8px; }
   .needs-review-badge { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; padding: 2px 8px; border-radius: 10px; background: var(--amber-bg); color: var(--amber); margin-left: 8px; }
   .manual-override-badge { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; padding: 2px 8px; border-radius: 10px; background: #eee; color: #777; margin-left: 8px; }
@@ -129,7 +130,7 @@
       <table class="rep-table">
         <thead>
           <tr>
-            <th>Email</th><th>Rep Firm</th><th>Admin</th><th>Signed Up</th>
+            <th>Email</th><th>Rep Firm</th><th>Territory</th><th>CRM Contact</th><th>Admin</th><th>Signed Up</th>
           </tr>
         </thead>
         <tbody id="reps-body"></tbody>
@@ -204,6 +205,7 @@
   let accountNameByExternalId = new Map();
   let accountsRepFirmByExternalId = new Map();
   let repPersonAliasCache = [];
+  let repFirmContactsByFirmId = new Map(); // firmId -> [{external_id, full_name, email}] -- the firm's own people, not dealer contacts
 
   function escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
@@ -271,11 +273,21 @@
       .concat(firmsCache.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`)).join('');
 
     const tbody = document.getElementById('reps-body');
-    tbody.innerHTML = rows.map(r => `
+    tbody.innerHTML = rows.map(r => {
+      const firmContacts = r.rep_firm_id ? (repFirmContactsByFirmId.get(r.rep_firm_id) || []) : [];
+      const contactOptions = ['<option value="">— Not linked —</option>']
+        .concat(firmContacts.map(c => `<option value="${c.external_id}">${escapeHtml(c.full_name || c.email || '(no name)')}</option>`)).join('');
+      return `
       <tr data-id="${r.id}">
         <td>${escapeHtml(r.email)}</td>
         <td>
           <select class="firm-assign" data-rep="${r.id}">${firmOptions}</select>
+        </td>
+        <td>
+          <input type="text" class="territory-input" data-rep="${r.id}" value="${escapeHtml(r.territory_note || '')}" placeholder="e.g. Western PA">
+        </td>
+        <td>
+          <select class="crm-contact-assign" data-rep="${r.id}" ${firmContacts.length ? '' : 'disabled'}>${contactOptions}</select>
         </td>
         <td>
           <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
@@ -285,7 +297,8 @@
         </td>
         <td>${r.created_at ? new Date(r.created_at).toLocaleDateString() : ''}</td>
       </tr>
-    `).join('');
+    `;
+    }).join('');
 
     tbody.querySelectorAll('select.firm-assign').forEach(sel => {
       const repId = sel.dataset.rep;
@@ -293,9 +306,36 @@
       sel.value = rep?.rep_firm_id || '';
       sel.addEventListener('change', () => assignFirm(repId, sel.value || null));
     });
+    tbody.querySelectorAll('input.territory-input').forEach(input => {
+      input.addEventListener('change', () => saveTerritoryNote(input.dataset.rep, input.value.trim()));
+    });
+    tbody.querySelectorAll('select.crm-contact-assign').forEach(sel => {
+      const repId = sel.dataset.rep;
+      const rep = repsCache.find(r => r.id === repId);
+      sel.value = rep?.crm_contact_external_id || '';
+      sel.addEventListener('change', () => saveCrmContactLink(repId, sel.value || null));
+    });
     tbody.querySelectorAll('.admin-toggle').forEach(cb => {
       cb.addEventListener('change', () => setAdmin(cb.dataset.rep, cb.checked));
     });
+  }
+
+  async function saveTerritoryNote(repId, note) {
+    const { error } = await client.from('profiles').update({ territory_note: note || null }).eq('id', repId);
+    if (error) { alert('Could not save territory: ' + error.message); return; }
+    const rep = repsCache.find(r => r.id === repId);
+    if (rep) rep.territory_note = note || null;
+  }
+
+  // A rep's CRM contact is normally auto-linked by email whenever their firm
+  // is set (see migration 0028) -- this is only for the cases that misses:
+  // the rep signed in with a different email than their CRM record uses, or
+  // there's no CRM contact for them yet.
+  async function saveCrmContactLink(repId, contactExternalId) {
+    const { error } = await client.from('profiles').update({ crm_contact_external_id: contactExternalId }).eq('id', repId);
+    if (error) { alert('Could not save CRM contact link: ' + error.message); return; }
+    const rep = repsCache.find(r => r.id === repId);
+    if (rep) rep.crm_contact_external_id = contactExternalId;
   }
 
   async function assignFirm(repId, firmId) {
@@ -543,8 +583,8 @@
 
   async function loadAll() {
     const [firmsRes, repsRes, accountsRes, contactsRes] = await Promise.all([
-      client.from('rep_firms').select('id, name').eq('status', 'active').order('name'),
-      client.from('profiles').select('id, email, rep_firm_id, is_rep_admin, created_at').eq('role', 'rep').order('created_at', { ascending: false }),
+      client.from('rep_firms').select('id, name, crm_account_external_id').eq('status', 'active').order('name'),
+      client.from('profiles').select('id, email, rep_firm_id, is_rep_admin, created_at, territory_note, crm_contact_external_id').eq('role', 'rep').order('created_at', { ascending: false }),
       client.from('crm_accounts').select('external_id, name, rep_firm_id'),
       client.from('crm_contacts').select('external_id, full_name, email, parent_account_external_id, rep_firm_id, rep_firm_overridden').order('full_name'),
     ]);
@@ -563,6 +603,13 @@
     contactsCache = contactsRes.data || [];
     accountNameByExternalId = new Map((accountsRes.data || []).map(a => [a.external_id, a.name]));
     accountsRepFirmByExternalId = new Map((accountsRes.data || []).map(a => [a.external_id, a.rep_firm_id]));
+
+    repFirmContactsByFirmId = new Map();
+    firmsCache.forEach(firm => {
+      if (!firm.crm_account_external_id) return;
+      const people = contactsCache.filter(c => c.parent_account_external_id === firm.crm_account_external_id);
+      repFirmContactsByFirmId.set(firm.id, people);
+    });
 
     populateFirmFilter();
     renderKpis();
