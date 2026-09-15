@@ -594,14 +594,47 @@
     });
   }
 
+  // Reads the edit form's current values into the same shape used for the DB
+  // patch -- shared by the dirty-check below and the real save, so they can
+  // never drift out of sync with each other.
+  function collectEditFields(editRow) {
+    return {
+      entry_date: editRow.querySelector('.ae-date').value,
+      account_name: editRow.querySelector('.ae-account').value.trim(),
+      contact_name: editRow.querySelector('.ae-contact').value.trim() || null,
+      contact_type: editRow.querySelector('.ae-contact-type').value,
+      activity_type: editRow.querySelector('.ae-activity-type').value,
+      demo_gear_used: editRow.querySelector('.ae-demo').checked,
+      topic_opportunity: editRow.querySelector('.ae-topic').value.trim() || null,
+      solution_feedback: editRow.querySelector('.ae-solution').value.trim() || null,
+      competitive_feedback: editRow.querySelector('.ae-competitive').value.trim() || null,
+      additional_comments: editRow.querySelector('.ae-additional').value.trim() || null,
+    };
+  }
+
+  function editRowIsDirty(editRow) {
+    const current = collectEditFields(editRow);
+    return Object.keys(current).some(k => (current[k] ?? null) !== (editRow._original[k] ?? null));
+  }
+
+  // Re-clicking Edit on the row already open, and clicking Edit on a different
+  // row while one is open, both used to silently discard whatever was typed --
+  // exactly the "almost lost my changes" report this fixes.
+  function closeEditRowWithConfirm(editRow) {
+    if (editRowIsDirty(editRow) && !confirm('You have unsaved changes on this entry. Discard them?')) return false;
+    editRow.remove();
+    return true;
+  }
+
   function openActivityEditor(tr, row, onChanged) {
     const table = tr.closest('table');
     const existingNext = tr.nextElementSibling;
     if (existingNext && existingNext.classList.contains('activity-edit-row')) {
-      existingNext.remove();
+      closeEditRowWithConfirm(existingNext);
       return;
     }
-    table.querySelectorAll('.activity-edit-row').forEach(el => el.remove());
+    const otherOpen = table.querySelector('.activity-edit-row');
+    if (otherOpen && !closeEditRowWithConfirm(otherOpen)) return;
 
     const colspan = tr.children.length;
     const editRow = document.createElement('tr');
@@ -620,32 +653,23 @@
       <label>Competitive Feedback<textarea class="ae-competitive">${escapeHtml(row.competitive_feedback || '')}</textarea></label>
       <label>Additional Comments<textarea class="ae-additional">${escapeHtml(row.additional_comments || '')}</textarea></label>
       <div class="action-row">
-        <button type="button" class="audac-btn" data-ae-save>Save</button>
+        <button type="button" class="audac-btn" data-ae-save>Save Changes</button>
         <button type="button" class="audac-btn-outline" data-ae-cancel>Cancel</button>
         <span class="ae-status"></span>
       </div>
     </td>`;
     tr.after(editRow);
+    editRow._original = collectEditFields(editRow);
 
-    editRow.querySelector('[data-ae-cancel]').addEventListener('click', () => editRow.remove());
+    editRow.querySelector('[data-ae-cancel]').addEventListener('click', () => {
+      if (editRowIsDirty(editRow) && !confirm('Discard your unsaved changes to this entry?')) return;
+      editRow.remove();
+    });
     editRow.querySelector('[data-ae-save]').addEventListener('click', async () => {
       const statusEl = editRow.querySelector('.ae-status');
-      const accountName = editRow.querySelector('.ae-account').value.trim();
-      if (!accountName) { statusEl.textContent = 'Account name is required.'; return; }
-      const entryDate = editRow.querySelector('.ae-date').value;
-      if (entryDate > todayISO()) { statusEl.textContent = 'Entry date can\'t be in the future.'; return; }
-      const patch = {
-        entry_date: entryDate,
-        account_name: accountName,
-        contact_name: editRow.querySelector('.ae-contact').value.trim() || null,
-        contact_type: editRow.querySelector('.ae-contact-type').value,
-        activity_type: editRow.querySelector('.ae-activity-type').value,
-        demo_gear_used: editRow.querySelector('.ae-demo').checked,
-        topic_opportunity: editRow.querySelector('.ae-topic').value.trim() || null,
-        solution_feedback: editRow.querySelector('.ae-solution').value.trim() || null,
-        competitive_feedback: editRow.querySelector('.ae-competitive').value.trim() || null,
-        additional_comments: editRow.querySelector('.ae-additional').value.trim() || null,
-      };
+      const patch = collectEditFields(editRow);
+      if (!patch.account_name) { statusEl.textContent = 'Account name is required.'; return; }
+      if (patch.entry_date > todayISO()) { statusEl.textContent = 'Entry date can\'t be in the future.'; return; }
       statusEl.style.color = '#999';
       statusEl.textContent = 'Saving…';
       const { error } = await client.from('activity_entries').update(patch).eq('id', row.id);
@@ -654,6 +678,7 @@
         statusEl.textContent = 'Error: ' + error.message;
         return;
       }
+      editRow._original = patch;
       editRow.remove();
       onChanged();
     });
