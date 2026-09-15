@@ -171,6 +171,7 @@
           <option value="">All</option>
           <option value="manual">Manually overridden</option>
           <option value="auto">Auto (from account)</option>
+          <option value="blocking">Blocking pipeline sync</option>
         </select>
       </div>
     </div>
@@ -422,11 +423,13 @@
     const total = allContactsCache.length;
     const assigned = allContactsCache.filter(c => c.rep_firm_id).length;
     const overridden = allContactsCache.filter(c => c.rep_firm_overridden).length;
+    const blocking = allContactsCache.filter(c => c.blocks_pipeline_sync).length;
     document.getElementById('contacts-kpi-row').innerHTML = `
       <div class="kpi-tile"><div class="kpi-label">Contacts Synced</div><div class="kpi-value">${total}</div></div>
       <div class="kpi-tile"><div class="kpi-label">Assigned to Rep Firm</div><div class="kpi-value">${assigned}</div></div>
       <div class="kpi-tile"><div class="kpi-label">Unassigned</div><div class="kpi-value">${total - assigned}</div></div>
       <div class="kpi-tile"><div class="kpi-label">Manually Overridden</div><div class="kpi-value">${overridden}</div></div>
+      <div class="kpi-tile"><div class="kpi-label">Blocking Pipeline Sync</div><div class="kpi-value">${blocking}</div></div>
     `;
   }
 
@@ -454,6 +457,7 @@
     else if (firmFilter) rows = rows.filter(c => c.rep_firm_id === firmFilter);
     if (resolutionFilter === 'manual') rows = rows.filter(c => c.rep_firm_overridden);
     else if (resolutionFilter === 'auto') rows = rows.filter(c => !c.rep_firm_overridden);
+    else if (resolutionFilter === 'blocking') rows = rows.filter(c => c.blocks_pipeline_sync);
     return rows;
   }
 
@@ -476,6 +480,7 @@
           <td>
             <select class="firm-assign" data-contact="${c.external_id}">${firmOptions}</select>
             ${c.rep_firm_overridden ? '<span class="manual-override-badge">Manual</span>' : ''}
+            ${c.blocks_pipeline_sync ? '<span class="manual-override-badge" style="background:var(--red-bg); color:var(--red);">Blocking pipeline sync</span>' : ''}
           </td>
         </tr>
       `).join('');
@@ -501,11 +506,16 @@
       ? (selectValue || null)
       : (accountsRepFirmByExternalId.get(contact.parent_account_external_id) || null);
     const { error } = await client.from('crm_contacts').update({
-      rep_firm_id: repFirmId, rep_firm_overridden: overridden, updated_by: currentUser.id, updated_at: new Date().toISOString(),
+      // A manager just made a deliberate call either way, so this always
+      // counts as addressed -- blocks_pipeline_sync only reappears if a
+      // later sync sees this contact fail to resolve again.
+      rep_firm_id: repFirmId, rep_firm_overridden: overridden, blocks_pipeline_sync: false,
+      updated_by: currentUser.id, updated_at: new Date().toISOString(),
     }).eq('external_id', contactExternalId);
     if (error) { alert('Could not update rep firm: ' + error.message); return; }
     contact.rep_firm_id = repFirmId;
     contact.rep_firm_overridden = overridden;
+    contact.blocks_pipeline_sync = false;
     renderContactsKpis();
     renderContactsFlatTable();
   }
@@ -588,7 +598,7 @@
     const [firmsRes, accountsRes, contactsRes, zipRangesRes] = await Promise.all([
       client.from('rep_firms').select('id, name, crm_account_external_id, states').eq('status', 'active').order('name'),
       client.from('crm_accounts').select('external_id, name, street, city, state_raw, state_code, zip, country_code, website, relationship_type, business_type, audac_partner_type, classification, rep_firm_id, rep_firm_overridden, parent_account_external_id, source').order('name'),
-      client.from('crm_contacts').select('external_id, full_name, email, parent_account_external_id, rep_firm_id, rep_firm_overridden').order('full_name'),
+      client.from('crm_contacts').select('external_id, full_name, email, parent_account_external_id, rep_firm_id, rep_firm_overridden, blocks_pipeline_sync').order('full_name'),
       client.from('rep_firm_zip_ranges').select('rep_firm_id, state_code, zip3_start, zip3_end'),
     ]);
 

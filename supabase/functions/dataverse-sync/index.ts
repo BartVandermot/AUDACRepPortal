@@ -12,10 +12,11 @@
 // calling with the returned nextCursor until done=true. Phase order matters:
 // "accounts" first -- "contacts" resolves rep firm via its parent account in
 // crm_accounts; "opportunities" resolves rep firm via (in priority order) its
-// Involved Installer account, a manager's reviewed decision in
-// rep_person_aliases, the Contact's own resolved firm via crm_contacts, or
-// the free-typed Location field, since almost every opportunity is filed
-// under Intellimix as the customer account.
+// Involved Installer account, the Contact's own resolved firm via
+// crm_contacts (auto-matched or manually overridden on CRM Data -- that's
+// also where a manager fixes one that didn't resolve), or the free-typed
+// Location field, since almost every opportunity is filed under Intellimix
+// as the customer account.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
@@ -71,10 +72,6 @@ function normalizeCountry(raw: unknown): string | null {
 }
 
 function normalizeCompany(raw: unknown): string {
-  return String(raw || "").trim().toLowerCase();
-}
-
-function normalizePersonName(raw: unknown): string {
   return String(raw || "").trim().toLowerCase();
 }
 
@@ -540,17 +537,14 @@ Deno.serve(async (req: Request) => {
       // Almost every opportunity is filed under Intellimix as the customer
       // account, which doesn't identify a rep firm -- rep firm is resolved in
       // priority order instead: (1) Involved Installer, the actual dealer
-      // account, looked up in crm_accounts; (2) an explicit, reviewed manager
-      // decision in rep_person_aliases (a deliberate call, including "not a
-      // tracked rep", always wins over an automatic guess); (3) the Contact's
-      // own resolved firm via crm_contacts -- that contact was already synced
-      // and territory-matched to a firm by the accounts/contacts phases, so
-      // this is a real signal, not a guess, for any name nobody's reviewed
-      // yet; (4) the free-typed Location field, parsed for a state/province.
-      // An opportunity that resolves none of these has nowhere to go (unlike
-      // crm_contacts, pipeline_entries.rep_firm_id is not-null) and is
-      // skipped -- an unreviewed placeholder is inserted for its contact name
-      // (if it doesn't already have a row) so it's visible on /reps without
+      // account, looked up in crm_accounts; (2) the Contact's own resolved
+      // firm via crm_contacts -- that contact was already synced and
+      // territory-matched to a firm by the accounts/contacts phases, or
+      // hand-corrected on CRM Data if it wasn't; (3) the free-typed Location
+      // field, parsed for a state/province. An opportunity that resolves none
+      // of these has nowhere to go (unlike crm_contacts, pipeline_entries.
+      // rep_firm_id is not-null) and is skipped -- its Contact (if any) is
+      // flagged blocks_pipeline_sync so it's visible on CRM Data without
       // anyone needing to be watching this sync's live output.
       const installerIds = [...new Set(rows.map((r: any) => r._pvs_involvedinstallerid_value).filter(Boolean))];
       let installerById = new Map<string, { name: string; repFirmId: string | null }>();
@@ -566,20 +560,16 @@ Deno.serve(async (req: Request) => {
         contactById = new Map((contacts || []).map((c: any) => [c.external_id, { repFirmId: c.rep_firm_id }]));
       }
 
-      const { data: aliases } = await svc.from("rep_person_aliases").select("person_name_key, rep_firm_id, reviewed");
-      const personAliasByKey = new Map<string, { repFirmId: string | null; reviewed: boolean }>(
-        (aliases || []).map((a: any) => [a.person_name_key, { repFirmId: a.rep_firm_id, reviewed: a.reviewed }]),
-      );
-
       const { data: firms } = await svc.from("rep_firms").select("id, states").eq("status", "active");
       const firmsCache = firms || [];
 
       // Dataverse's standard Opportunity statecode option set: 0 Open, 1 Won, 2 Lost.
       const STATUS_BY_STATECODE: Record<number, "Open" | "Won" | "Lost"> = { 0: "Open", 1: "Won", 2: "Lost" };
       const syncMonth = new Date().toISOString().slice(0, 7);
-      let matchedByInstaller = 0, matchedByRepName = 0, matchedByContactAccount = 0, matchedByLocation = 0, excludedByRepName = 0, skippedNoMatch = 0;
+      let matchedByInstaller = 0, matchedByContactAccount = 0, matchedByLocation = 0, skippedNoMatch = 0;
       let openCount = 0, wonCount = 0, lostCount = 0;
-      const newPlaceholders = new Map<string, string>(); // person_name_key -> display_name
+      const blockingContactIds = new Set<string>();
+      const resolvedContactIds = new Set<string>();
       const upserts: any[] = [];
 
       for (const r of rows) {
@@ -587,17 +577,11 @@ Deno.serve(async (req: Request) => {
         const installer = installerId ? installerById.get(installerId) : undefined;
         const contactId = r._parentcontactid_value || null;
         const contactName = r["_parentcontactid_value@OData.Community.Display.V1.FormattedValue"] || null;
-        const contactNameKey = contactName ? normalizePersonName(contactName) : null;
-        const alias = contactNameKey ? personAliasByKey.get(contactNameKey) : undefined;
-        const reviewedDecision = alias?.reviewed ? alias : undefined;
 
         let repFirmId: string | null = null;
         if (installer?.repFirmId) {
           repFirmId = installer.repFirmId;
           matchedByInstaller++;
-        } else if (reviewedDecision) {
-          if (reviewedDecision.repFirmId) { repFirmId = reviewedDecision.repFirmId; matchedByRepName++; }
-          else { excludedByRepName++; }
         } else {
           const contact = contactId ? contactById.get(contactId) : undefined;
           if (contact?.repFirmId) {
@@ -611,11 +595,18 @@ Deno.serve(async (req: Request) => {
               : territory.country === "CA" ? { id: PAG_CANADA_FIRM_ID }
               : firmsCache.find((f: any) => Array.isArray(f.states) && f.states.includes(territory.code));
             if (firm) { repFirmId = firm.id; matchedByLocation++; }
-            else {
-              skippedNoMatch++;
-              if (contactNameKey && contactName && !alias) newPlaceholders.set(contactNameKey, contactName);
-            }
+            else skippedNoMatch++;
           }
+        }
+
+        // Tracks whether this opportunity's Contact record itself is the
+        // reason a rep firm couldn't be found -- even if the location
+        // fallback above saved this particular deal, the contact still
+        // deserves the flag when it hasn't resolved anything, so it's fixed
+        // before the next one that has no location to fall back on.
+        if (contactId) {
+          if (repFirmId) resolvedContactIds.add(contactId);
+          else blockingContactIds.add(contactId);
         }
 
         if (!repFirmId) continue;
@@ -661,14 +652,15 @@ Deno.serve(async (req: Request) => {
         if (error) throw new Error(`pipeline_entries upsert failed: ${error.message}`);
       }
 
-      // ignoreDuplicates so this never clobbers an existing decision (assigned
-      // or explicitly excluded) -- only ever inserts a fresh row for a name
-      // that has none yet.
-      if (newPlaceholders.size) {
-        const placeholderRows = [...newPlaceholders.entries()].map(([key, name]) => ({
-          person_name_key: key, display_name: name, rep_firm_id: null, reviewed: false,
-        }));
-        await svc.from("rep_person_aliases").upsert(placeholderRows, { onConflict: "person_name_key", ignoreDuplicates: true });
+      // A contact seen on at least one unresolved deal this page stays
+      // flagged even if it also resolved a different deal -- there's still
+      // real pipeline data being lost for the one that didn't resolve.
+      for (const id of blockingContactIds) resolvedContactIds.delete(id);
+      if (blockingContactIds.size) {
+        await svc.from("crm_contacts").update({ blocks_pipeline_sync: true }).in("external_id", [...blockingContactIds]);
+      }
+      if (resolvedContactIds.size) {
+        await svc.from("crm_contacts").update({ blocks_pipeline_sync: false }).in("external_id", [...resolvedContactIds]);
       }
 
       return jsonResponse({
@@ -677,10 +669,8 @@ Deno.serve(async (req: Request) => {
         nextCursor: nextLink,
         processed: upserts.length,
         matchedByInstaller,
-        matchedByRepName,
         matchedByContactAccount,
         matchedByLocation,
-        excludedByRepName,
         skippedNoMatch,
         openCount,
         wonCount,
