@@ -200,6 +200,7 @@
     <div id="auth-signed-out">
       <button type="button" class="link-btn" id="show-signin-btn">Sign in to view or edit your past submissions</button>
       <div id="signin-form" hidden>
+        <button type="button" class="audac-btn-outline" id="google-signin-btn">Sign in with Google</button>
         <input type="email" id="signin-email" placeholder="you@example.com">
         <button type="button" class="audac-btn-outline" id="send-magic-link-btn">Send Magic Link</button>
         <span id="signin-status"></span>
@@ -557,6 +558,18 @@
   document.getElementById('show-signin-btn').addEventListener('click', () => {
     document.getElementById('signin-form').hidden = false;
     document.getElementById('show-signin-btn').hidden = true;
+  });
+
+  document.getElementById('google-signin-btn').addEventListener('click', async () => {
+    const statusEl = document.getElementById('signin-status');
+    // Remembered across the OAuth redirect round trip so the firm this rep was
+    // on gets claimed onto their profile once they're actually signed in.
+    if (firmSelect.value) localStorage.setItem(PENDING_FIRM_KEY, firmSelect.value);
+    const { error } = await client.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.href.split('#')[0] },
+    });
+    if (error) statusEl.textContent = 'Error: ' + error.message;
   });
 
   document.getElementById('send-magic-link-btn').addEventListener('click', async () => {
