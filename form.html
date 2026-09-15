@@ -149,6 +149,7 @@
   .combo-item-sub { color: #999; font-size: 11.5px; margin-left: 6px; }
   .combo-item-new { color: var(--audac-gold); font-weight: 600; border-top: 1px solid #eee; }
   .combo-status { font-size: 11.5px; margin-top: 4px; min-height: 14px; }
+  .new-details { background: #fbf7ee; border: 1px solid #e9dcc0; border-radius: 4px; padding: 16px 16px 0; margin: -4px 0 16px; }
   .combo-status.linked { color: #2e7d32; }
   .combo-status.error { color: #b3261e; }
   .contact-field { display: none; }
@@ -335,6 +336,11 @@
     const list = block.querySelector('.account-list');
     const statusEl = block.querySelector('.account-status');
     const contactField = block.querySelector('.contact-field');
+    const details = block.querySelector('.new-account-details');
+    const streetInput = block.querySelector('.new-account-street');
+    const cityInput = block.querySelector('.new-account-city');
+    const stateInput = block.querySelector('.new-account-state');
+    const phoneInput = block.querySelector('.new-account-phone');
 
     function selectAccount(acc, isNew) {
       input.value = acc.name;
@@ -342,17 +348,26 @@
       statusEl.textContent = isNew ? '✓ Added as a new CRM account' : '✓ Linked to existing CRM account';
       statusEl.className = 'combo-status account-status linked';
       list.hidden = true;
+      details.hidden = true;
       contactField.classList.add('active');
       wireContactCombo(block);
+    }
+
+    function showNewAccountDetails(name) {
+      list.hidden = true;
+      details.hidden = false;
+      [streetInput, cityInput, stateInput, phoneInput].forEach(el => el.value = '');
+      streetInput.focus();
     }
 
     async function createNew(name) {
       if (!name) return;
       const firmId = firmSelect.value || null;
-      input.disabled = true;
+      details.querySelector('[data-new-account-confirm]').disabled = true;
       try {
         const { data, error } = await client.rpc('create_manual_crm_account', {
-          p_name: name, p_city: null, p_state_code: null, p_rep_firm_id: firmId,
+          p_name: name, p_street: streetInput.value.trim() || null, p_city: cityInput.value.trim() || null,
+          p_state_code: stateInput.value.trim() || null, p_phone: phoneInput.value.trim() || null, p_rep_firm_id: firmId,
         });
         if (error) throw error;
         selectAccount({ external_id: data, name }, true);
@@ -360,14 +375,18 @@
         statusEl.textContent = 'Could not add company: ' + err.message;
         statusEl.className = 'combo-status account-status error';
       } finally {
-        input.disabled = false;
+        details.querySelector('[data-new-account-confirm]').disabled = false;
       }
     }
+
+    details.querySelector('[data-new-account-confirm]').addEventListener('click', () => createNew(input.value.trim()));
+    details.querySelector('[data-new-account-cancel]').addEventListener('click', () => { details.hidden = true; });
 
     input.addEventListener('input', debounce(async () => {
       delete block.dataset.accountExternalId;
       statusEl.textContent = '';
       statusEl.className = 'combo-status account-status';
+      details.hidden = true;
       contactField.classList.remove('active');
       clearContact(block);
       const q = input.value.trim();
@@ -385,7 +404,7 @@
     list.addEventListener('click', (e) => {
       const item = e.target.closest('.combo-item');
       if (!item) return;
-      if (item.dataset.new) createNew(input.value.trim());
+      if (item.dataset.new) showNewAccountDetails(input.value.trim());
       else selectAccount({ external_id: item.dataset.externalId, name: item.dataset.name }, false);
     });
   }
@@ -395,15 +414,20 @@
     const input = block.querySelector('.contact-input');
     const statusEl = block.querySelector('.contact-status');
     const list = block.querySelector('.contact-list');
+    const details = block.querySelector('.new-contact-details');
     if (input) input.value = '';
     if (statusEl) { statusEl.textContent = ''; statusEl.className = 'combo-status contact-status'; }
     if (list) { list.hidden = true; list.innerHTML = ''; }
+    if (details) details.hidden = true;
   }
 
   function wireContactCombo(block) {
     const input = block.querySelector('.contact-input');
     const list = block.querySelector('.contact-list');
     const statusEl = block.querySelector('.contact-status');
+    const details = block.querySelector('.new-contact-details');
+    const emailInput = block.querySelector('.new-contact-email');
+    const phoneInput = block.querySelector('.new-contact-phone');
 
     function selectContact(c, isNew) {
       input.value = c.full_name || '';
@@ -411,15 +435,25 @@
       statusEl.textContent = isNew ? '✓ Added as a new CRM contact' : '✓ Linked to existing CRM contact';
       statusEl.className = 'combo-status contact-status linked';
       list.hidden = true;
+      details.hidden = true;
+    }
+
+    function showNewContactDetails() {
+      list.hidden = true;
+      details.hidden = false;
+      emailInput.value = '';
+      phoneInput.value = '';
+      emailInput.focus();
     }
 
     async function createNew(name) {
       const accountExternalId = block.dataset.accountExternalId;
       if (!name || !accountExternalId) return;
-      input.disabled = true;
+      details.querySelector('[data-new-contact-confirm]').disabled = true;
       try {
         const { data, error } = await client.rpc('create_manual_crm_contact', {
-          p_account_external_id: accountExternalId, p_full_name: name, p_email: null,
+          p_account_external_id: accountExternalId, p_full_name: name,
+          p_email: emailInput.value.trim() || null, p_phone: phoneInput.value.trim() || null,
         });
         if (error) throw error;
         selectContact({ external_id: data, full_name: name }, true);
@@ -427,14 +461,18 @@
         statusEl.textContent = 'Could not add contact: ' + err.message;
         statusEl.className = 'combo-status contact-status error';
       } finally {
-        input.disabled = false;
+        details.querySelector('[data-new-contact-confirm]').disabled = false;
       }
     }
+
+    details.querySelector('[data-new-contact-confirm]').addEventListener('click', () => createNew(input.value.trim()));
+    details.querySelector('[data-new-contact-cancel]').addEventListener('click', () => { details.hidden = true; });
 
     input.oninput = debounce(async () => {
       delete block.dataset.contactExternalId;
       statusEl.textContent = '';
       statusEl.className = 'combo-status contact-status';
+      details.hidden = true;
       const accountExternalId = block.dataset.accountExternalId;
       const q = input.value.trim();
       if (!accountExternalId) { list.hidden = true; return; }
@@ -456,7 +494,7 @@
     list.onclick = (e) => {
       const item = e.target.closest('.combo-item');
       if (!item) return;
-      if (item.dataset.new) createNew(input.value.trim());
+      if (item.dataset.new) showNewContactDetails();
       else selectContact({ external_id: item.dataset.externalId, full_name: item.dataset.name }, false);
     };
   }
@@ -841,6 +879,20 @@
           <div class="combo-status account-status"></div>
         </div>
       </div>
+      <div class="new-details new-account-details" hidden>
+        <div class="row">
+          <div class="field"><label>Street Address</label><input type="text" class="new-account-street" placeholder="Street address"></div>
+          <div class="field"><label>City</label><input type="text" class="new-account-city" placeholder="City"></div>
+        </div>
+        <div class="row">
+          <div class="field"><label>State</label><input type="text" class="new-account-state" placeholder="e.g. OH" maxlength="2" style="text-transform:uppercase;"></div>
+          <div class="field"><label>Phone</label><input type="tel" class="new-account-phone" placeholder="Phone number"></div>
+        </div>
+        <div class="actions" style="justify-content:flex-start; gap:10px; margin-bottom:16px;">
+          <button type="button" class="audac-btn-outline" data-new-account-confirm>Add Company</button>
+          <button type="button" class="link-btn" data-new-account-cancel>Cancel</button>
+        </div>
+      </div>
       <div class="field contact-field">
         <label>Contact (optional)</label>
         <div class="combo">
@@ -848,6 +900,16 @@
           <div class="combo-list contact-list" hidden></div>
         </div>
         <div class="combo-status contact-status"></div>
+      </div>
+      <div class="new-details new-contact-details" hidden>
+        <div class="row">
+          <div class="field"><label>Email</label><input type="email" class="new-contact-email" placeholder="Email address"></div>
+          <div class="field"><label>Phone</label><input type="tel" class="new-contact-phone" placeholder="Phone number"></div>
+        </div>
+        <div class="actions" style="justify-content:flex-start; gap:10px; margin-bottom:16px;">
+          <button type="button" class="audac-btn-outline" data-new-contact-confirm>Add Contact</button>
+          <button type="button" class="link-btn" data-new-contact-cancel>Cancel</button>
+        </div>
       </div>
       <div class="row">
         <div class="field">
