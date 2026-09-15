@@ -65,11 +65,32 @@
     margin-top: 8px;
   }
   button.audac-btn:disabled { opacity: .5; cursor: not-allowed; }
+  button.audac-btn-outline {
+    width: 100%;
+    background: transparent;
+    color: var(--audac-black);
+    border: 1.5px solid var(--audac-black);
+    padding: 11px 0;
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 500;
+    font-size: 13px;
+    letter-spacing: .5px;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-radius: 3px;
+    margin-bottom: 10px;
+  }
+  button.audac-btn-outline:disabled { opacity: .5; cursor: not-allowed; }
+  .divider { display: flex; align-items: center; gap: 10px; margin: 20px 0; font-size: 11px; color: #bbb; text-transform: uppercase; letter-spacing: .5px; }
+  .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: #eee; }
+  .link-btn { display: block; width: 100%; text-align: center; background: none; border: none; padding: 8px 4px; margin-top: 10px; font: inherit; font-size: 12.5px; cursor: pointer; text-decoration: underline; color: var(--audac-black); }
+  .link-btn:disabled { opacity: .5; cursor: not-allowed; }
   #error-msg {
     display: none;
     background: #fdeaea; color: #a33; border: 1px solid #e0b4b4;
     padding: 10px 14px; border-radius: 3px; margin-bottom: 16px; font-size: 13px;
   }
+  #magic-status { display: block; text-align: center; font-size: 12px; margin-top: 6px; min-height: 14px; }
   .footnote { text-align: center; font-size: 12px; color: #aaa; margin-top: 20px; }
 </style>
 </head>
@@ -83,6 +104,12 @@
     </div>
     <h1>Rep Portal — Sign In</h1>
     <div id="error-msg"></div>
+
+    <button type="button" class="audac-btn-outline" id="google-signin-btn">Sign in with Google</button>
+    <button type="button" class="audac-btn-outline" id="microsoft-signin-btn">Sign in with Microsoft</button>
+
+    <div class="divider">or</div>
+
     <form id="login-form">
       <div class="field">
         <label for="email">Email</label>
@@ -90,11 +117,14 @@
       </div>
       <div class="field">
         <label for="password">Password</label>
-        <input type="password" id="password" autocomplete="current-password" required>
+        <input type="password" id="password" autocomplete="current-password">
       </div>
       <button type="submit" class="audac-btn" id="login-btn">Sign In</button>
     </form>
-    <div class="footnote">Manager &amp; executive access only</div>
+    <button type="button" class="link-btn" id="send-magic-link-btn">Or email me a one-time sign-in link</button>
+    <span id="magic-status"></span>
+
+    <div class="footnote">Sales reps, managers &amp; executives all sign in here</div>
   </div>
 </div>
 
@@ -103,6 +133,16 @@
   const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
   const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  // A rep reaches /login from their firm-specific form link's "Sign in"
+  // button, which appends ?firm=<id>. Stash it now, before any redirect
+  // (OAuth/magic-link) wipes in-memory JS state, so form.html can claim it
+  // onto the rep's profile once they land back there signed in.
+  const PENDING_FIRM_KEY = 'audac_pending_firm_id';
+  (function stashFirmParam() {
+    const firm = new URLSearchParams(window.location.search).get('firm');
+    if (firm) localStorage.setItem(PENDING_FIRM_KEY, firm);
+  })();
 
   const errorMsg = document.getElementById('error-msg');
   function showError(msg) {
@@ -128,8 +168,10 @@
       window.location.href = '/dashboard';
     } else if (profile.role === 'executive') {
       window.location.href = '/executive';
+    } else if (profile.role === 'rep') {
+      window.location.href = '/form';
     } else {
-      showError('This account does not have manager or executive access.');
+      showError('This account does not have portal access. Contact the AUDAC administrator.');
       await client.auth.signOut();
     }
   }
@@ -139,6 +181,7 @@
     errorMsg.style.display = 'none';
     const email = document.getElementById('email').value.trim();
     const password = document.getElementById('password').value;
+    if (!password) { showError('Enter your password, or use "email me a one-time sign-in link" below.'); return; }
     const btn = document.getElementById('login-btn');
     btn.disabled = true;
     btn.textContent = 'Signing In…';
@@ -156,8 +199,52 @@
     btn.textContent = 'Sign In';
   });
 
-  // If already signed in, skip straight to the right view.
+  document.getElementById('google-signin-btn').addEventListener('click', async () => {
+    errorMsg.style.display = 'none';
+    const { error } = await client.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.href.split('#')[0] },
+    });
+    if (error) showError(error.message);
+  });
+
+  document.getElementById('microsoft-signin-btn').addEventListener('click', async () => {
+    errorMsg.style.display = 'none';
+    const { error } = await client.auth.signInWithOAuth({
+      provider: 'azure',
+      options: { redirectTo: window.location.href.split('#')[0] },
+    });
+    if (error) showError(error.message);
+  });
+
+  document.getElementById('send-magic-link-btn').addEventListener('click', async () => {
+    errorMsg.style.display = 'none';
+    const email = document.getElementById('email').value.trim();
+    const statusEl = document.getElementById('magic-status');
+    if (!email) { statusEl.textContent = 'Enter your email above first.'; return; }
+    const btn = document.getElementById('send-magic-link-btn');
+    btn.disabled = true;
+    statusEl.textContent = 'Sending…';
+    const { error } = await client.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: window.location.href.split('#')[0] },
+    });
+    btn.disabled = false;
+    statusEl.textContent = error ? ('Error: ' + error.message) : 'Check your email for a sign-in link.';
+  });
+
+  // Covers three ways a session can show up here: already signed in from a
+  // prior visit, a password sign-in above (handled inline too, this is just
+  // a safety net), or landing back from an OAuth/magic-link redirect with
+  // the session in the URL hash -- supabase-js parses that hash as part of
+  // getSession()/onAuthStateChange, so both paths need the same redirect.
+  if (window.location.hash.includes('access_token')) {
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+  }
   client.auth.getSession().then(({ data: { session } }) => {
+    if (session) redirectForRole();
+  });
+  client.auth.onAuthStateChange((_event, session) => {
     if (session) redirectForRole();
   });
 </script>

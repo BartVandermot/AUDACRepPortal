@@ -150,9 +150,6 @@
      it looks, just how forgiving it is to actually tap. */
   .link-btn { background: none; border: none; padding: 8px 4px; margin: -8px -4px; font: inherit; font-size: 12.5px; cursor: pointer; text-decoration: underline; color: var(--audac-black); }
   .link-btn.danger { color: #b3261e; }
-  #signin-form { display: inline-flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; justify-content: flex-end; }
-  #signin-form input { flex: 1; min-width: 160px; max-width: 220px; font-size: 16px; padding: 7px 10px; display: inline-block; }
-  #signin-status { font-size: 12px; }
 
   table.detail { width: 100%; border-collapse: collapse; background: #fff; font-size: 12.5px; }
   table.detail th, table.detail td { padding: 8px 10px; border-bottom: 1px solid #eee; text-align: left; }
@@ -199,15 +196,6 @@
   <div id="auth-bar">
     <div id="auth-signed-out">
       <button type="button" class="link-btn" id="show-signin-btn">Sign in to view or edit your past submissions</button>
-      <div id="signin-form" hidden>
-        <button type="button" class="audac-btn-outline" id="google-signin-btn">Sign in with Google</button>
-        <button type="button" class="audac-btn-outline" id="microsoft-signin-btn">Sign in with Microsoft</button>
-        <input type="email" id="signin-email" placeholder="you@example.com">
-        <input type="password" id="signin-password" placeholder="Password (if you have one)">
-        <button type="button" class="audac-btn-outline" id="password-signin-btn">Sign In</button>
-        <button type="button" class="audac-btn-outline" id="send-magic-link-btn">Send Magic Link</button>
-        <span id="signin-status"></span>
-      </div>
     </div>
     <div id="auth-signed-in" hidden>
       Signed in as <strong id="signed-in-email"></strong> —
@@ -493,14 +481,16 @@
     });
   }
 
-  // ---------- Light auth (passwordless magic link) + My Submissions ----------
+  // ---------- Light auth (via the shared /login page) + My Submissions ----------
   // The public form stays fully anonymous by default (no login required to
-  // submit, matching the original design). Signing in is purely opt-in.
+  // submit, matching the original design). Signing in is purely opt-in, and
+  // the actual sign-in UI (Google/Microsoft/password/magic-link) lives on
+  // /login, not here -- "Sign in" below just sends the rep there and back.
   // Every sign-in gets a profiles row (role='rep') auto-created by a DB trigger
   // on auth.users -- no manager setup needed per rep. The firm the rep was on
-  // when they signed in gets self-claimed onto their profile exactly once
-  // (claim_rep_firm RPC), via PENDING_FIRM_KEY stashed in localStorage before
-  // the magic-link redirect (in-memory JS state doesn't survive that redirect).
+  // when they left for /login gets self-claimed onto their profile exactly
+  // once (claim_rep_firm RPC) here, via PENDING_FIRM_KEY that login.html
+  // stashed in localStorage before sending them off to sign in.
   // A rep flagged is_rep_admin by a manager then sees/can edit their whole
   // firm's entries, not just their own -- enforced by RLS
   // (activity_entries_select/update/delete_firm_admin), not by this client code.
@@ -558,66 +548,14 @@
     if (currentSession) document.getElementById('signed-in-email').textContent = currentSession.user.email;
   }
 
+  // Sign-in itself (Google/Microsoft/password/magic-link) all lives on the
+  // shared /login page now -- stash the firm the rep is currently on so
+  // login.html can hand it off via the same PENDING_FIRM_KEY mechanism, then
+  // send them there. They land back here once signed in, and handleSignedIn()
+  // below claims the firm from whatever login.html stashed.
   document.getElementById('show-signin-btn').addEventListener('click', () => {
-    document.getElementById('signin-form').hidden = false;
-    document.getElementById('show-signin-btn').hidden = true;
-  });
-
-  document.getElementById('google-signin-btn').addEventListener('click', async () => {
-    const statusEl = document.getElementById('signin-status');
-    // Remembered across the OAuth redirect round trip so the firm this rep was
-    // on gets claimed onto their profile once they're actually signed in.
-    if (firmSelect.value) localStorage.setItem(PENDING_FIRM_KEY, firmSelect.value);
-    const { error } = await client.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: window.location.href.split('#')[0] },
-    });
-    if (error) statusEl.textContent = 'Error: ' + error.message;
-  });
-
-  document.getElementById('microsoft-signin-btn').addEventListener('click', async () => {
-    const statusEl = document.getElementById('signin-status');
-    if (firmSelect.value) localStorage.setItem(PENDING_FIRM_KEY, firmSelect.value);
-    const { error } = await client.auth.signInWithOAuth({
-      provider: 'azure',
-      options: { redirectTo: window.location.href.split('#')[0] },
-    });
-    if (error) statusEl.textContent = 'Error: ' + error.message;
-  });
-
-  document.getElementById('password-signin-btn').addEventListener('click', async () => {
-    const email = document.getElementById('signin-email').value.trim();
-    const password = document.getElementById('signin-password').value;
-    const statusEl = document.getElementById('signin-status');
-    if (!email || !password) { statusEl.textContent = 'Enter your email and password.'; return; }
-    // Password accounts are created by a manager (Reps page) for reps whose
-    // email provider isn't Google or Microsoft -- there's no self-service
-    // sign-up for this option, unlike Google/Microsoft/magic-link above.
-    if (firmSelect.value) localStorage.setItem(PENDING_FIRM_KEY, firmSelect.value);
-    const btn = document.getElementById('password-signin-btn');
-    btn.disabled = true;
-    statusEl.textContent = 'Signing in…';
-    const { error } = await client.auth.signInWithPassword({ email, password });
-    btn.disabled = false;
-    if (error) statusEl.textContent = 'Error: ' + error.message;
-  });
-
-  document.getElementById('send-magic-link-btn').addEventListener('click', async () => {
-    const email = document.getElementById('signin-email').value.trim();
-    const statusEl = document.getElementById('signin-status');
-    if (!email) { statusEl.textContent = 'Enter your email first.'; return; }
-    // Remembered across the magic-link email round trip so the firm this rep was
-    // on gets claimed onto their profile once they're actually signed in.
-    if (firmSelect.value) localStorage.setItem(PENDING_FIRM_KEY, firmSelect.value);
-    const btn = document.getElementById('send-magic-link-btn');
-    btn.disabled = true;
-    statusEl.textContent = 'Sending…';
-    const { error } = await client.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: window.location.href.split('#')[0] },
-    });
-    btn.disabled = false;
-    statusEl.textContent = error ? ('Error: ' + error.message) : 'Check your email for a sign-in link.';
+    const qs = firmSelect.value ? ('?firm=' + encodeURIComponent(firmSelect.value)) : '';
+    window.location.href = '/login' + qs;
   });
 
   document.getElementById('sign-out-btn').addEventListener('click', async () => {
