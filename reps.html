@@ -52,7 +52,13 @@
   table.rep-table th, table.rep-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #eee; vertical-align: middle; }
   table.rep-table th { background: var(--audac-section-bg); color: var(--audac-black); font-weight: 700; text-transform: uppercase; font-size: 10.5px; letter-spacing: .5px; }
   select.firm-assign { font-family: 'Montserrat', sans-serif; font-size: 12.5px; padding: 6px 8px; border: 1px solid #ddd; border-radius: 3px; max-width: 240px; }
-  input.territory-input, select.crm-contact-assign { font-family: 'Montserrat', sans-serif; font-size: 12.5px; padding: 6px 8px; border: 1px solid #ddd; border-radius: 3px; width: 100%; min-width: 150px; max-width: 220px; color: var(--audac-black); }
+  input.territory-input { font-family: 'Montserrat', sans-serif; font-size: 12.5px; padding: 6px 8px; border: 1px solid #ddd; border-radius: 3px; width: 100%; min-width: 150px; max-width: 220px; color: var(--audac-black); }
+  .row-name-btn { background: none; border: none; padding: 0; font: inherit; color: var(--audac-black); font-weight: 500; cursor: pointer; text-align: left; text-decoration: underline; text-decoration-color: #ddd; }
+  .row-name-btn:hover { text-decoration-color: var(--audac-gold); }
+  .expand-caret { display: inline-block; width: 14px; color: var(--audac-gold); }
+  tr.contacts-row td { background: var(--audac-section-bg); padding: 14px 20px; }
+  select.crm-contact-login-assign { font-family: 'Montserrat', sans-serif; font-size: 12.5px; padding: 6px 8px; border: 1px solid #ddd; border-radius: 3px; max-width: 240px; }
+  input.link-account-input { font-family: 'Montserrat', sans-serif; font-size: 12.5px; padding: 6px 8px; border: 1px dashed #ccc; border-radius: 3px; width: 100%; max-width: 260px; color: var(--audac-black); }
   .admin-badge { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; padding: 2px 8px; border-radius: 10px; background: var(--green-bg); color: var(--green); margin-left: 8px; }
   .needs-review-badge { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; padding: 2px 8px; border-radius: 10px; background: var(--amber-bg); color: var(--amber); margin-left: 8px; }
   .save-note { font-size: 11px; margin-left: 8px; }
@@ -105,6 +111,25 @@
   <div id="loading-note">Loading reps…</div>
 
   <div id="content" style="display:none;">
+    <h2 class="section-title" style="margin-top:0; padding-top:0; border-top:none;">Rep Firms &amp; Their CRM Contacts</h2>
+    <p class="upload-hint">Each rep firm's own CRM account (its Independent Rep Firm record in Dataverse — not one of the dealer accounts they sell to) and the individual people under it. Click a firm to see its people, and link one to their portal login there. If a firm shows no CRM account yet, search for and link the right one.</p>
+
+    <div class="action-row" style="margin-bottom:16px;">
+      <button type="button" class="audac-btn-outline" id="sync-crm-btn">Sync From CRM</button>
+      <span class="save-note" id="sync-status"></span>
+    </div>
+
+    <div style="overflow-x:auto;">
+      <table class="rep-table">
+        <thead>
+          <tr><th>Rep Firm</th><th>CRM Account</th><th>People</th></tr>
+        </thead>
+        <tbody id="rep-firm-accounts-body"></tbody>
+      </table>
+    </div>
+    <datalist id="rep-firm-account-options"></datalist>
+
+    <h2 class="section-title">Portal Logins</h2>
     <p class="upload-hint">Every rep who signs in on the public form (via the passwordless magic link) shows up here automatically, with their firm claimed from whichever link they signed in from. Correct the firm assignment here if it's wrong, and flag an "Admin" rep at a firm to let them see and edit their whole firm's activity entries, not just their own.</p>
 
     <div class="kpi-row" id="kpi-row"></div>
@@ -129,7 +154,7 @@
       <table class="rep-table">
         <thead>
           <tr>
-            <th>Email</th><th>Rep Firm</th><th>Territory</th><th>CRM Contact</th><th>Admin</th><th>Signed Up</th>
+            <th>Email</th><th>Rep Firm</th><th>Territory</th><th>Admin</th><th>Signed Up</th>
           </tr>
         </thead>
         <tbody id="reps-body"></tbody>
@@ -164,9 +189,12 @@
   let currentUser = null;
   let firmsCache = [];
   let repsCache = [];
-  let contactsCache = []; // all crm_contacts -- only used to build repFirmContactsByFirmId below; the CRM Contacts management UI itself lives on crm.html
+  let contactsCache = []; // all crm_contacts -- used to build repFirmContactsByFirmId below
   let repPersonAliasCache = [];
   let repFirmContactsByFirmId = new Map(); // firmId -> [{external_id, full_name, email}] -- the firm's own people, not dealer contacts
+  let crmAccountByExternalId = new Map();
+  let repFirmAccountCandidates = []; // Independent Rep Firm CRM accounts not yet linked to any rep_firms row
+  let expandedFirmIds = new Set();
 
   function escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
@@ -234,11 +262,7 @@
       .concat(firmsCache.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`)).join('');
 
     const tbody = document.getElementById('reps-body');
-    tbody.innerHTML = rows.map(r => {
-      const firmContacts = r.rep_firm_id ? (repFirmContactsByFirmId.get(r.rep_firm_id) || []) : [];
-      const contactOptions = ['<option value="">— Not linked —</option>']
-        .concat(firmContacts.map(c => `<option value="${c.external_id}">${escapeHtml(c.full_name || c.email || '(no name)')}</option>`)).join('');
-      return `
+    tbody.innerHTML = rows.map(r => `
       <tr data-id="${r.id}">
         <td>${escapeHtml(r.email)}</td>
         <td>
@@ -248,9 +272,6 @@
           <input type="text" class="territory-input" data-rep="${r.id}" value="${escapeHtml(r.territory_note || '')}" placeholder="e.g. Western PA">
         </td>
         <td>
-          <select class="crm-contact-assign" data-rep="${r.id}" ${firmContacts.length ? '' : 'disabled'}>${contactOptions}</select>
-        </td>
-        <td>
           <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
             <input type="checkbox" class="admin-toggle" data-rep="${r.id}" ${r.is_rep_admin ? 'checked' : ''}>
             ${r.is_rep_admin ? '<span class="admin-badge">Admin</span>' : '<span class="muted">Regular rep</span>'}
@@ -258,8 +279,7 @@
         </td>
         <td>${r.created_at ? new Date(r.created_at).toLocaleDateString() : ''}</td>
       </tr>
-    `;
-    }).join('');
+    `).join('');
 
     tbody.querySelectorAll('select.firm-assign').forEach(sel => {
       const repId = sel.dataset.rep;
@@ -269,12 +289,6 @@
     });
     tbody.querySelectorAll('input.territory-input').forEach(input => {
       input.addEventListener('change', () => saveTerritoryNote(input.dataset.rep, input.value.trim()));
-    });
-    tbody.querySelectorAll('select.crm-contact-assign').forEach(sel => {
-      const repId = sel.dataset.rep;
-      const rep = repsCache.find(r => r.id === repId);
-      sel.value = rep?.crm_contact_external_id || '';
-      sel.addEventListener('change', () => saveCrmContactLink(repId, sel.value || null));
     });
     tbody.querySelectorAll('.admin-toggle').forEach(cb => {
       cb.addEventListener('change', () => setAdmin(cb.dataset.rep, cb.checked));
@@ -288,17 +302,6 @@
     if (rep) rep.territory_note = note || null;
   }
 
-  // A rep's CRM contact is normally auto-linked by email whenever their firm
-  // is set (see migration 0028) -- this is only for the cases that misses:
-  // the rep signed in with a different email than their CRM record uses, or
-  // there's no CRM contact for them yet.
-  async function saveCrmContactLink(repId, contactExternalId) {
-    const { error } = await client.from('profiles').update({ crm_contact_external_id: contactExternalId }).eq('id', repId);
-    if (error) { alert('Could not save CRM contact link: ' + error.message); return; }
-    const rep = repsCache.find(r => r.id === repId);
-    if (rep) rep.crm_contact_external_id = contactExternalId;
-  }
-
   async function assignFirm(repId, firmId) {
     const { error } = await client.from('profiles').update({ rep_firm_id: firmId }).eq('id', repId);
     if (error) { alert('Could not update rep firm: ' + error.message); return; }
@@ -306,6 +309,7 @@
     if (rep) rep.rep_firm_id = firmId;
     renderKpis();
     renderReps();
+    renderRepFirmAccounts(); // a rep moving firms changes who's linkable as a login in that section
   }
 
   async function setAdmin(repId, isAdmin) {
@@ -319,6 +323,172 @@
 
   document.getElementById('search-input').addEventListener('input', renderReps);
   document.getElementById('firm-filter').addEventListener('change', renderReps);
+
+  // ---------- Rep Firms & their CRM contacts ----------
+  // Every rep firm is itself a Dataverse Account (Relationship Type =
+  // Independent Rep Firm) with its own salespeople as Contacts under it --
+  // this section browses that, one firm at a time, and is where a portal
+  // login gets tied to the real CRM person it belongs to (the auto-link in
+  // migration 0028 handles the common case by email; this is the manual
+  // fallback and the only place to review/correct it).
+  function populateAccountLinkOptions() {
+    const dl = document.getElementById('rep-firm-account-options');
+    dl.innerHTML = repFirmAccountCandidates.map(a => `<option value="${escapeHtml(a.name)}">`).join('');
+  }
+
+  function renderFirmContactsTable(firm, contacts) {
+    if (!contacts.length) return '<div class="empty-note">No contacts synced under this account.</div>';
+    const firmReps = repsCache.filter(r => r.rep_firm_id === firm.id);
+    const loginOptions = ['<option value="">— Not linked —</option>']
+      .concat(firmReps.map(r => `<option value="${r.id}">${escapeHtml(r.email)}</option>`)).join('');
+    return `<table class="detail"><thead><tr><th>Contact</th><th>Email</th><th>Portal Login</th></tr></thead><tbody>${contacts.map(c => `
+      <tr data-contact-id="${c.external_id}">
+        <td>${escapeHtml(c.full_name || '')}</td>
+        <td>${escapeHtml(c.email || '')}</td>
+        <td><select class="crm-contact-login-assign" data-firm="${firm.id}" data-contact="${c.external_id}">${loginOptions}</select></td>
+      </tr>
+    `).join('')}</tbody></table>`;
+  }
+
+  function renderRepFirmAccounts() {
+    const tbody = document.getElementById('rep-firm-accounts-body');
+    tbody.innerHTML = firmsCache.map(firm => {
+      const account = firm.crm_account_external_id ? crmAccountByExternalId.get(firm.crm_account_external_id) : null;
+      const isOpen = expandedFirmIds.has(firm.id);
+      const caret = isOpen ? '▾' : '▸';
+      const contacts = repFirmContactsByFirmId.get(firm.id) || [];
+      const location = account ? [account.city, account.state_code].filter(Boolean).join(', ') : '';
+      const accountCell = account
+        ? `${escapeHtml(account.name)}${location ? ` <span class="muted">(${escapeHtml(location)})</span>` : ''}`
+        : `<input type="text" class="link-account-input" list="rep-firm-account-options" data-firm="${firm.id}" placeholder="Search CRM accounts to link…">`;
+      const mainRow = `
+        <tr data-firm-row="${firm.id}">
+          <td><button type="button" class="row-name-btn" data-toggle-firm="${firm.id}"><span class="expand-caret">${caret}</span>${escapeHtml(firm.name)}</button></td>
+          <td>${accountCell}</td>
+          <td>${account ? (contacts.length || '<span class="muted">0</span>') : '<span class="muted">—</span>'}</td>
+        </tr>
+      `;
+      if (!isOpen) return mainRow;
+      const contactsHtml = account ? renderFirmContactsTable(firm, contacts) : '<div class="empty-note">Link this firm to its CRM account first.</div>';
+      return mainRow + `<tr class="contacts-row"><td colspan="3">${contactsHtml}</td></tr>`;
+    }).join('');
+
+    tbody.querySelectorAll('[data-toggle-firm]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.toggleFirm;
+        if (expandedFirmIds.has(id)) expandedFirmIds.delete(id); else expandedFirmIds.add(id);
+        renderRepFirmAccounts();
+      });
+    });
+    tbody.querySelectorAll('input.link-account-input').forEach(input => {
+      input.addEventListener('change', () => linkFirmAccountFromInput(input));
+    });
+    tbody.querySelectorAll('select.crm-contact-login-assign').forEach(sel => {
+      const firmId = sel.dataset.firm;
+      const contactId = sel.dataset.contact;
+      const linkedRep = repsCache.find(r => r.rep_firm_id === firmId && r.crm_contact_external_id === contactId);
+      sel.value = linkedRep ? linkedRep.id : '';
+      sel.addEventListener('change', () => assignContactLogin(firmId, contactId, sel.value || null));
+    });
+  }
+
+  // A CRM contact can only ever back one portal login -- picking a new one
+  // here clears whichever other rep at this firm previously held it, rather
+  // than leaving two profiles pointing at the same CRM person.
+  async function assignContactLogin(firmId, contactExternalId, newRepId) {
+    const firmReps = repsCache.filter(r => r.rep_firm_id === firmId);
+    const currentlyLinked = firmReps.find(r => r.crm_contact_external_id === contactExternalId);
+    if (currentlyLinked && currentlyLinked.id !== newRepId) {
+      const { error } = await client.from('profiles').update({ crm_contact_external_id: null }).eq('id', currentlyLinked.id);
+      if (error) { alert('Could not update link: ' + error.message); return; }
+      currentlyLinked.crm_contact_external_id = null;
+    }
+    if (newRepId) {
+      const { error } = await client.from('profiles').update({ crm_contact_external_id: contactExternalId }).eq('id', newRepId);
+      if (error) { alert('Could not update link: ' + error.message); return; }
+      const rep = repsCache.find(r => r.id === newRepId);
+      if (rep) rep.crm_contact_external_id = contactExternalId;
+    }
+    renderRepFirmAccounts();
+  }
+
+  // "Independent Rep Firm" accounts not yet claimed by any rep_firms row --
+  // e.g. a firm added here before anyone linked its real CRM account. Picking
+  // one from the suggestions is how that gets fixed; free text that doesn't
+  // match a suggestion exactly is rejected rather than silently ignored.
+  async function linkFirmAccountFromInput(input) {
+    const firmId = input.dataset.firm;
+    const typed = input.value.trim();
+    if (!typed) return;
+    const match = repFirmAccountCandidates.find(a => a.name === typed);
+    if (!match) { alert(`No matching CRM account found for "${typed}" — pick one from the suggestions as you type.`); input.value = ''; return; }
+    const { error } = await client.from('rep_firms').update({ crm_account_external_id: match.external_id }).eq('id', firmId);
+    if (error) { alert('Could not link CRM account: ' + error.message); return; }
+    const firm = firmsCache.find(f => f.id === firmId);
+    if (firm) firm.crm_account_external_id = match.external_id;
+    crmAccountByExternalId.set(match.external_id, match);
+    repFirmContactsByFirmId.set(firmId, contactsCache.filter(c => c.parent_account_external_id === match.external_id));
+    repFirmAccountCandidates = repFirmAccountCandidates.filter(a => a.external_id !== match.external_id);
+    populateAccountLinkOptions();
+    renderRepFirmAccounts();
+  }
+
+  async function invokeCrmSync(body) {
+    const { data, error } = await client.functions.invoke('dataverse-sync', { body });
+    if (error || data?.error) {
+      // supabase-js hides the actual response body behind a generic message on non-2xx;
+      // the real error is in error.context (the raw Response), so unwrap it if present.
+      let detail = data?.error || error?.message || 'Unknown error';
+      if (error?.context && typeof error.context.json === 'function') {
+        try {
+          const respBody = await error.context.json();
+          if (respBody?.error) detail = respBody.error;
+        } catch (_) { /* keep generic message if body isn't JSON */ }
+      }
+      throw new Error(detail);
+    }
+    return data;
+  }
+
+  // Same accounts+contacts sync as the "Sync from CRM" button on Data Admin --
+  // offered here too since this page is where that data actually gets used
+  // (rep firm accounts and their people), not just where it lands.
+  async function runCrmSync() {
+    const btn = document.getElementById('sync-crm-btn');
+    const statusEl = document.getElementById('sync-status');
+    btn.disabled = true;
+    statusEl.style.color = '';
+    statusEl.textContent = '';
+    try {
+      let cursor = null, accTotal = 0;
+      do {
+        btn.textContent = `Syncing accounts… (${accTotal} so far)`;
+        const res = await invokeCrmSync({ phase: 'accounts', cursor });
+        accTotal += res.processed;
+        cursor = res.nextCursor;
+      } while (cursor);
+
+      cursor = null;
+      let conTotal = 0;
+      do {
+        btn.textContent = `Syncing contacts… (${conTotal} so far)`;
+        const res = await invokeCrmSync({ phase: 'contacts', cursor });
+        conTotal += res.processed;
+        cursor = res.nextCursor;
+      } while (cursor);
+
+      statusEl.style.color = 'var(--green)';
+      statusEl.textContent = `Synced ${accTotal} account(s) and ${conTotal} contact(s) from CRM.`;
+      await loadAll();
+    } catch (err) {
+      statusEl.style.color = 'var(--red)';
+      statusEl.textContent = 'CRM sync failed: ' + err.message;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Sync From CRM';
+    }
+  }
+  document.getElementById('sync-crm-btn').addEventListener('click', runCrmSync);
 
   // ---------- Rep Name -> Firm mappings ----------
   // Resolves a CRM opportunity's Contact-field rep name to a firm when the
@@ -439,10 +609,11 @@
   });
 
   async function loadAll() {
-    const [firmsRes, repsRes, contactsRes] = await Promise.all([
+    const [firmsRes, repsRes, contactsRes, accountsRes] = await Promise.all([
       client.from('rep_firms').select('id, name, crm_account_external_id').eq('status', 'active').order('name'),
       client.from('profiles').select('id, email, rep_firm_id, is_rep_admin, created_at, territory_note, crm_contact_external_id').eq('role', 'rep').order('created_at', { ascending: false }),
       client.from('crm_contacts').select('external_id, full_name, email, parent_account_external_id').order('full_name'),
+      client.from('crm_accounts').select('external_id, name, city, state_code, relationship_type'),
     ]);
 
     if (repsRes.error) {
@@ -451,6 +622,10 @@
     }
     if (contactsRes.error) {
       document.getElementById('loading-note').textContent = 'Failed to load CRM contacts: ' + contactsRes.error.message;
+      return;
+    }
+    if (accountsRes.error) {
+      document.getElementById('loading-note').textContent = 'Failed to load CRM accounts: ' + accountsRes.error.message;
       return;
     }
 
@@ -464,6 +639,12 @@
       const people = contactsCache.filter(c => c.parent_account_external_id === firm.crm_account_external_id);
       repFirmContactsByFirmId.set(firm.id, people);
     });
+
+    crmAccountByExternalId = new Map((accountsRes.data || []).map(a => [a.external_id, a]));
+    const linkedAccountIds = new Set(firmsCache.map(f => f.crm_account_external_id).filter(Boolean));
+    repFirmAccountCandidates = (accountsRes.data || []).filter(a => a.relationship_type === 'Independent Rep Firm' && !linkedAccountIds.has(a.external_id));
+    populateAccountLinkOptions();
+    renderRepFirmAccounts();
 
     populateFirmFilter();
     renderKpis();
