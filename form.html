@@ -201,6 +201,7 @@
       <button type="button" class="link-btn" id="show-signin-btn">Sign in to view or edit your past submissions</button>
       <div id="signin-form" hidden>
         <button type="button" class="audac-btn-outline" id="google-signin-btn">Sign in with Google</button>
+        <button type="button" class="audac-btn-outline" id="microsoft-signin-btn">Sign in with Microsoft</button>
         <input type="email" id="signin-email" placeholder="you@example.com">
         <button type="button" class="audac-btn-outline" id="send-magic-link-btn">Send Magic Link</button>
         <span id="signin-status"></span>
@@ -567,6 +568,16 @@
     if (firmSelect.value) localStorage.setItem(PENDING_FIRM_KEY, firmSelect.value);
     const { error } = await client.auth.signInWithOAuth({
       provider: 'google',
+      options: { redirectTo: window.location.href.split('#')[0] },
+    });
+    if (error) statusEl.textContent = 'Error: ' + error.message;
+  });
+
+  document.getElementById('microsoft-signin-btn').addEventListener('click', async () => {
+    const statusEl = document.getElementById('signin-status');
+    if (firmSelect.value) localStorage.setItem(PENDING_FIRM_KEY, firmSelect.value);
+    const { error } = await client.auth.signInWithOAuth({
+      provider: 'azure',
       options: { redirectTo: window.location.href.split('#')[0] },
     });
     if (error) statusEl.textContent = 'Error: ' + error.message;
