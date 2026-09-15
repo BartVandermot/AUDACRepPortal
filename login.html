@@ -247,6 +247,13 @@
     if (data.session) {
       statusEl.textContent = '';
       await redirectForRole();
+    } else if (data.user && data.user.identities && data.user.identities.length === 0) {
+      // Supabase returns this same "success" shape whether or not the email
+      // is new, to avoid letting a caller enumerate registered emails --
+      // an empty identities array on an unconfirmed, sessionless response is
+      // its documented signal that this email already has an account (e.g.
+      // via Google/Microsoft) rather than one being newly created here.
+      statusEl.textContent = "This email already has an account. Use \"Forgot your password?\" below to set a password for it, or sign in with Google/Microsoft above if that's how you originally signed up.";
     } else {
       statusEl.textContent = 'Account created — check your email to confirm it, then sign in above.';
     }
