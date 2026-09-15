@@ -161,6 +161,15 @@
     display: block; width: 100%; font-size: 16px; padding: 6px 8px; margin-top: 3px;
   }
   tr.activity-edit-row textarea { min-height: 44px; resize: vertical; }
+  /* Sticks to the bottom of the viewport while scrolling through this row's
+     fields (several textareas -- easy for Save/Cancel to end up scrolled out
+     of view otherwise, which is exactly the "almost lost my changes" report
+     the confirm-before-discard above already catches, but shouldn't need to). */
+  tr.activity-edit-row .actions {
+    position: sticky; bottom: 0;
+    background: #fbf7ee; margin: 14px -16px -16px; padding: 12px 16px;
+    border-top: 2px solid var(--audac-gold); box-shadow: 0 -4px 10px rgba(0,0,0,.06);
+  }
   .ae-checkbox { display: flex !important; align-items: center; gap: 6px; margin-top: 12px; }
   .ae-checkbox input { width: auto !important; margin: 0; }
   .ae-status { font-size: 12px; margin-left: 8px; color: #b3261e; }
