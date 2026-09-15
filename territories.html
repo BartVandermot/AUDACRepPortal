@@ -340,14 +340,22 @@
     document.getElementById('states-grid').innerHTML = US_STATES.map(([code, name]) => {
       const owners = stateOwners(code, firmId);
       const range = zipRangeFor(code, firmId);
-      const documented = owners.length > 0 && zipRangesForState(code).length > 0;
-      const conflict = owners.length > 0 && !documented;
+      // "Fully documented" needs a postcode range on THIS firm's side too, not
+      // just some range existing for the state somewhere -- otherwise a firm
+      // sharing a state with no range of its own silently looked the same as
+      // one with no conflict at all.
+      const fullyDocumented = owners.length > 0 && !!range && owners.every(o => zipRangeFor(code, o.id));
+      const conflict = owners.length > 0 && !fullyDocumented;
+      const sharedWith = owners.map(o => {
+        const r = zipRangeFor(code, o.id);
+        return `${escapeHtml(o.name)}${r ? ` (${r.zip3_start}–${r.zip3_end})` : ' (no postcode range set)'}`;
+      }).join(', ');
       return `
         <label class="state-check ${conflict ? 'conflict' : ''}">
           <input type="checkbox" value="${code}" ${current.has(code) ? 'checked' : ''}>
           ${code} — ${name}
-          ${range ? `<span class="conflict-note" style="color:var(--audac-text);">(postcode ${range.zip3_start}–${range.zip3_end})</span>` : ''}
-          ${conflict ? `<span class="conflict-note">(also ${escapeHtml(owners.map(o => o.name).join(', '))})</span>` : ''}
+          ${range ? `<span class="conflict-note" style="color:var(--audac-text);">(this firm: ${range.zip3_start}–${range.zip3_end})</span>` : ''}
+          ${owners.length ? `<span class="conflict-note" ${conflict ? '' : 'style="color:var(--audac-text);"'}>(shared with ${sharedWith})</span>` : ''}
         </label>
       `;
     }).join('');
