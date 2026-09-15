@@ -53,6 +53,9 @@
   .mom-down { color: var(--red); font-weight: 700; }
   .mom-flat { color: #999; }
 
+  .rag-legend { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; font-size: 12px; color: var(--audac-text); margin: 0 0 14px; }
+  .rag-legend .rl-item { display: flex; align-items: center; gap: 6px; }
+
   .charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; }
   .chart-card { background: var(--audac-section-bg); border-radius: 4px; padding: 18px; }
   .chart-card h3 { font-size: 12.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--audac-black); margin: 0 0 12px; }
@@ -96,6 +99,11 @@
     <div class="kpi-grid" id="kpi-grid"></div>
 
     <h2 class="section-title">Rep Scorecard</h2>
+    <div class="rag-legend">
+      <span class="rl-item"><span class="rag-badge rag-red">Red</span> 0–3 activities logged this month</span>
+      <span class="rl-item"><span class="rag-badge rag-amber">Amber</span> 4–7 activities, or 8+ with no open pipeline</span>
+      <span class="rl-item"><span class="rag-badge rag-green">Green</span> 8+ activities with at least one pipeline entry</span>
+    </div>
     <table class="scorecard">
       <thead><tr>
         <th>Firm</th><th>Activities</th><th>Demo Gear Used</th><th>Pipeline Entries</th>
