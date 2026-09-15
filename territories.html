@@ -51,6 +51,15 @@
   table.split-table th { background: var(--audac-section-bg); color: var(--audac-black); font-weight: 700; text-transform: uppercase; font-size: 10.5px; letter-spacing: .5px; }
   table.split-table td.zip-range { font-variant-numeric: tabular-nums; color: var(--audac-text); }
 
+  #split-panel { display: none; background: var(--audac-section-bg); border-radius: 4px; padding: 20px 22px; margin: 0 0 32px; }
+  .split-form { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; margin-top: 14px; }
+  .split-form label { display: block; font-size: 12px; font-weight: 500; color: var(--audac-black); }
+  .split-form input, .split-form select {
+    display: block; margin-top: 6px; font-family: 'Montserrat', sans-serif; font-size: 13px;
+    padding: 8px 10px; border: 1px solid #ddd; border-radius: 3px; min-width: 150px; color: var(--audac-black);
+  }
+  .split-form input[type="number"] { min-width: 110px; }
+
   button.audac-btn { background: var(--audac-gold); color: #000; border: none; padding: 8px 16px; font-family: 'Montserrat', sans-serif; font-weight: 700; font-size: 11.5px; letter-spacing: .4px; text-transform: uppercase; cursor: pointer; border-radius: 3px; }
   button.audac-btn-outline { background: transparent; color: var(--audac-black); border: 1.5px solid var(--audac-black); padding: 7px 14px; font-family: 'Montserrat', sans-serif; font-weight: 500; font-size: 11.5px; letter-spacing: .4px; text-transform: uppercase; cursor: pointer; border-radius: 3px; }
 
@@ -67,8 +76,8 @@
   .legend-swatch { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; }
 
   #states-panel { display: none; background: var(--audac-section-bg); border-radius: 4px; padding: 20px 22px; margin-top: 20px; }
-  #states-panel .sp-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; flex-wrap: wrap; gap: 10px; }
-  #states-panel .sp-header h3 { margin: 0; color: var(--audac-black); font-size: 15px; }
+  .sp-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; flex-wrap: wrap; gap: 10px; }
+  .sp-header h3 { margin: 0; color: var(--audac-black); font-size: 15px; }
   .states-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px 14px; margin: 16px 0; }
   .state-check { display: flex; align-items: center; gap: 7px; font-size: 13px; padding: 4px 6px; border-radius: 3px; }
   .state-check.conflict { background: var(--red-bg); }
@@ -101,13 +110,33 @@
   <div id="content" style="display:none;">
     <p class="upload-hint">Territory and state assignments drive the CRM sync's state-based fallback matching (used when an account isn't under a rep firm's own parent account in Dataverse) and the CSV upload resolution. A state assigned to more than one firm is flagged below — the sync will only ever pick one, unless it's one of the documented postcode splits below.</p>
 
-    <div id="split-section" style="display:none;">
-      <h3 style="color:var(--audac-black); font-size:14px; margin:0 0 10px;">Split Territories (by postcode)</h3>
+    <div id="split-section">
+      <div class="sp-header">
+        <h3>Split Territories (by postcode)</h3>
+        <button class="audac-btn" id="add-split-btn">+ Add Split</button>
+      </div>
       <p class="upload-hint">These states are divided between two firms by postcode (first 3 digits of the zip) rather than assigned whole to one — both firms below correctly show the state in their list above, and the sync/CRM Data page use this table to pick the right one.</p>
-      <table class="split-table">
-        <thead><tr><th>State</th><th>Postcode range</th><th>Rep Firm</th></tr></thead>
+      <table class="split-table" id="split-table" style="display:none;">
+        <thead><tr><th>State</th><th>Postcode range</th><th>Rep Firm</th><th></th></tr></thead>
         <tbody id="split-body"></tbody>
       </table>
+    </div>
+
+    <div id="split-panel" style="display:none;">
+      <div class="sp-header">
+        <h3 id="split-panel-title">Add Split</h3>
+        <div>
+          <button class="audac-btn" id="save-split-btn">Save</button>
+          <button class="audac-btn-outline" id="close-split-btn">Close</button>
+          <span class="save-note" id="split-save-note"></span>
+        </div>
+      </div>
+      <div class="split-form">
+        <label>State<select id="split-state"></select></label>
+        <label>Postcode start<input type="number" id="split-zip-start" min="0" max="999" placeholder="e.g. 150"></label>
+        <label>Postcode end<input type="number" id="split-zip-end" min="0" max="999" placeholder="e.g. 169"></label>
+        <label>Rep Firm<select id="split-firm"></select></label>
+      </div>
     </div>
 
     <div class="usa-map-wrap">
@@ -180,7 +209,8 @@
 
   let firmsCache = [];
   let editingFirmId = null;
-  let zipRangesCache = []; // { rep_firm_id, state_code, zip3_start, zip3_end }
+  let zipRangesCache = []; // { id, rep_firm_id, state_code, zip3_start, zip3_end }
+  let editingSplitId = null;
 
   function zipRangesForState(code) {
     return zipRangesCache.filter(z => z.state_code === code);
@@ -349,8 +379,8 @@
   });
 
   function renderSplitTable() {
-    const section = document.getElementById('split-section');
-    if (!zipRangesCache.length) { section.style.display = 'none'; return; }
+    const table = document.getElementById('split-table');
+    if (!zipRangesCache.length) { table.style.display = 'none'; return; }
     const firmNameById = new Map(firmsCache.map(f => [f.id, f.name]));
     const sorted = [...zipRangesCache].sort((a, b) => a.state_code.localeCompare(b.state_code) || a.zip3_start - b.zip3_start);
     document.getElementById('split-body').innerHTML = sorted.map(z => `
@@ -358,15 +388,93 @@
         <td>${escapeHtml(z.state_code)}</td>
         <td class="zip-range">${z.zip3_start}–${z.zip3_end}</td>
         <td>${escapeHtml(firmNameById.get(z.rep_firm_id) || '—')}</td>
+        <td>
+          <button class="audac-btn-outline" data-edit-split="${z.id}">Edit</button>
+          <button class="audac-btn-outline" data-delete-split="${z.id}">Delete</button>
+        </td>
       </tr>
     `).join('');
-    section.style.display = 'block';
+    table.style.display = 'table';
+
+    document.querySelectorAll('[data-edit-split]').forEach(btn => {
+      btn.addEventListener('click', () => openSplitPanel(zipRangesCache.find(z => z.id === btn.dataset.editSplit)));
+    });
+    document.querySelectorAll('[data-delete-split]').forEach(btn => {
+      btn.addEventListener('click', () => deleteSplit(btn.dataset.deleteSplit));
+    });
+  }
+
+  function populateSplitFormOptions() {
+    document.getElementById('split-state').innerHTML = US_STATES.map(([code, name]) => `<option value="${code}">${code} — ${name}</option>`).join('');
+    document.getElementById('split-firm').innerHTML = firmsCache.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`).join('');
+  }
+
+  // null opens a blank "Add Split" form; passing an existing range opens it
+  // pre-filled for editing (editingSplitId tracks which, so Save knows
+  // whether to insert or update).
+  function openSplitPanel(existing) {
+    editingSplitId = existing ? existing.id : null;
+    document.getElementById('split-panel-title').textContent = existing ? 'Edit Split' : 'Add Split';
+    document.getElementById('split-save-note').textContent = '';
+    populateSplitFormOptions();
+    document.getElementById('split-state').value = existing ? existing.state_code : US_STATES[0][0];
+    document.getElementById('split-zip-start').value = existing ? existing.zip3_start : '';
+    document.getElementById('split-zip-end').value = existing ? existing.zip3_end : '';
+    document.getElementById('split-firm').value = existing ? existing.rep_firm_id : firmsCache[0]?.id || '';
+    document.getElementById('split-panel').style.display = 'block';
+    document.getElementById('split-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  document.getElementById('add-split-btn').addEventListener('click', () => openSplitPanel(null));
+  document.getElementById('close-split-btn').addEventListener('click', () => {
+    editingSplitId = null;
+    document.getElementById('split-panel').style.display = 'none';
+  });
+
+  document.getElementById('save-split-btn').addEventListener('click', async () => {
+    const state = document.getElementById('split-state').value;
+    const zip3Start = parseInt(document.getElementById('split-zip-start').value, 10);
+    const zip3End = parseInt(document.getElementById('split-zip-end').value, 10);
+    const firmId = document.getElementById('split-firm').value;
+    const saveNote = document.getElementById('split-save-note');
+
+    if (Number.isNaN(zip3Start) || Number.isNaN(zip3End)) { saveNote.style.color = 'var(--red)'; saveNote.textContent = 'Enter both postcode boundaries.'; return; }
+    if (zip3Start > zip3End) { saveNote.style.color = 'var(--red)'; saveNote.textContent = 'Postcode start must be ≤ end.'; return; }
+
+    const payload = { state_code: state, zip3_start: zip3Start, zip3_end: zip3End, rep_firm_id: firmId };
+    const { error } = editingSplitId
+      ? await client.from('rep_firm_zip_ranges').update(payload).eq('id', editingSplitId)
+      : await client.from('rep_firm_zip_ranges').insert(payload);
+
+    if (error) {
+      saveNote.style.color = 'var(--red)';
+      saveNote.textContent = 'Error: ' + error.message;
+      return;
+    }
+    editingSplitId = null;
+    document.getElementById('split-panel').style.display = 'none';
+    await loadZipRanges();
+  });
+
+  async function deleteSplit(id) {
+    if (!confirm('Remove this postcode split? Accounts in this range will fall back to plain state matching.')) return;
+    const { error } = await client.from('rep_firm_zip_ranges').delete().eq('id', id);
+    if (error) { alert('Could not delete: ' + error.message); return; }
+    await loadZipRanges();
+  }
+
+  async function loadZipRanges() {
+    const { data, error } = await client.from('rep_firm_zip_ranges').select('id, rep_firm_id, state_code, zip3_start, zip3_end');
+    if (error) { alert('Failed to reload splits: ' + error.message); return; }
+    zipRangesCache = data || [];
+    renderFirms();
+    renderSplitTable();
   }
 
   async function loadFirms() {
     const [firmsRes, zipRangesRes] = await Promise.all([
       client.from('rep_firms').select('id, name, territory, states').eq('status', 'active').order('name'),
-      client.from('rep_firm_zip_ranges').select('rep_firm_id, state_code, zip3_start, zip3_end'),
+      client.from('rep_firm_zip_ranges').select('id, rep_firm_id, state_code, zip3_start, zip3_end'),
     ]);
     if (firmsRes.error) {
       document.getElementById('loading-note').textContent = 'Failed to load rep firms: ' + firmsRes.error.message;
