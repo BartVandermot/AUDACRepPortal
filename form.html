@@ -242,6 +242,7 @@
         <div class="field">
           <label for="reporting-month">Reporting Month</label>
           <input type="month" id="reporting-month" required>
+          <div class="hint" id="period-locked-note" style="display:none; color:#b3261e;"></div>
         </div>
       </div>
     </div>
@@ -281,6 +282,7 @@
   let firmsCache = [];
   let currentSession = null;
   let currentProfile = null;
+  let finalizedPeriods = new Set(); // "rep_firm_id|reporting_month" -- see loadFinalizedPeriods
   const PENDING_FIRM_KEY = 'audac_pending_firm_id';
   const entriesContainer = document.getElementById('entries-container');
   const firmSelect = document.getElementById('firm-select');
@@ -303,6 +305,30 @@
   function currentMonthValue() {
     const d = new Date();
     return d.toISOString().slice(0, 7);
+  }
+
+  // monthly_reviews itself is manager/executive-only under RLS, so this form
+  // (reps, anonymous or signed in) has no other way to know a period is
+  // locked -- get_finalized_periods() exposes just the finalized firm+month
+  // pairs, never the review content (ratings/notes) behind them.
+  async function loadFinalizedPeriods() {
+    const { data, error } = await client.rpc('get_finalized_periods');
+    finalizedPeriods = new Set(error ? [] : (data || []).map(r => `${r.rep_firm_id}|${r.reporting_month}`));
+  }
+  function isPeriodLocked(firmId, month) {
+    return finalizedPeriods.has(`${firmId}|${month}`);
+  }
+
+  // Warns before a rep fills out an entire new-activity form only to have the
+  // submission rejected at the end -- the DB trigger (migration 0015) blocks
+  // inserts for a finalized period exactly like it blocks edits/deletes.
+  function updateLockWarning() {
+    const note = document.getElementById('period-locked-note');
+    const submitBtn = document.getElementById('submit-btn');
+    const locked = firmSelect.value && monthInput.value && isPeriodLocked(firmSelect.value, monthInput.value);
+    note.style.display = locked ? 'block' : 'none';
+    note.textContent = locked ? '🔒 This firm’s review for this month has been finalized — new entries can’t be submitted. Ask a manager to un-finalize it first.' : '';
+    submitBtn.disabled = !!locked;
   }
 
   function buildOptions(values, placeholder) {
@@ -671,6 +697,14 @@
     const filesCell = attCount > 0
       ? `<button type="button" class="link-btn" data-toggle-attachments="${r.id}">📎 ${attCount}</button>`
       : '<span class="muted">—</span>';
+    // Mirrors the Manager Dashboard's own locked-row treatment (renderActivityTable
+    // there) -- a rep used to see Edit/Delete on a finalized entry regardless, and
+    // only found out it was locked once Save was rejected by the DB trigger.
+    const locked = isPeriodLocked(r.rep_firm_id, r.reporting_month);
+    const actionsCell = locked
+      ? '<span class="muted" title="This reporting period has been finalized">🔒 Locked</span>'
+      : `<button type="button" class="link-btn" data-edit-activity="${r.id}">Edit</button>
+         <button type="button" class="link-btn danger" data-delete-activity="${r.id}">Delete</button>`;
     return `
       <tr data-activity-id="${r.id}">
         <td>${r.entry_date}</td>
@@ -681,10 +715,7 @@
         <td>${r.activity_type}</td>
         <td>${escapeHtml(r.topic_opportunity || '')}</td>
         <td>${filesCell}</td>
-        <td>
-          <button type="button" class="link-btn" data-edit-activity="${r.id}">Edit</button>
-          <button type="button" class="link-btn danger" data-delete-activity="${r.id}">Delete</button>
-        </td>
+        <td>${actionsCell}</td>
       </tr>
     `;
   }
@@ -987,6 +1018,8 @@
     if (btn) removeEntry(btn.dataset.remove);
   });
   document.getElementById('add-entry-btn').addEventListener('click', addEntry);
+  firmSelect.addEventListener('change', updateLockWarning);
+  monthInput.addEventListener('change', updateLockWarning);
 
   async function loadFirms() {
     const params = new URLSearchParams(window.location.search);
@@ -1178,8 +1211,10 @@
   monthInput.value = currentMonthValue();
   addEntry();
   (async () => {
-    await loadFirms(); // firmsCache must be populated before My Submissions can show firm names
-    await initAuth();
+    // firmsCache must be populated before My Submissions can show firm names
+    await Promise.all([loadFirms(), loadFinalizedPeriods()]);
+    await initAuth(); // may lock firmSelect to the rep's own firm (lockFirmToProfile), programmatically -- no 'change' event fires for that
+    updateLockWarning();
   })();
 </script>
 </body>
