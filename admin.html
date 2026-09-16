@@ -145,7 +145,6 @@
     <button type="button" class="tab-btn" data-tab="education">Education</button>
     <button type="button" class="tab-btn" data-tab="pipeline">Pipeline</button>
     <button type="button" class="tab-btn" data-tab="sellout">Sell-out</button>
-    <button type="button" class="tab-btn" data-tab="crm_accounts">CRM Accounts</button>
   </div>
 
   <!-- ---------- Activities tab: cross-firm search, bulk actions, audit log ---------- -->
@@ -264,15 +263,7 @@
     <div id="status-sellout"></div>
   </div>
 
-  <div class="tab-panel" id="tab-crm_accounts">
-    <h2 class="section-title">CRM Accounts</h2>
-    <div class="action-row" style="margin-top:0;">
-      <button class="audac-btn" id="sync-crm-btn">Sync from CRM</button>
-      <button class="audac-btn-outline" id="check-counts-btn">Check CRM Counts</button>
-    </div>
-    <div class="upload-hint">Pulls Accounts &amp; Contacts live from Dynamics 365 (Dataverse) via the app's secure server-side connection.</div>
-    <div id="status-crm_accounts"></div>
-  </div>
+
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -346,7 +337,7 @@
   }
 
   // ---------- Tabs ----------
-  const TAB_NAMES = ['activities', 'education', 'pipeline', 'sellout', 'crm_accounts'];
+  const TAB_NAMES = ['activities', 'education', 'pipeline', 'sellout'];
   function switchTab(name) {
     if (!TAB_NAMES.includes(name)) name = 'activities';
     TAB_NAMES.forEach(t => {
@@ -1054,36 +1045,11 @@
     SOURCES.forEach(s => {
       document.getElementById(`file-${s.source}`).addEventListener('change', (e) => handleFile(s, e.target.files[0]));
     });
-    document.getElementById('sync-crm-btn').addEventListener('click', runCrmSync);
-    document.getElementById('check-counts-btn').addEventListener('click', runCheckCounts);
     document.getElementById('sync-opportunities-btn').addEventListener('click', runOpportunitySync);
   }
 
-  async function runCheckCounts() {
-    const statusEl = document.getElementById('status-crm_accounts');
-    const btn = document.getElementById('check-counts-btn');
-    btn.disabled = true;
-    btn.textContent = 'Checking…';
-    statusEl.className = '';
-    statusEl.textContent = '';
-
-    try {
-      const data = await invokeCrmSync({ phase: 'count' });
-      const fmt = (n) => n === null ? 'n/a (filter rejected)' : n;
-      statusEl.className = 'upload-status ok';
-      statusEl.textContent =
-        `Accounts in Dataverse — active US/Canada: ${fmt(data.accounts.activeUsCanada)}, active (any country): ${fmt(data.accounts.activeOnly)}, total: ${fmt(data.accounts.total)}. ` +
-        `Contacts in Dataverse — active US/Canada accounts: ${fmt(data.contacts.activeUsCanada)}, active (any): ${fmt(data.contacts.activeOnly)}, total: ${fmt(data.contacts.total)}. ` +
-        `Opportunities in Dataverse — US/Canada (any status): ${fmt(data.opportunities.usCanada)}, total (any country): ${fmt(data.opportunities.total)}.`;
-    } catch (err) {
-      statusEl.className = 'upload-status err';
-      statusEl.textContent = 'Count check failed: ' + err.message;
-    } finally {
-      btn.disabled = false;
-      btn.textContent = 'Check CRM Counts';
-    }
-  }
-
+  // Sync/count-check triggers moved to CRM Data -- invokeCrmSync stays here
+  // since runOpportunitySync (Pipeline tab, below) still needs it.
   async function invokeCrmSync(body) {
     const { data, error } = await client.functions.invoke('dataverse-sync', { body });
     if (error || data?.error) {
@@ -1099,68 +1065,6 @@
       throw new Error(detail);
     }
     return data;
-  }
-
-  async function runCrmSync() {
-    const statusEl = document.getElementById('status-crm_accounts');
-    const btn = document.getElementById('sync-crm-btn');
-    btn.disabled = true;
-    statusEl.className = '';
-    statusEl.textContent = '';
-
-    try {
-      // The Edge Function processes one small page per call (its CPU budget can't
-      // cover a whole org in one go), so the client drives the pagination loop.
-      const filterNote = (level) => level === 'full' ? '' :
-        level === 'active_only' ? ' [country filter unavailable — active records only]' :
-        level === 'none' ? ' [WARNING: no server-side filter applied — pulled the full table]' : '';
-
-      let cursor = null;
-      let accTotal = 0, accMatchedByParent = 0, accMatchedByState = 0, accOutOfTerritory = 0, accNoState = 0, accPreservedOverrides = 0, accLevel = 'full';
-      let firstAccountsPage = true;
-      do {
-        btn.textContent = `Syncing accounts… (${accTotal} so far)`;
-        const res = await invokeCrmSync({ phase: 'accounts', cursor });
-        accTotal += res.processed;
-        accMatchedByParent += res.matchedByParent || 0;
-        accMatchedByState += res.matchedByState || 0;
-        accOutOfTerritory += res.outOfTerritory;
-        accNoState += res.noState;
-        accPreservedOverrides += res.preservedOverrides || 0;
-        if (firstAccountsPage) { accLevel = res.filterLevel || 'full'; firstAccountsPage = false; }
-        cursor = res.nextCursor;
-      } while (cursor);
-
-      cursor = null;
-      let conTotal = 0, conMatched = 0, conPreservedOverrides = 0, conLevel = 'full';
-      let firstContactsPage = true;
-      do {
-        btn.textContent = `Syncing contacts… (${conTotal} so far)`;
-        const res = await invokeCrmSync({ phase: 'contacts', cursor });
-        conTotal += res.processed;
-        conMatched += res.matchedToFirm;
-        conPreservedOverrides += res.preservedOverrides || 0;
-        if (firstContactsPage) { conLevel = res.filterLevel || 'full'; firstContactsPage = false; }
-        cursor = res.nextCursor;
-      } while (cursor);
-
-      await loadCrmAccounts(true);
-      await loadCrmContacts(true);
-      const accMatched = accMatchedByParent + accMatchedByState;
-      statusEl.className = 'upload-status ' + (accLevel === 'none' || conLevel === 'none' ? 'err' : accMatched ? 'ok' : 'warn');
-      statusEl.textContent =
-        `Synced ${accTotal} account(s)${filterNote(accLevel)} — ${accMatched} matched to a rep firm ` +
-        `(${accMatchedByParent} via parent account, ${accMatchedByState} via state, ${accPreservedOverrides} kept as manually corrected on this page), ` +
-        `${accOutOfTerritory} outside configured territories, ${accNoState} missing/unrecognized state. ` +
-        `Synced ${conTotal} contact(s)${filterNote(conLevel)} — ${conMatched} have a rep firm ` +
-        `(${conPreservedOverrides} kept as manually corrected on the Reps page, the rest inherited from their account).`;
-    } catch (err) {
-      statusEl.className = 'upload-status err';
-      statusEl.textContent = 'CRM sync failed: ' + err.message;
-    } finally {
-      btn.disabled = false;
-      btn.textContent = 'Sync from CRM';
-    }
   }
 
   // All opportunities (Open, Won, Lost), scoped to US/Canada via the

@@ -47,6 +47,8 @@
   .result-count { font-size: 12.5px; color: #999; margin-bottom: 10px; }
   .upload-hint { font-size: 12.5px; color: #999; margin: 0 0 20px; max-width: 720px; }
   .page-meta-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #eee; }
+  .crm-sync-row { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; flex-wrap: wrap; }
+  #crm-sync-status { font-size: 12px; color: #999; }
   .review-toggle { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--audac-black); cursor: pointer; }
   #last-updated-note { font-size: 12px; color: #999; }
   h2.section-title { font-size: 15px; font-weight: 700; color: var(--audac-black); text-transform: uppercase; letter-spacing: .5px; margin: 40px 0 14px; padding-top: 20px; border-top: 1px solid #eee; }
@@ -118,6 +120,12 @@
   <div id="loading-note">Loading CRM data…</div>
 
   <div id="content" style="display:none;">
+    <div class="crm-sync-row">
+      <button type="button" class="audac-btn-outline" id="sync-crm-btn">Sync from CRM</button>
+      <button type="button" class="audac-btn-outline" id="check-counts-btn">Check CRM Counts</button>
+      <span id="crm-sync-status"></span>
+    </div>
+
     <div class="page-meta-row">
       <label class="review-toggle">
         <input type="checkbox" id="needs-review-toggle" checked>
@@ -298,6 +306,115 @@
     await client.auth.signOut();
     window.location.href = '/login';
   });
+
+  // ---------- CRM sync ----------
+  // Was only reachable from Data Admin's "CRM Accounts" tab, which meant
+  // triggering a fresh sync of the exact data this page reviews meant leaving
+  // it first. Moved here as the primary home for it (Data Admin's Pipeline
+  // tab keeps its own opportunities sync, a separate concern).
+  async function invokeCrmSync(body) {
+    const { data, error } = await client.functions.invoke('dataverse-sync', { body });
+    if (error || data?.error) {
+      // supabase-js hides the actual response body behind a generic message on non-2xx;
+      // the real error is in error.context (the raw Response), so unwrap it if present.
+      let detail = data?.error || error?.message || 'Unknown error';
+      if (error?.context && typeof error.context.json === 'function') {
+        try {
+          const respBody = await error.context.json();
+          if (respBody?.error) detail = respBody.error;
+        } catch (_) { /* keep generic message if body isn't JSON */ }
+      }
+      throw new Error(detail);
+    }
+    return data;
+  }
+
+  async function runCrmSync() {
+    const statusEl = document.getElementById('crm-sync-status');
+    const btn = document.getElementById('sync-crm-btn');
+    btn.disabled = true;
+    statusEl.style.color = '';
+    statusEl.textContent = '';
+
+    try {
+      const filterNote = (level) => level === 'full' ? '' :
+        level === 'active_only' ? ' [country filter unavailable — active records only]' :
+        level === 'none' ? ' [WARNING: no server-side filter applied — pulled the full table]' : '';
+
+      let cursor = null;
+      let accTotal = 0, accMatchedByParent = 0, accMatchedByState = 0, accOutOfTerritory = 0, accNoState = 0, accPreservedOverrides = 0, accLevel = 'full';
+      let firstAccountsPage = true;
+      do {
+        btn.textContent = `Syncing accounts… (${accTotal} so far)`;
+        const res = await invokeCrmSync({ phase: 'accounts', cursor });
+        accTotal += res.processed;
+        accMatchedByParent += res.matchedByParent || 0;
+        accMatchedByState += res.matchedByState || 0;
+        accOutOfTerritory += res.outOfTerritory;
+        accNoState += res.noState;
+        accPreservedOverrides += res.preservedOverrides || 0;
+        if (firstAccountsPage) { accLevel = res.filterLevel || 'full'; firstAccountsPage = false; }
+        cursor = res.nextCursor;
+      } while (cursor);
+
+      cursor = null;
+      let conTotal = 0, conMatched = 0, conPreservedOverrides = 0, conLevel = 'full';
+      let firstContactsPage = true;
+      do {
+        btn.textContent = `Syncing contacts… (${conTotal} so far)`;
+        const res = await invokeCrmSync({ phase: 'contacts', cursor });
+        conTotal += res.processed;
+        conMatched += res.matchedToFirm;
+        conPreservedOverrides += res.preservedOverrides || 0;
+        if (firstContactsPage) { conLevel = res.filterLevel || 'full'; firstContactsPage = false; }
+        cursor = res.nextCursor;
+      } while (cursor);
+
+      const accMatched = accMatchedByParent + accMatchedByState;
+      statusEl.style.color = (accLevel === 'none' || conLevel === 'none') ? 'var(--red)' : accMatched ? 'var(--green)' : 'var(--amber)';
+      statusEl.textContent =
+        `Synced ${accTotal} account(s)${filterNote(accLevel)} — ${accMatched} matched to a rep firm ` +
+        `(${accMatchedByParent} via parent/own account, ${accMatchedByState} via state, ${accPreservedOverrides} kept as manually corrected), ` +
+        `${accOutOfTerritory} outside configured territories, ${accNoState} missing/unrecognized state. ` +
+        `Synced ${conTotal} contact(s)${filterNote(conLevel)} — ${conMatched} have a rep firm ` +
+        `(${conPreservedOverrides} kept as manually corrected, the rest inherited from their account).`;
+
+      await loadAll();
+    } catch (err) {
+      statusEl.style.color = 'var(--red)';
+      statusEl.textContent = 'CRM sync failed: ' + err.message;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Sync from CRM';
+    }
+  }
+  document.getElementById('sync-crm-btn').addEventListener('click', runCrmSync);
+
+  async function runCheckCounts() {
+    const statusEl = document.getElementById('crm-sync-status');
+    const btn = document.getElementById('check-counts-btn');
+    btn.disabled = true;
+    btn.textContent = 'Checking…';
+    statusEl.style.color = '';
+    statusEl.textContent = '';
+
+    try {
+      const data = await invokeCrmSync({ phase: 'count' });
+      const fmt = (n) => n === null ? 'n/a (filter rejected)' : n;
+      statusEl.style.color = 'var(--green)';
+      statusEl.textContent =
+        `Accounts in Dataverse — active US/Canada: ${fmt(data.accounts.activeUsCanada)}, active (any country): ${fmt(data.accounts.activeOnly)}, total: ${fmt(data.accounts.total)}. ` +
+        `Contacts in Dataverse — active US/Canada accounts: ${fmt(data.contacts.activeUsCanada)}, active (any): ${fmt(data.contacts.activeOnly)}, total: ${fmt(data.contacts.total)}. ` +
+        `Opportunities in Dataverse — US/Canada (any status): ${fmt(data.opportunities.usCanada)}, total (any country): ${fmt(data.opportunities.total)}.`;
+    } catch (err) {
+      statusEl.style.color = 'var(--red)';
+      statusEl.textContent = 'Count check failed: ' + err.message;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Check CRM Counts';
+    }
+  }
+  document.getElementById('check-counts-btn').addEventListener('click', runCheckCounts);
 
   function renderKpis() {
     const total = accountsCache.length;
