@@ -55,6 +55,9 @@
   select.merge-target-select { font-family: 'Montserrat', sans-serif; font-size: 11.5px; padding: 4px 6px; border: 1px solid #ddd; border-radius: 3px; max-width: 200px; }
   button.merge-btn { background: var(--audac-gold); color: #000; border: none; padding: 4px 10px; font-family: 'Montserrat', sans-serif; font-weight: 700; font-size: 10.5px; text-transform: uppercase; letter-spacing: .3px; cursor: pointer; border-radius: 3px; }
   button.merge-btn:disabled { background: #eee; color: #aaa; cursor: not-allowed; }
+  .bulk-bar { display: none; align-items: center; gap: 12px; background: #fff6e0; border: 1px solid var(--audac-gold); border-radius: 4px; padding: 10px 14px; margin-bottom: 14px; font-size: 12.5px; flex-wrap: wrap; }
+  .bulk-bar select { font-family: 'Montserrat', sans-serif; font-size: 12.5px; padding: 6px 8px; border: 1px solid #ddd; border-radius: 3px; }
+  .link-btn { background: none; border: none; padding: 0; font: inherit; font-size: 12px; cursor: pointer; text-decoration: underline; color: var(--audac-black); }
 
   table.crm-table { width: 100%; border-collapse: collapse; background: #fff; font-size: 13px; }
   table.crm-table th, table.crm-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #eee; vertical-align: middle; }
@@ -150,10 +153,18 @@
 
     <div class="result-count" id="result-count"></div>
 
+    <div class="bulk-bar" id="accounts-bulk-bar">
+      <span id="accounts-bulk-count"></span>
+      <select id="accounts-bulk-firm-select"></select>
+      <button type="button" class="audac-btn-outline" id="accounts-bulk-assign-btn">Assign Selected</button>
+      <button type="button" class="link-btn" id="accounts-bulk-clear-btn">Clear selection</button>
+    </div>
+
     <div style="overflow-x:auto;">
       <table class="crm-table">
         <thead>
           <tr>
+            <th><input type="checkbox" id="accounts-select-all"></th>
             <th>Account</th><th>City</th><th>State</th><th>Zip</th><th>Country</th>
             <th>Relationship Type</th><th>Partner Type</th><th>Classification</th>
             <th>Contacts</th><th>Source</th><th>Rep Firm</th>
@@ -193,9 +204,16 @@
 
     <div class="result-count" id="contacts-result-count"></div>
 
+    <div class="bulk-bar" id="contacts-bulk-bar">
+      <span id="contacts-bulk-count"></span>
+      <select id="contacts-bulk-firm-select"></select>
+      <button type="button" class="audac-btn-outline" id="contacts-bulk-assign-btn">Assign Selected</button>
+      <button type="button" class="link-btn" id="contacts-bulk-clear-btn">Clear selection</button>
+    </div>
+
     <div style="overflow-x:auto;">
       <table class="detail">
-        <thead><tr><th>Contact</th><th>Email</th><th>Account</th><th>Source</th><th>Rep Firm</th></tr></thead>
+        <thead><tr><th><input type="checkbox" id="contacts-select-all"></th><th>Contact</th><th>Email</th><th>Account</th><th>Source</th><th>Rep Firm</th></tr></thead>
         <tbody id="contacts-body"></tbody>
       </table>
     </div>
@@ -226,6 +244,9 @@
   let dataverseAccountsByNameKey = new Map(); // possible-merge candidates for a manually-added account, grouped by normalized name
   let dataverseContactsByEmailKey = new Map(); // possible-merge candidates for a manually-added contact, grouped by normalized email
   let dataverseContactsByAccountNameKey = new Map(); // same, grouped by parent account + normalized name (email's fallback signal)
+  let profileEmailById = new Map(); // resolves updated_by on an overridden row to the manager's email
+  let selectedAccountIds = new Set();
+  let selectedContactIds = new Set();
 
   function escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
@@ -244,6 +265,17 @@
 
   function needsReviewOnly() {
     return document.getElementById('needs-review-toggle').checked;
+  }
+
+  // A hover tooltip rather than always-visible text -- across hundreds of
+  // rows, "corrected by X, Y ago" on every overridden one would be more
+  // noise than signal, but it's there the moment you need to ask "who did
+  // this and when."
+  function overrideTooltip(row) {
+    const email = row.updated_by ? profileEmailById.get(row.updated_by) : null;
+    const ago = timeAgo(row.updated_at);
+    if (!email && !ago) return '';
+    return ` title="Corrected by ${escapeHtml(email || 'unknown')}${ago ? ', ' + escapeHtml(ago) : ''}"`;
   }
 
   // Uses getUser() rather than getSession() -- getSession() reads the persisted
@@ -304,7 +336,16 @@
     if (firmFilter === '__unassigned') rows = rows.filter(a => !a.rep_firm_id);
     else if (firmFilter) rows = rows.filter(a => a.rep_firm_id === firmFilter);
     if (sourceFilter) rows = rows.filter(a => (a.source || 'dataverse') === sourceFilter);
-    if (needsReviewOnly()) rows = rows.filter(a => !a.rep_firm_id || a.source === 'manual');
+    if (needsReviewOnly()) {
+      rows = rows.filter(a => !a.rep_firm_id || a.source === 'manual');
+      // An unassigned account with contacts or activity under it matters far
+      // more than one nobody's ever touched -- surface those first instead
+      // of making Melissa scan 275 rows alphabetically for the ones with
+      // something actually at stake.
+      rows = [...rows].sort((x, y) =>
+        (contactCountByAccount.get(y.external_id) || 0) - (contactCountByAccount.get(x.external_id) || 0)
+        || x.name.localeCompare(y.name));
+    }
     return rows;
   }
 
@@ -324,7 +365,7 @@
       // or state match, so "via parent"/"via state" would be misleading.
       const badge = a.source === 'manual' ? ''
         : a.rep_firm_overridden
-          ? '<span class="badge-parent override">manual override</span>'
+          ? `<span class="badge-parent override"${overrideTooltip(a)}>manual override</span>`
           : a.rep_firm_id
             ? `<span class="badge-parent ${viaParent ? 'via-parent' : 'via-state'}">${viaParent ? 'via parent' : 'via state'}</span>`
             : '';
@@ -335,6 +376,7 @@
       const caret = isOpen ? '▾' : '▸';
       const mainRow = `
         <tr data-id="${a.external_id}">
+          <td><input type="checkbox" class="row-select" data-account="${a.external_id}" ${selectedAccountIds.has(a.external_id) ? 'checked' : ''}></td>
           <td><button class="row-name-btn" data-toggle="${a.external_id}"><span class="expand-caret">${caret}</span>${escapeHtml(a.name)}</button></td>
           <td>${escapeHtml(a.city || '')}</td>
           <td>${escapeHtml(a.state_raw || '')}</td>
@@ -352,7 +394,7 @@
         </tr>
       `;
       if (!isOpen) return mainRow;
-      return mainRow + `<tr class="contacts-row"><td colspan="11">${renderAccountContactsPanel(a.external_id)}</td></tr>`;
+      return mainRow + `<tr class="contacts-row"><td colspan="12">${renderAccountContactsPanel(a.external_id)}</td></tr>`;
     }).join('');
 
     tbody.querySelectorAll('select.firm-assign[data-account]').forEach(sel => {
@@ -364,10 +406,57 @@
     tbody.querySelectorAll('[data-toggle]').forEach(btn => {
       btn.addEventListener('click', () => toggleContacts(btn.dataset.toggle));
     });
+    tbody.querySelectorAll('input.row-select[data-account]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        if (cb.checked) selectedAccountIds.add(cb.dataset.account); else selectedAccountIds.delete(cb.dataset.account);
+        updateAccountsBulkBar();
+      });
+    });
+    document.getElementById('accounts-select-all').checked = rows.length > 0 && rows.every(a => selectedAccountIds.has(a.external_id));
     wireContactFirmSelects(tbody);
     wireMergeControls(tbody, 'account');
     wireMergeControls(tbody, 'contact');
+    updateAccountsBulkBar();
   }
+
+  function updateAccountsBulkBar() {
+    const count = selectedAccountIds.size;
+    document.getElementById('accounts-bulk-bar').style.display = count ? 'flex' : 'none';
+    document.getElementById('accounts-bulk-count').textContent = `${count} selected`;
+  }
+
+  function bulkFirmOptionsHtml() {
+    return '<option value="">— choose a firm —</option><option value="__unassigned">Unassigned</option>' +
+      firmsCache.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`).join('');
+  }
+
+  document.getElementById('accounts-select-all').addEventListener('change', (e) => {
+    const rows = getFilteredAccounts();
+    if (e.target.checked) rows.forEach(a => selectedAccountIds.add(a.external_id));
+    else rows.forEach(a => selectedAccountIds.delete(a.external_id));
+    renderAccounts();
+  });
+  document.getElementById('accounts-bulk-clear-btn').addEventListener('click', () => { selectedAccountIds.clear(); renderAccounts(); });
+
+  // Bulk assign only ever sets a specific firm or Unassigned, never "Auto" --
+  // each account can resolve to a different firm via its own address, so a
+  // single recompute-all-selected action wouldn't be a single decision the
+  // way picking one firm for all of them is.
+  document.getElementById('accounts-bulk-assign-btn').addEventListener('click', async () => {
+    const sel = document.getElementById('accounts-bulk-firm-select');
+    if (!sel.value) { alert('Pick a firm first.'); return; }
+    const ids = [...selectedAccountIds];
+    if (!ids.length) return;
+    const firmLabel = sel.value === '__unassigned' ? 'Unassigned' : firmsCache.find(f => f.id === sel.value)?.name;
+    if (!confirm(`Assign ${ids.length} account(s) to ${firmLabel}?`)) return;
+    const repFirmId = sel.value === '__unassigned' ? null : sel.value;
+    const { error } = await client.from('crm_accounts').update({
+      rep_firm_id: repFirmId, rep_firm_overridden: true, updated_by: currentUser.id, updated_at: new Date().toISOString(),
+    }).in('external_id', ids);
+    if (error) { alert('Bulk assign failed: ' + error.message); return; }
+    selectedAccountIds.clear();
+    await loadAll();
+  });
 
   // Surfaced only on a manually-added account/contact once at least one
   // CRM-synced row shares its normalized name (accounts) or email (contacts)
@@ -481,22 +570,25 @@
   const contactFirmOptionsHtml = () => ['<option value="auto">Auto (inherit from account)</option>', '<option value="">Unassigned</option>']
     .concat(firmsCache.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`)).join('');
 
-  // showAccount is only true in the flat CRM Contacts section below --
-  // pointless to repeat the account name in a panel that's already scoped to
-  // one account.
-  function contactRowHtml(c, { showAccount } = {}) {
+  // showAccount and bulkSelectable are only true in the flat CRM Contacts
+  // section below -- pointless to repeat the account name, or offer bulk
+  // selection, in a panel that's already scoped to one account's handful of
+  // people.
+  function contactRowHtml(c, { showAccount, bulkSelectable } = {}) {
+    const checkboxCell = bulkSelectable ? `<td><input type="checkbox" class="row-select" data-contact="${c.external_id}" ${selectedContactIds.has(c.external_id) ? 'checked' : ''}></td>` : '';
     const accountCell = showAccount ? `<td>${escapeHtml(accountNameByExternalId.get(c.parent_account_external_id) || '')}</td>` : '';
     const sourceCell = c.source === 'manual' ? '<span class="badge-parent via-manual">Manual</span>' : '<span class="muted">CRM Sync</span>';
     const mergeControl = c.source === 'manual' ? contactMergeRowHtml(c) : '';
     return `
       <tr data-contact-id="${c.external_id}">
+        ${checkboxCell}
         <td>${escapeHtml(c.full_name || '')}</td>
         <td>${escapeHtml(c.email || '')}</td>
         ${accountCell}
         <td>${sourceCell}${mergeControl}</td>
         <td>
           <select class="firm-assign" data-contact="${c.external_id}">${contactFirmOptionsHtml()}</select>
-          ${c.rep_firm_overridden ? '<span class="manual-override-badge">Override</span>' : ''}
+          ${c.rep_firm_overridden ? `<span class="manual-override-badge"${overrideTooltip(c)}>Override</span>` : ''}
           ${c.blocks_pipeline_sync ? '<span class="manual-override-badge" style="background:var(--red-bg); color:var(--red);">Blocking pipeline sync</span>' : ''}
         </td>
       </tr>
@@ -584,7 +676,15 @@
     if (resolutionFilter === 'manual') rows = rows.filter(c => c.rep_firm_overridden);
     else if (resolutionFilter === 'auto') rows = rows.filter(c => !c.rep_firm_overridden);
     else if (resolutionFilter === 'blocking') rows = rows.filter(c => c.blocks_pipeline_sync);
-    if (needsReviewOnly()) rows = rows.filter(c => !c.rep_firm_id || c.blocks_pipeline_sync);
+    if (needsReviewOnly()) {
+      rows = rows.filter(c => !c.rep_firm_id || c.blocks_pipeline_sync);
+      // A blocking contact is actively costing real pipeline data every sync
+      // -- worth seeing before the much larger pile of merely-unassigned
+      // dealer contacts who were never going to be reps anyway.
+      rows = [...rows].sort((x, y) =>
+        (y.blocks_pipeline_sync ? 1 : 0) - (x.blocks_pipeline_sync ? 1 : 0)
+        || (x.full_name || '').localeCompare(y.full_name || ''));
+    }
     return rows;
   }
 
@@ -594,12 +694,50 @@
 
     const tbody = document.getElementById('contacts-body');
     tbody.innerHTML = rows.length
-      ? rows.map(c => contactRowHtml(c, { showAccount: true })).join('')
-      : '<tr><td colspan="5" class="empty-note">No contacts match the current filters.</td></tr>';
+      ? rows.map(c => contactRowHtml(c, { showAccount: true, bulkSelectable: true })).join('')
+      : '<tr><td colspan="6" class="empty-note">No contacts match the current filters.</td></tr>';
 
     wireContactFirmSelects(tbody);
     wireMergeControls(tbody, 'contact');
+    tbody.querySelectorAll('input.row-select[data-contact]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        if (cb.checked) selectedContactIds.add(cb.dataset.contact); else selectedContactIds.delete(cb.dataset.contact);
+        updateContactsBulkBar();
+      });
+    });
+    document.getElementById('contacts-select-all').checked = rows.length > 0 && rows.every(c => selectedContactIds.has(c.external_id));
+    updateContactsBulkBar();
   }
+
+  function updateContactsBulkBar() {
+    const count = selectedContactIds.size;
+    document.getElementById('contacts-bulk-bar').style.display = count ? 'flex' : 'none';
+    document.getElementById('contacts-bulk-count').textContent = `${count} selected`;
+  }
+
+  document.getElementById('contacts-select-all').addEventListener('change', (e) => {
+    const rows = getFilteredContacts();
+    if (e.target.checked) rows.forEach(c => selectedContactIds.add(c.external_id));
+    else rows.forEach(c => selectedContactIds.delete(c.external_id));
+    renderContactsFlatTable();
+  });
+  document.getElementById('contacts-bulk-clear-btn').addEventListener('click', () => { selectedContactIds.clear(); renderContactsFlatTable(); });
+
+  document.getElementById('contacts-bulk-assign-btn').addEventListener('click', async () => {
+    const sel = document.getElementById('contacts-bulk-firm-select');
+    if (!sel.value) { alert('Pick a firm first.'); return; }
+    const ids = [...selectedContactIds];
+    if (!ids.length) return;
+    const firmLabel = sel.value === '__unassigned' ? 'Unassigned' : firmsCache.find(f => f.id === sel.value)?.name;
+    if (!confirm(`Assign ${ids.length} contact(s) to ${firmLabel}?`)) return;
+    const repFirmId = sel.value === '__unassigned' ? null : sel.value;
+    const { error } = await client.from('crm_contacts').update({
+      rep_firm_id: repFirmId, rep_firm_overridden: true, blocks_pipeline_sync: false, updated_by: currentUser.id, updated_at: new Date().toISOString(),
+    }).in('external_id', ids);
+    if (error) { alert('Bulk assign failed: ' + error.message); return; }
+    selectedContactIds.clear();
+    await loadAll();
+  });
 
   // "Auto" clears the override and immediately recomputes from the current
   // parent account (rather than leaving a stale value until the next CRM
@@ -705,8 +843,8 @@
   async function loadAll() {
     const [firmsRes, accountsRes, contactsRes, zipRangesRes] = await Promise.all([
       client.from('rep_firms').select('id, name, crm_account_external_id, states').eq('status', 'active').order('name'),
-      client.from('crm_accounts').select('external_id, name, name_key, street, city, state_raw, state_code, zip, country_code, website, relationship_type, business_type, audac_partner_type, classification, rep_firm_id, rep_firm_overridden, parent_account_external_id, source, updated_at').order('name'),
-      client.from('crm_contacts').select('external_id, full_name, email, email_key, parent_account_external_id, rep_firm_id, rep_firm_overridden, blocks_pipeline_sync, source, updated_at').order('full_name'),
+      client.from('crm_accounts').select('external_id, name, name_key, street, city, state_raw, state_code, zip, country_code, website, relationship_type, business_type, audac_partner_type, classification, rep_firm_id, rep_firm_overridden, parent_account_external_id, source, updated_by, updated_at').order('name'),
+      client.from('crm_contacts').select('external_id, full_name, email, email_key, parent_account_external_id, rep_firm_id, rep_firm_overridden, blocks_pipeline_sync, source, updated_by, updated_at').order('full_name'),
       client.from('rep_firm_zip_ranges').select('rep_firm_id, state_code, zip3_start, zip3_end'),
     ]);
 
@@ -761,6 +899,17 @@
       .map(r => r.updated_at).filter(Boolean).sort().pop();
     const agoText = timeAgo(latestTimestamp);
     document.getElementById('last-updated-note').textContent = agoText ? `Data last updated ${agoText}` : '';
+
+    const updatedByIds = [...new Set([...accountsCache, ...allContactsCache].map(r => r.updated_by).filter(Boolean))];
+    if (updatedByIds.length) {
+      const { data: profs } = await client.from('profiles').select('id, email').in('id', updatedByIds);
+      profileEmailById = new Map((profs || []).map(p => [p.id, p.email]));
+    } else {
+      profileEmailById = new Map();
+    }
+
+    document.getElementById('accounts-bulk-firm-select').innerHTML = bulkFirmOptionsHtml();
+    document.getElementById('contacts-bulk-firm-select').innerHTML = bulkFirmOptionsHtml();
 
     populateFirmFilter();
     renderKpis();
