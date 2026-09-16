@@ -406,6 +406,13 @@ Deno.serve(async (req: Request) => {
           if (overridden) {
             repFirmId = overridden.repFirmId;
             preservedOverrides++;
+          } else if (firmIdByCrmAccountId.has(r.accountid)) {
+            // This account IS a rep firm's own identity record, not a dealer
+            // under one -- so it's parented under Intellimix (or has no US
+            // state at all), and neither parent-match nor state-match below
+            // would ever resolve it to itself. Checked before both.
+            repFirmId = firmIdByCrmAccountId.get(r.accountid)!;
+            matchedByParent++;
           } else {
             repFirmId = parentId ? firmIdByCrmAccountId.get(parentId) ?? null : null;
             if (repFirmId) matchedByParent++;
