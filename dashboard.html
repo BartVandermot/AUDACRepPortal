@@ -105,22 +105,9 @@
     letter-spacing: .4px; text-transform: uppercase; cursor: pointer; border-radius: 3px;
   }
 
-  details.upload-panel { background: var(--audac-section-bg); border-radius: 4px; margin-bottom: 14px; padding: 4px 20px 18px; }
-  details.upload-panel summary { cursor: pointer; padding: 16px 0; font-weight: 700; color: var(--audac-black); font-size: 13.5px; text-transform: uppercase; letter-spacing: .4px; list-style: none; }
-  details.upload-panel summary::-webkit-details-marker { display: none; }
-  details.upload-panel summary::before { content: '▸ '; color: var(--audac-gold); }
-  details.upload-panel[open] summary::before { content: '▾ '; }
   .upload-hint { font-size: 12px; color: #999; margin: -6px 0 14px; }
-  .mapping-grid { display: grid; grid-template-columns: 160px 1fr; gap: 10px 14px; align-items: center; margin: 14px 0; max-width: 520px; }
-  .mapping-grid label { font-size: 12.5px; font-weight: 500; color: var(--audac-black); }
-  .mapping-grid select { font-family: 'Montserrat', sans-serif; font-size: 13px; padding: 7px 10px; border: 1px solid #ddd; border-radius: 3px; }
-  .upload-status { font-size: 12.5px; margin-top: 10px; padding: 10px 12px; border-radius: 3px; }
-  .upload-status.ok { background: var(--green-bg); color: var(--green); }
-  .upload-status.warn { background: var(--amber-bg); color: var(--amber); }
-  .upload-status.err { background: var(--red-bg); color: var(--red); }
-  input[type="file"] { font-family: 'Montserrat', sans-serif; font-size: 13px; }
   .action-row { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
-  #loading-note, #empty-note { font-size: 13px; color: #aaa; padding: 20px 0; }
+  #loading-note { font-size: 13px; color: #aaa; padding: 20px 0; }
   .admin-pointer { font-size: 13px; color: #999; margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; }
   .admin-pointer a { color: var(--audac-black); font-weight: 500; }
 </style>
@@ -790,10 +777,10 @@
   function renderEducationTable(rows) {
     if (!rows.length) return '<div class="empty-note">No education records for this period.</div>';
     return `<table class="detail"><thead><tr>
-      <th>Person</th><th>Course</th><th>Completed</th><th>Certificate</th>
+      <th>Person</th><th>Company</th><th>Course</th><th>Completed</th><th>Expires</th>
     </tr></thead><tbody>${rows.map(r => `
-      <tr><td>${escapeHtml(r.person_name)}</td><td>${escapeHtml(r.course_name)}</td><td>${r.completion_date || ''}</td>
-      <td>${r.certificate_url ? `<a href="${escapeHtml(r.certificate_url)}" target="_blank" rel="noopener">View</a>` : ''}</td></tr>
+      <tr><td>${escapeHtml(r.person_name)}</td><td>${escapeHtml(r.company || '')}</td><td>${escapeHtml(r.course_name)}</td>
+      <td>${r.completion_date || ''}</td><td>${r.expiration_date || ''}</td></tr>
     `).join('')}</tbody></table>`;
   }
   function escapeHtml(s) {
@@ -847,8 +834,8 @@
       || '<tr><td colspan="4" style="color:#999;">No pipeline entries</td></tr>';
     const pipelineTotal = pipeline.reduce((s, p) => s + Number(p.value_usd || 0), 0);
 
-    const eduRows = education.map(e => `<tr><td>${escapeHtml(e.person_name)}</td><td>${escapeHtml(e.course_name)}</td><td>${e.completion_date||''}</td></tr>`).join('')
-      || '<tr><td colspan="3" style="color:#999;">No education records</td></tr>';
+    const eduRows = education.map(e => `<tr><td>${escapeHtml(e.person_name)}</td><td>${escapeHtml(e.company||'')}</td><td>${escapeHtml(e.course_name)}</td><td>${e.completion_date||''}</td></tr>`).join('')
+      || '<tr><td colspan="4" style="color:#999;">No education records</td></tr>';
 
     const cur = Number(row.sellout_revenue || 0), prior = Number(row.prior_sellout_revenue || 0);
     const momText = prior === 0 ? (cur === 0 ? 'No sell-out data' : 'New — no prior month data') :
@@ -881,7 +868,7 @@
       <p>Total activities: ${activities.length}. Demo gear used in ${row.demo_gear_count} of ${row.activity_count}.</p>
 
       <h2>Education Status</h2>
-      <table><thead><tr><th>Person</th><th>Course</th><th>Completed</th></tr></thead><tbody>${eduRows}</tbody></table>
+      <table><thead><tr><th>Person</th><th>Company</th><th>Course</th><th>Completed</th></tr></thead><tbody>${eduRows}</tbody></table>
 
       <h2>Pipeline Summary</h2>
       <table><thead><tr><th>Account</th><th>Project</th><th>Stage</th><th>Value</th></tr></thead><tbody>${pipelineRows}</tbody></table>
