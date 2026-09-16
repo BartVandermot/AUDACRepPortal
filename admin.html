@@ -38,6 +38,8 @@
     border: 1px solid #ddd; border-radius: 3px; background: #fff; color: var(--audac-black);
   }
   .admin-pointer { font-size: 13px; color: #999; margin-top: 18px; padding-top: 16px; border-top: 1px solid #eee; }
+  .import-month-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #eee; }
+  .import-month-bar label { font-size: 13px; font-weight: 500; color: var(--audac-black); }
   .admin-pointer a { color: var(--audac-black); font-weight: 500; }
   h2.section-title { font-size: 15px; font-weight: 700; color: var(--audac-black); text-transform: uppercase; letter-spacing: .5px; margin: 32px 0 14px; }
 
@@ -147,6 +149,16 @@
     <button type="button" class="tab-btn" data-tab="sellout">Sell-out</button>
   </div>
 
+  <!-- Shared by the three CSV-import tabs -- kept visible regardless of which
+       one is active (toggled in switchTab) instead of living only inside the
+       Education tab's markup, where it used to disappear the moment someone
+       landed directly on Pipeline or Sell-out (tabs remember their last
+       position via the URL hash), leaving no way to see or change it. -->
+  <div class="import-month-bar" id="import-month-bar">
+    <label for="import-month">Reporting Month for CSV Imports</label>
+    <input type="month" id="import-month">
+  </div>
+
   <!-- ---------- Activities tab: cross-firm search, bulk actions, audit log ---------- -->
   <div class="tab-panel" id="tab-activities">
     <h2 class="section-title">Search All Activity</h2>
@@ -190,18 +202,31 @@
 
     <h2 class="section-title">Activity Edit/Delete Log</h2>
     <div class="upload-hint">Last 100 edits/deletions across all firms — every entry here also fired a Save or Delete somewhere above.</div>
+    <div class="toolbar">
+      <div>
+        <label for="audit-search-input">Search</label>
+        <input type="text" id="audit-search-input" placeholder="Account, changed by…">
+      </div>
+      <div>
+        <label for="audit-search-firm">Rep Firm</label>
+        <select id="audit-search-firm"><option value="">All</option></select>
+      </div>
+      <div>
+        <label for="audit-search-action">Action</label>
+        <select id="audit-search-action">
+          <option value="">All</option>
+          <option value="update">Updated</option>
+          <option value="delete">Deleted</option>
+        </select>
+      </div>
+    </div>
+    <div class="result-count" id="audit-search-count"></div>
     <div id="audit-log-results"></div>
   </div>
 
   <!-- ---------- CSV import tabs ---------- -->
   <div class="tab-panel" id="tab-education">
     <h2 class="section-title">Education Records</h2>
-    <div class="toolbar">
-      <div>
-        <label for="import-month">Reporting Month for This Import</label>
-        <input type="month" id="import-month">
-      </div>
-    </div>
     <div class="upload-hint">education.audac.eu export (.xlsx or .csv)</div>
     <input type="file" accept=".csv,.xlsx,.xls" id="file-education">
     <div id="mapping-area-education"></div>
@@ -237,6 +262,10 @@
           <option value="Lost">Lost</option>
         </select>
       </div>
+      <div>
+        <label>&nbsp;</label>
+        <button type="button" class="audac-btn-outline" id="opp-export-btn">Export to Excel</button>
+      </div>
     </div>
     <div class="result-count" id="opp-search-count"></div>
     <div style="overflow-x:auto;">
@@ -249,7 +278,7 @@
       </table>
     </div>
 
-    <div class="upload-hint" style="margin-top:22px;">D365 export (.xlsx or .csv) — imported for the reporting month selected on the Education tab.</div>
+    <div class="upload-hint" style="margin-top:22px;">D365 export (.xlsx or .csv) — imported for the Reporting Month selected above.</div>
     <input type="file" accept=".csv,.xlsx,.xls" id="file-pipeline">
     <div id="mapping-area-pipeline"></div>
     <div id="status-pipeline"></div>
@@ -257,7 +286,7 @@
 
   <div class="tab-panel" id="tab-sellout">
     <h2 class="section-title">Sell-out</h2>
-    <div class="upload-hint">AVL sell-out export (.xlsx or .csv) — imported for the reporting month selected on the Education tab.</div>
+    <div class="upload-hint">AVL sell-out export (.xlsx or .csv) — imported for the Reporting Month selected above.</div>
     <input type="file" accept=".csv,.xlsx,.xls" id="file-sellout">
     <div id="mapping-area-sellout"></div>
     <div id="status-sellout"></div>
@@ -338,6 +367,7 @@
 
   // ---------- Tabs ----------
   const TAB_NAMES = ['activities', 'education', 'pipeline', 'sellout'];
+  const CSV_IMPORT_TABS = ['education', 'pipeline', 'sellout'];
   function switchTab(name) {
     if (!TAB_NAMES.includes(name)) name = 'activities';
     TAB_NAMES.forEach(t => {
@@ -346,6 +376,7 @@
     document.querySelectorAll('.tab-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.tab === name);
     });
+    document.getElementById('import-month-bar').style.display = CSV_IMPORT_TABS.includes(name) ? 'flex' : 'none';
     window.location.hash = name;
   }
   document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -821,15 +852,37 @@
     renderAuditLog();
   }
 
+  function getFilteredAuditRows() {
+    const q = document.getElementById('audit-search-input').value.trim().toLowerCase();
+    const firmFilter = document.getElementById('audit-search-firm').value;
+    const actionFilter = document.getElementById('audit-search-action').value;
+
+    let rows = auditLogCache;
+    if (firmFilter) rows = rows.filter(r => r.old_data.rep_firm_id === firmFilter);
+    if (actionFilter) rows = rows.filter(r => r.action === actionFilter);
+    if (q) rows = rows.filter(r => `${r.old_data.account_name || ''} ${r.changed_by_email || ''}`.toLowerCase().includes(q));
+    return rows;
+  }
+
+  function populateAuditSearchFilters() {
+    const sel = document.getElementById('audit-search-firm');
+    sel.innerHTML = '<option value="">All</option>' + firmsCache.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`).join('');
+  }
+
   function renderAuditLog() {
     const container = document.getElementById('audit-log-results');
-    if (!auditLogCache.length) {
-      container.innerHTML = '<div class="empty-note">No edits or deletions recorded yet.</div>';
+    const rows = getFilteredAuditRows();
+    document.getElementById('audit-search-count').textContent = `Showing ${rows.length} of ${auditLogCache.length} entries`;
+    if (!rows.length) {
+      container.innerHTML = `<div class="empty-note">${auditLogCache.length ? 'No entries match the current filters.' : 'No edits or deletions recorded yet.'}</div>`;
       return;
     }
+    // Indexes into this render's own filtered `rows`, not the global
+    // auditLogCache -- closed over by the click handler below, so a filtered
+    // view never opens the wrong row's diff.
     container.innerHTML = `<table class="detail"><thead><tr>
       <th>When</th><th>Changed By</th><th>Action</th><th>Firm</th><th>Account</th><th></th>
-    </tr></thead><tbody>${auditLogCache.map((r, i) => `
+    </tr></thead><tbody>${rows.map((r, i) => `
       <tr data-audit-idx="${i}">
         <td>${new Date(r.changed_at).toLocaleString()}</td>
         <td>${escapeHtml(r.changed_by_email || 'Anonymous / system')}</td>
@@ -846,7 +899,7 @@
         const existing = tr.nextElementSibling;
         if (existing && existing.classList.contains('audit-diff-row')) { existing.remove(); return; }
         container.querySelectorAll('.audit-diff-row').forEach(el => el.remove());
-        const row = auditLogCache[Number(btn.dataset.toggleAudit)];
+        const row = rows[Number(btn.dataset.toggleAudit)];
         const diffRow = document.createElement('tr');
         diffRow.className = 'audit-diff-row';
         diffRow.innerHTML = `<td colspan="${tr.children.length}">${renderAuditDiff(row)}</td>`;
@@ -854,6 +907,10 @@
       });
     });
   }
+
+  document.getElementById('audit-search-input').addEventListener('input', renderAuditLog);
+  document.getElementById('audit-search-firm').addEventListener('change', renderAuditLog);
+  document.getElementById('audit-search-action').addEventListener('change', renderAuditLog);
 
   // ---------- CSV/XLSX upload + column mapping ----------
   // Real exports (education.audac.eu, D365, AVL) list end-customer/dealer company
@@ -1192,6 +1249,41 @@
   document.getElementById('opp-search-input').addEventListener('input', renderPipelineEntries);
   document.getElementById('opp-search-firm').addEventListener('change', renderPipelineEntries);
   document.getElementById('opp-search-status').addEventListener('change', renderPipelineEntries);
+
+  async function exportPipelineToExcel() {
+    const btn = document.getElementById('opp-export-btn');
+    btn.disabled = true;
+    btn.textContent = 'Exporting…';
+    try {
+      const rows = getFilteredPipelineEntries();
+      if (!rows.length) {
+        alert('No synced opportunities match the current filters — nothing to export.');
+        return;
+      }
+      const firmNameById = new Map(firmsCache.map(f => [f.id, f.name]));
+      const sheetRows = rows.map(r => ({
+        'Project': r.project_name || '',
+        'Account': r.account_name || '',
+        'Rep Firm': firmNameById.get(r.rep_firm_id) || '',
+        'Status': r.status || 'Open',
+        'Stage': r.stage || '',
+        'Est. Value (USD)': r.value_usd ?? '',
+        'Actual Value (USD)': r.actual_value_usd ?? '',
+        'Created': r.created_date || '',
+        'Expected Close': r.expected_close_date || '',
+        'Actual Close': r.actual_close_date || '',
+        'Reporting Month': r.reporting_month || '',
+      }));
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheetRows), 'Opportunities');
+      const dateStr = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(wb, `audac-pipeline-export-${dateStr}.xlsx`);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Export to Excel';
+    }
+  }
+  document.getElementById('opp-export-btn').addEventListener('click', exportPipelineToExcel);
 
   async function handleFile(sourceConfig, file) {
     if (!file) return;
@@ -1546,6 +1638,7 @@
     await loadFirms();
     wireUploadInputs();
     populateActivitySearchFilters();
+    populateAuditSearchFilters();
     populateOppSearchFirmFilter();
     const nowMonth = currentMonthValue();
     document.getElementById('activity-search-to').value = nowMonth;
