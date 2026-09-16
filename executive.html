@@ -101,12 +101,12 @@
     <h2 class="section-title">Rep Scorecard</h2>
     <div class="rag-legend">
       <span class="rl-item"><span class="rag-badge rag-red">Red</span> 0–3 activities logged this month</span>
-      <span class="rl-item"><span class="rag-badge rag-amber">Amber</span> 4–7 activities, or 8+ with no open pipeline</span>
-      <span class="rl-item"><span class="rag-badge rag-green">Green</span> 8+ activities with at least one pipeline entry</span>
+      <span class="rl-item"><span class="rag-badge rag-amber">Amber</span> 4–7 activities, or 8+ with no open pipeline or no new opportunities entered this month</span>
+      <span class="rl-item"><span class="rag-badge rag-green">Green</span> 8+ activities, open pipeline, and at least one new opportunity entered this month</span>
     </div>
     <table class="scorecard">
       <thead><tr>
-        <th>Firm</th><th>Activities</th><th>Demo Gear Used</th><th>Pipeline Entries</th>
+        <th>Firm</th><th>Activities</th><th>Demo Gear Used</th><th>Open Pipeline</th><th>New Pipeline (Month)</th>
         <th>Education Certs</th><th>Sell-out MoM</th><th>RAG</th>
       </tr></thead>
       <tbody id="scorecard-body"></tbody>
@@ -119,7 +119,7 @@
     <h2 class="section-title">6-Month Trends</h2>
     <div class="charts-grid">
       <div class="chart-card"><h3>Activities</h3><canvas id="chart-activities"></canvas></div>
-      <div class="chart-card"><h3>Pipeline Value</h3><canvas id="chart-pipeline"></canvas></div>
+      <div class="chart-card"><h3>New Pipeline Value (Entered That Month)</h3><canvas id="chart-pipeline"></canvas></div>
       <div class="chart-card"><h3>Sell-out Revenue</h3><canvas id="chart-sellout"></canvas></div>
     </div>
   </div>
@@ -178,7 +178,8 @@
   function renderKpis(rows, month) {
     const totalActivities = rows.reduce((s, r) => s + Number(r.activity_count), 0);
     const activeReps = rows.filter(r => Number(r.activity_count) > 0).length;
-    const totalPipelineValue = rows.reduce((s, r) => s + Number(r.pipeline_value_usd || 0), 0);
+    const totalOpenPipelineValue = rows.reduce((s, r) => s + Number(r.open_pipeline_value_usd || 0), 0);
+    const totalNewPipelineValue = rows.reduce((s, r) => s + Number(r.new_pipeline_value_usd || 0), 0);
     const curSellout = rows.reduce((s, r) => s + Number(r.sellout_revenue || 0), 0);
     const priorSellout = rows.reduce((s, r) => s + Number(r.prior_sellout_revenue || 0), 0);
     const momPct = priorSellout === 0 ? null : ((curSellout - priorSellout) / priorSellout) * 100;
@@ -186,7 +187,8 @@
     document.getElementById('kpi-grid').innerHTML = `
       <div class="kpi-tile"><div class="kpi-label">Total Activities</div><div class="kpi-value">${totalActivities}</div><div class="kpi-sub">${month}</div></div>
       <div class="kpi-tile"><div class="kpi-label">Active Reps</div><div class="kpi-value">${activeReps} / ${rows.length}</div><div class="kpi-sub">firms with activity this month</div></div>
-      <div class="kpi-tile"><div class="kpi-label">Total Pipeline Value</div><div class="kpi-value">${fmtMoney(totalPipelineValue)}</div><div class="kpi-sub">${month}</div></div>
+      <div class="kpi-tile"><div class="kpi-label">Open Pipeline</div><div class="kpi-value">${fmtMoney(totalOpenPipelineValue)}</div><div class="kpi-sub">all currently open deals</div></div>
+      <div class="kpi-tile"><div class="kpi-label">New Pipeline (Month)</div><div class="kpi-value">${fmtMoney(totalNewPipelineValue)}</div><div class="kpi-sub">${month}</div></div>
       <div class="kpi-tile"><div class="kpi-label">Sell-out MoM</div><div class="kpi-value">${momPct === null ? '—' : (momPct > 0 ? '+' : '') + momPct.toFixed(1) + '%'}</div><div class="kpi-sub">${fmtMoney(curSellout)} vs ${fmtMoney(priorSellout)}</div></div>
     `;
   }
@@ -197,7 +199,8 @@
         <td>${row.firm_name}</td>
         <td>${row.activity_count}</td>
         <td>${row.demo_gear_count}</td>
-        <td>${row.pipeline_count} (${fmtMoney(row.pipeline_value_usd)})</td>
+        <td>${row.open_pipeline_count} (${fmtMoney(row.open_pipeline_value_usd)})</td>
+        <td>${row.new_pipeline_count} (${fmtMoney(row.new_pipeline_value_usd)})</td>
         <td>${row.education_count}</td>
         <td>${momCell(row)}</td>
         <td><span class="rag-badge ${ragClass(row.rag_status)}">${row.rag_status}</span></td>
@@ -264,7 +267,10 @@
   function renderCharts(months, seriesByMonth) {
     const labels = months;
     const activityData = months.map(m => seriesByMonth[m].reduce((s, r) => s + Number(r.activity_count), 0));
-    const pipelineData = months.map(m => seriesByMonth[m].reduce((s, r) => s + Number(r.pipeline_value_usd || 0), 0));
+    // New pipeline entered that month, not cumulative open pipeline -- open
+    // pipeline just ramps/flattens over time and wouldn't show real
+    // month-to-month movement in new business generation.
+    const pipelineData = months.map(m => seriesByMonth[m].reduce((s, r) => s + Number(r.new_pipeline_value_usd || 0), 0));
     const selloutData = months.map(m => seriesByMonth[m].reduce((s, r) => s + Number(r.sellout_revenue || 0), 0));
 
     const commonOpts = { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } };

@@ -145,13 +145,13 @@
   <div id="loading-note">Loading scorecard…</div>
   <div class="rag-legend" id="rag-legend" style="display:none;">
     <span class="rl-item"><span class="rag-badge rag-red">Red</span> 0–3 activities logged this month</span>
-    <span class="rl-item"><span class="rag-badge rag-amber">Amber</span> 4–7 activities, or 8+ with no open pipeline</span>
-    <span class="rl-item"><span class="rag-badge rag-green">Green</span> 8+ activities with at least one pipeline entry</span>
+    <span class="rl-item"><span class="rag-badge rag-amber">Amber</span> 4–7 activities, or 8+ with no open pipeline or no new opportunities entered this month</span>
+    <span class="rl-item"><span class="rag-badge rag-green">Green</span> 8+ activities, open pipeline, and at least one new opportunity entered this month</span>
   </div>
   <table class="scorecard" id="scorecard-table" style="display:none;">
     <thead>
       <tr>
-        <th>Firm</th><th>Activities</th><th>Demo Gear Used</th><th>Pipeline Entries</th>
+        <th>Firm</th><th>Activities</th><th>Demo Gear Used</th><th>Open Pipeline</th><th>New Pipeline (Month)</th>
         <th>Education Certs</th><th>Sell-out MoM</th><th>RAG</th>
       </tr>
     </thead>
@@ -346,7 +346,8 @@
         <td>${row.firm_name}</td>
         <td>${row.activity_count}</td>
         <td>${row.demo_gear_count}</td>
-        <td>${row.pipeline_count} (${fmtMoney(row.pipeline_value_usd)})</td>
+        <td>${row.open_pipeline_count} (${fmtMoney(row.open_pipeline_value_usd)})</td>
+        <td>${row.new_pipeline_count} (${fmtMoney(row.new_pipeline_value_usd)})</td>
         <td>${row.education_count}</td>
         <td>${momCell(row)}</td>
         <td><span class="rag-badge ${ragClass(row.rag_status)}">${row.rag_status}</span></td>
@@ -872,8 +873,9 @@
       <table><thead><tr><th>Person</th><th>Company</th><th>Course</th><th>Completed</th></tr></thead><tbody>${eduRows}</tbody></table>
 
       <h2>Pipeline Summary</h2>
+      <p>Open pipeline (all-time): ${row.open_pipeline_count} deal${row.open_pipeline_count === 1 ? '' : 's'}, ${fmtMoney(row.open_pipeline_value_usd)} — New this month: ${row.new_pipeline_count} deal${row.new_pipeline_count === 1 ? '' : 's'}, ${fmtMoney(row.new_pipeline_value_usd)}</p>
       <table><thead><tr><th>Account</th><th>Project</th><th>Stage</th><th>Value</th></tr></thead><tbody>${pipelineRows}</tbody></table>
-      <p>Total pipeline value: ${fmtMoney(pipelineTotal)}</p>
+      <p>Total value of entries tagged to this reporting period: ${fmtMoney(pipelineTotal)}</p>
 
       <h2>Sell-out vs. Prior Month</h2>
       <p>${momText}</p>
@@ -945,7 +947,8 @@
   function openExecutiveReportWindow(win, rows, month, dormantMap, trendMonths, seriesByMonth) {
     const totalActivities = rows.reduce((s, r) => s + Number(r.activity_count), 0);
     const activeReps = rows.filter(r => Number(r.activity_count) > 0).length;
-    const totalPipelineValue = rows.reduce((s, r) => s + Number(r.pipeline_value_usd || 0), 0);
+    const totalOpenPipelineValue = rows.reduce((s, r) => s + Number(r.open_pipeline_value_usd || 0), 0);
+    const totalNewPipelineValue = rows.reduce((s, r) => s + Number(r.new_pipeline_value_usd || 0), 0);
     const curSellout = rows.reduce((s, r) => s + Number(r.sellout_revenue || 0), 0);
     const priorSellout = rows.reduce((s, r) => s + Number(r.prior_sellout_revenue || 0), 0);
     const momPct = priorSellout === 0 ? null : ((curSellout - priorSellout) / priorSellout) * 100;
@@ -957,7 +960,8 @@
         <td>${escapeHtml(row.firm_name)}</td>
         <td>${row.activity_count}</td>
         <td>${row.demo_gear_count}</td>
-        <td>${row.pipeline_count} (${fmtMoney(row.pipeline_value_usd)})</td>
+        <td>${row.open_pipeline_count} (${fmtMoney(row.open_pipeline_value_usd)})</td>
+        <td>${row.new_pipeline_count} (${fmtMoney(row.new_pipeline_value_usd)})</td>
         <td>${row.education_count}</td>
         <td>${momCell(row)}</td>
         <td><span class="rag-badge" style="background:${ragColorBg[row.rag_status]};color:${ragColorFg[row.rag_status]};">${row.rag_status}</span></td>
@@ -977,7 +981,10 @@
       : '<p style="color:#2e7d32;">No dormant accounts.</p>';
 
     const activityData = trendMonths.map(m => seriesByMonth[m].reduce((s, r) => s + Number(r.activity_count), 0));
-    const pipelineData = trendMonths.map(m => seriesByMonth[m].reduce((s, r) => s + Number(r.pipeline_value_usd || 0), 0));
+    // New pipeline (entered that month), not open pipeline -- open pipeline is
+    // cumulative, so charting it just ramps/flattens instead of showing real
+    // month-to-month movement in how much business is actually being generated.
+    const pipelineData = trendMonths.map(m => seriesByMonth[m].reduce((s, r) => s + Number(r.new_pipeline_value_usd || 0), 0));
     const selloutData = trendMonths.map(m => seriesByMonth[m].reduce((s, r) => s + Number(r.sellout_revenue || 0), 0));
 
     win.document.write(`<!doctype html><html><head><meta charset="utf-8">
@@ -1009,12 +1016,13 @@
       <div class="kpi-grid">
         <div class="kpi-tile"><div class="kpi-label">Total Activities</div><div class="kpi-value">${totalActivities}</div></div>
         <div class="kpi-tile"><div class="kpi-label">Active Reps</div><div class="kpi-value">${activeReps} / ${rows.length}</div></div>
-        <div class="kpi-tile"><div class="kpi-label">Total Pipeline Value</div><div class="kpi-value">${fmtMoney(totalPipelineValue)}</div></div>
+        <div class="kpi-tile"><div class="kpi-label">Open Pipeline</div><div class="kpi-value">${fmtMoney(totalOpenPipelineValue)}</div></div>
+        <div class="kpi-tile"><div class="kpi-label">New Pipeline (Month)</div><div class="kpi-value">${fmtMoney(totalNewPipelineValue)}</div></div>
         <div class="kpi-tile"><div class="kpi-label">Sell-out MoM</div><div class="kpi-value">${momPct === null ? '—' : (momPct > 0 ? '+' : '') + momPct.toFixed(1) + '%'}</div></div>
       </div>
 
       <h2>Rep Scorecard</h2>
-      <table><thead><tr><th>Firm</th><th>Activities</th><th>Demo Gear</th><th>Pipeline</th><th>Education</th><th>Sell-out MoM</th><th>RAG</th></tr></thead>
+      <table><thead><tr><th>Firm</th><th>Activities</th><th>Demo Gear</th><th>Open Pipeline</th><th>New Pipeline (Month)</th><th>Education</th><th>Sell-out MoM</th><th>RAG</th></tr></thead>
       <tbody>${scorecardRows}</tbody></table>
 
       <h2>Exceptions</h2>
@@ -1026,7 +1034,7 @@
       <h2>6-Month Trends</h2>
       <div class="charts-grid">
         <div class="chart-card"><h3>Activities</h3><canvas id="chart-activities"></canvas></div>
-        <div class="chart-card"><h3>Pipeline Value</h3><canvas id="chart-pipeline"></canvas></div>
+        <div class="chart-card"><h3>New Pipeline Value (Entered That Month)</h3><canvas id="chart-pipeline"></canvas></div>
         <div class="chart-card"><h3>Sell-out Revenue</h3><canvas id="chart-sellout"></canvas></div>
       </div>
 
