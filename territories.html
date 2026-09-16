@@ -85,6 +85,10 @@
   .state-check.conflict { background: var(--red-bg); }
   .state-check .conflict-note { font-size: 10.5px; color: var(--red); }
   #loading-note { font-size: 13px; color: #aaa; padding: 20px 0; }
+
+  .uncovered-box { background: var(--red-bg); border-radius: 4px; padding: 14px 18px; margin: 0 0 24px; font-size: 13px; color: var(--audac-black); }
+  .uncovered-box a { color: var(--audac-black); }
+  .uncovered-box ul { margin: 8px 0 0 18px; padding: 0; }
 </style>
 </head>
 <body>
@@ -171,6 +175,8 @@
 
     <p class="upload-hint">Territory and state assignments drive the CRM sync's state-based fallback matching (used when an account isn't under a rep firm's own parent account in Dataverse) and the CSV upload resolution. A state assigned to more than one firm is flagged below — the sync will only ever pick one, unless it's one of the documented postcode splits below.</p>
 
+    <div id="uncovered-alert" style="display:none;"></div>
+
     <div id="split-section">
       <div class="sp-header">
         <h3>Split Territories (by postcode)</h3>
@@ -245,12 +251,24 @@
   let editingFirmId = null;
   let zipRangesCache = []; // { id, rep_firm_id, state_code, zip3_start, zip3_end }
   let editingSplitId = null;
+  let accountsCache = []; // { name, state_code, country_code } -- only for the uncovered-states check below
 
-  function zipRangesForState(code) {
-    return zipRangesCache.filter(z => z.state_code === code);
-  }
   function zipRangeFor(code, firmId) {
     return zipRangesCache.find(z => z.state_code === code && z.rep_firm_id === firmId);
+  }
+
+  // A state is only a genuine unresolved conflict when 2+ firms claim it AND
+  // at least one of them hasn't documented its own postcode range for it --
+  // sharing alone isn't a problem, that's what a clean split looks like. This
+  // is the one shared definition the map, the per-firm states panel, and the
+  // firms table's conflict count all use, so they can no longer disagree
+  // with each other about which states are actually unresolved (the firms
+  // table used to only check whether ANY range existed for the state at all,
+  // which would miss a split documented on only one side).
+  function isStateConflicted(code) {
+    const owners = stateOwners(code);
+    if (owners.length < 2) return false;
+    return !owners.every(o => zipRangeFor(code, o.id));
   }
 
   function escapeHtml(s) {
@@ -305,7 +323,7 @@
       }
 
       const withRanges = owners.map(o => ({ owner: o, range: zipRangeFor(code, o.id) }));
-      const fullyDocumented = withRanges.every(r => r.range);
+      const fullyDocumented = !isStateConflicted(code);
       const ordered = fullyDocumented ? [...withRanges].sort((a, b) => a.range.zip3_start - b.range.zip3_start) : withRanges;
       const colors = ordered.map(r => colorForFirm(r.owner.name));
       const fillId = `fill-${code}`;
@@ -407,10 +425,7 @@
     const tbody = document.getElementById('firms-body');
     tbody.innerHTML = firmsCache.map(f => {
       const states = Array.isArray(f.states) ? f.states : [];
-      // A shared state is only a real conflict if there's no postcode split
-      // documented for it -- otherwise it's expected (both firms correctly
-      // list it) and shown as a split note instead of a warning.
-      const trueConflicts = states.filter(s => stateOwners(s, f.id).length > 0 && zipRangesForState(s).length === 0);
+      const trueConflicts = states.filter(s => isStateConflicted(s));
       const statesText = states.length
         ? states.map(s => {
             const range = zipRangeFor(s, f.id);
@@ -452,14 +467,9 @@
     document.getElementById('sp-firm-name').textContent = `${firm.name} — assigned states`;
     document.getElementById('save-note').textContent = '';
     document.getElementById('states-grid').innerHTML = US_STATES.map(([code, name]) => {
-      const owners = stateOwners(code, firmId);
+      const owners = stateOwners(code, firmId); // others sharing this state, for the label text below
       const range = zipRangeFor(code, firmId);
-      // "Fully documented" needs a postcode range on THIS firm's side too, not
-      // just some range existing for the state somewhere -- otherwise a firm
-      // sharing a state with no range of its own silently looked the same as
-      // one with no conflict at all.
-      const fullyDocumented = owners.length > 0 && !!range && owners.every(o => zipRangeFor(code, o.id));
-      const conflict = owners.length > 0 && !fullyDocumented;
+      const conflict = isStateConflicted(code);
       const sharedWith = owners.map(o => {
         const r = zipRangeFor(code, o.id);
         return `${escapeHtml(o.name)}${r ? ` (${r.zip3_start}–${r.zip3_end})` : ' (no postcode range set)'}`;
@@ -497,8 +507,40 @@
     saveNote.style.color = 'var(--green)';
     saveNote.textContent = 'Saved.';
     renderFirms();
+    renderUncoveredAlert();
     openStatesPanel(editingFirmId);
   });
+
+  // Firm-side coverage (territory/states) only tells half the story -- this
+  // cross-checks it against real accounts to catch a state nobody claims but
+  // that a real customer already sits in (found via Hawaii: no firm's states
+  // array included it, so an account there could never resolve automatically
+  // and nothing on this page said so).
+  function computeUncoveredAccounts() {
+    const coveredStates = new Set(firmsCache.flatMap(f => Array.isArray(f.states) ? f.states : []));
+    return accountsCache.filter(a => a.country_code === 'US' && a.state_code && !coveredStates.has(a.state_code));
+  }
+
+  function renderUncoveredAlert() {
+    const el = document.getElementById('uncovered-alert');
+    const uncovered = computeUncoveredAccounts();
+    if (!uncovered.length) { el.style.display = 'none'; return; }
+    const byState = new Map();
+    uncovered.forEach(a => {
+      if (!byState.has(a.state_code)) byState.set(a.state_code, []);
+      byState.get(a.state_code).push(a);
+    });
+    const items = [...byState.entries()].map(([code, accts]) => {
+      const stateName = STATE_NAME_BY_CODE.get(code) || code;
+      const names = accts.map(a => escapeHtml(a.name)).join(', ');
+      return `<li><strong>${escapeHtml(stateName)}</strong> — no firm's territory covers this state, but ${accts.length} real account${accts.length > 1 ? 's are' : ' is'} sitting there: ${names}</li>`;
+    }).join('');
+    el.style.display = 'block';
+    el.innerHTML = `<div class="uncovered-box">` +
+      `<strong>${uncovered.length} account${uncovered.length > 1 ? 's' : ''} in ${byState.size} uncovered state${byState.size > 1 ? 's' : ''}.</strong> ` +
+      `Add the state to a firm below, or set that account's rep firm directly on <a href="/crm">Accounts &amp; Contacts</a>.` +
+      `<ul>${items}</ul></div>`;
+  }
 
   function renderSplitTable() {
     const table = document.getElementById('split-table');
@@ -594,9 +636,10 @@
   }
 
   async function loadFirms() {
-    const [firmsRes, zipRangesRes] = await Promise.all([
+    const [firmsRes, zipRangesRes, accountsRes] = await Promise.all([
       client.from('rep_firms').select('id, name, territory, states').eq('status', 'active').order('name'),
       client.from('rep_firm_zip_ranges').select('id, rep_firm_id, state_code, zip3_start, zip3_end'),
+      client.from('crm_accounts').select('name, state_code, country_code').eq('country_code', 'US').not('state_code', 'is', null),
     ]);
     if (firmsRes.error) {
       document.getElementById('loading-note').textContent = 'Failed to load rep firms: ' + firmsRes.error.message;
@@ -604,8 +647,10 @@
     }
     firmsCache = firmsRes.data || [];
     zipRangesCache = zipRangesRes.data || [];
+    accountsCache = accountsRes.data || [];
     renderFirms();
     renderSplitTable();
+    renderUncoveredAlert();
     document.getElementById('loading-note').style.display = 'none';
     document.getElementById('content').style.display = 'block';
   }
