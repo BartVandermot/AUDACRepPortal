@@ -156,7 +156,7 @@
           <tr>
             <th>Account</th><th>City</th><th>State</th><th>Zip</th><th>Country</th>
             <th>Relationship Type</th><th>Partner Type</th><th>Classification</th>
-            <th>Contacts</th><th>Rep Firm</th>
+            <th>Contacts</th><th>Source</th><th>Rep Firm</th>
           </tr>
         </thead>
         <tbody id="accounts-body"></tbody>
@@ -195,7 +195,7 @@
 
     <div style="overflow-x:auto;">
       <table class="detail">
-        <thead><tr><th>Contact</th><th>Email</th><th>Account</th><th>Rep Firm</th></tr></thead>
+        <thead><tr><th>Contact</th><th>Email</th><th>Account</th><th>Source</th><th>Rep Firm</th></tr></thead>
         <tbody id="contacts-body"></tbody>
       </table>
     </div>
@@ -319,13 +319,16 @@
     const tbody = document.getElementById('accounts-body');
     tbody.innerHTML = rows.map(a => {
       const viaParent = a.rep_firm_id && firmsCache.some(f => f.id === a.rep_firm_id && f.crm_account_external_id === a.parent_account_external_id);
-      const badge = a.source === 'manual'
-        ? '<span class="badge-parent via-manual">added by rep</span>'
+      // No resolution badge for a manual account -- its rep firm was set
+      // directly when the rep created it, not derived from a parent account
+      // or state match, so "via parent"/"via state" would be misleading.
+      const badge = a.source === 'manual' ? ''
         : a.rep_firm_overridden
           ? '<span class="badge-parent override">manual override</span>'
           : a.rep_firm_id
             ? `<span class="badge-parent ${viaParent ? 'via-parent' : 'via-state'}">${viaParent ? 'via parent' : 'via state'}</span>`
             : '';
+      const sourceCell = a.source === 'manual' ? '<span class="badge-parent via-manual">Manual</span>' : '<span class="muted">CRM Sync</span>';
       const mergeControl = a.source === 'manual' ? accountMergeRowHtml(a) : '';
       const contactCount = contactCountByAccount.get(a.external_id) || 0;
       const isOpen = expandedIds.has(a.external_id);
@@ -341,15 +344,15 @@
           <td>${escapeHtml(a.audac_partner_type || '')}</td>
           <td>${escapeHtml(a.classification || '')}</td>
           <td>${contactCount || '<span class="muted">0</span>'}</td>
+          <td>${sourceCell}${mergeControl}</td>
           <td>
             <select class="firm-assign" data-account="${a.external_id}">${firmOptions}</select>
             ${badge}
-            ${mergeControl}
           </td>
         </tr>
       `;
       if (!isOpen) return mainRow;
-      return mainRow + `<tr class="contacts-row"><td colspan="10">${renderAccountContactsPanel(a.external_id)}</td></tr>`;
+      return mainRow + `<tr class="contacts-row"><td colspan="11">${renderAccountContactsPanel(a.external_id)}</td></tr>`;
     }).join('');
 
     tbody.querySelectorAll('select.firm-assign[data-account]').forEach(sel => {
@@ -472,7 +475,7 @@
   function renderAccountContactsPanel(accountExternalId) {
     const rows = allContactsCache.filter(c => c.parent_account_external_id === accountExternalId);
     if (!rows.length) return '<div class="empty-note">No contacts synced for this account.</div>';
-    return `<table class="detail"><thead><tr><th>Contact</th><th>Email</th><th>Rep Firm</th></tr></thead><tbody>${rows.map(c => contactRowHtml(c)).join('')}</tbody></table>`;
+    return `<table class="detail"><thead><tr><th>Contact</th><th>Email</th><th>Source</th><th>Rep Firm</th></tr></thead><tbody>${rows.map(c => contactRowHtml(c)).join('')}</tbody></table>`;
   }
 
   const contactFirmOptionsHtml = () => ['<option value="auto">Auto (inherit from account)</option>', '<option value="">Unassigned</option>']
@@ -483,17 +486,18 @@
   // one account.
   function contactRowHtml(c, { showAccount } = {}) {
     const accountCell = showAccount ? `<td>${escapeHtml(accountNameByExternalId.get(c.parent_account_external_id) || '')}</td>` : '';
+    const sourceCell = c.source === 'manual' ? '<span class="badge-parent via-manual">Manual</span>' : '<span class="muted">CRM Sync</span>';
     const mergeControl = c.source === 'manual' ? contactMergeRowHtml(c) : '';
     return `
       <tr data-contact-id="${c.external_id}">
         <td>${escapeHtml(c.full_name || '')}</td>
         <td>${escapeHtml(c.email || '')}</td>
         ${accountCell}
+        <td>${sourceCell}${mergeControl}</td>
         <td>
           <select class="firm-assign" data-contact="${c.external_id}">${contactFirmOptionsHtml()}</select>
-          ${c.rep_firm_overridden ? '<span class="manual-override-badge">Manual</span>' : ''}
+          ${c.rep_firm_overridden ? '<span class="manual-override-badge">Override</span>' : ''}
           ${c.blocks_pipeline_sync ? '<span class="manual-override-badge" style="background:var(--red-bg); color:var(--red);">Blocking pipeline sync</span>' : ''}
-          ${mergeControl}
         </td>
       </tr>
     `;
@@ -591,7 +595,7 @@
     const tbody = document.getElementById('contacts-body');
     tbody.innerHTML = rows.length
       ? rows.map(c => contactRowHtml(c, { showAccount: true })).join('')
-      : '<tr><td colspan="4" class="empty-note">No contacts match the current filters.</td></tr>';
+      : '<tr><td colspan="5" class="empty-note">No contacts match the current filters.</td></tr>';
 
     wireContactFirmSelects(tbody);
     wireMergeControls(tbody, 'contact');
