@@ -240,6 +240,42 @@
     <input type="file" accept=".csv,.xlsx,.xls" id="file-education">
     <div id="mapping-area-education"></div>
     <div id="status-education"></div>
+
+    <div class="dd-sub-title" style="margin-top:22px;">Imported Certificates</div>
+    <div class="upload-hint">Every certificate imported so far. "No CRM match" means the row's email didn't match any synced CRM contact at import time — this re-checks live, so it clears itself once that person is added to CRM.</div>
+    <div class="toolbar" style="margin-bottom:12px;">
+      <div>
+        <label for="edu-search-input">Search</label>
+        <input type="text" id="edu-search-input" placeholder="Person, company, certificate…">
+      </div>
+      <div>
+        <label for="edu-search-firm">Rep Firm</label>
+        <select id="edu-search-firm"><option value="">All</option></select>
+      </div>
+      <div>
+        <label for="edu-search-filter">Show</label>
+        <select id="edu-search-filter">
+          <option value="">All</option>
+          <option value="unmatched">No CRM contact match</option>
+          <option value="expired">Expired</option>
+          <option value="expiring">Expiring within 60 days</option>
+        </select>
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <button type="button" class="audac-btn-outline" id="edu-export-btn">Export to Excel</button>
+      </div>
+    </div>
+    <div class="result-count" id="edu-search-count"></div>
+    <div style="overflow-x:auto;">
+      <table class="detail">
+        <thead><tr>
+          <th>Person</th><th>Company</th><th>Training Certificate</th><th>Achieved On</th>
+          <th>Expires</th><th>Rep Firm</th><th>Reporting Month</th><th></th><th></th>
+        </tr></thead>
+        <tbody id="edu-search-results"></tbody>
+      </table>
+    </div>
   </div>
 
   <div class="tab-panel" id="tab-pipeline">
@@ -351,6 +387,7 @@
   let selectedActivityIds = new Set();
   let pipelineEntriesCache = [];
   let mappingsCache = [];
+  let educationRecordsCache = [];
   let profileEmailById = new Map();
 
   const CONTACT_TYPES = ['Dealer', 'Consultant', 'End User'];
@@ -962,17 +999,25 @@
   const SOURCES = [
     {
       source: 'education', label: 'Education Records', table: 'education_records',
+      // Matches the real education.audac.eu export columns: FirstName, LastName,
+      // CompanyName, CompanyActivity, Country, Email, AchievedOn, ExpirationDate,
+      // TrainingCertificate. CompanyActivity/Country aren't captured -- nothing in
+      // this app uses them yet.
       fields: [
-        { key: 'company', label: 'Company / Dealer Name', required: true, resolutionOnly: true },
+        // alsoStore: company/email are normally resolution-only lookups (see
+        // pipeline/sellout below), but Education also persists them so the
+        // review table further down can show which company/address produced
+        // each row instead of only the resolved rep firm.
+        { key: 'company', label: 'Company Name', required: true, resolutionOnly: true, alsoStore: true },
         // Required (as a mapping, not per-row -- resolutionOnly fields never
         // block an individual row at import time): someone with a real
         // education account should already exist as a CRM contact, so this
         // is the reliable resolution path, not an optional nice-to-have.
-        { key: 'email', label: 'Email (matches CRM contact for more precise firm resolution)', required: true, resolutionOnly: true },
+        { key: 'email', label: 'Email (matches CRM contact for more precise firm resolution)', required: true, resolutionOnly: true, alsoStore: true },
         { key: 'person_name', label: 'Person Name', required: true, parts: [{ key: 'first', label: 'First Name' }, { key: 'last', label: 'Last Name' }] },
-        { key: 'course_name', label: 'Course Name', required: true },
-        { key: 'completion_date', label: 'Completion Date', required: false, type: 'date' },
-        { key: 'certificate_url', label: 'Certificate URL', required: false },
+        { key: 'course_name', label: 'Training Certificate', required: true },
+        { key: 'completion_date', label: 'Achieved On', required: false, type: 'date' },
+        { key: 'expiration_date', label: 'Expiration Date', required: false, type: 'date' },
       ],
       // Same person + course + completion date is the same real certificate no matter
       // which reporting month it gets filed under (or which rep firm it now resolves
@@ -1598,7 +1643,7 @@
 
       const record = { rep_firm_id: res.repFirmId || null, reporting_month: month };
       for (const f of sourceConfig.fields) {
-        if (f.resolutionOnly) continue;
+        if (f.resolutionOnly && !f.alsoStore) continue;
         record[f.key] = buildFieldValue(f, mapping, headers, r);
       }
       if (requiredFields.some(f => record[f.key] === null || record[f.key] === undefined)) { skippedMissingFields++; return; }
@@ -1686,7 +1731,8 @@
     statusEl.innerHTML = `<strong>Imported ${toInsert.length} of ${rows.length} row(s) for ${month}.</strong>` +
       (details.length ? `<ul style="margin:6px 0 0 18px; padding:0;">${details.join('')}</ul>` : '');
 
-    await refreshImportKpis();
+    if (sourceConfig.source === 'education') await loadEducationRecords();
+    else await refreshImportKpis();
   }
 
   // ---------- At-a-glance counts for the three CSV-import tabs ----------
@@ -1697,18 +1743,12 @@
   // successful import.
   async function refreshImportKpis() {
     const month = importMonthInput.value;
-    const [eduMonth, eduTotal, pipeMonth, pipeTotal, soMonth, soTotal] = await Promise.all([
-      client.from('education_records').select('id', { count: 'exact', head: true }).eq('reporting_month', month),
-      client.from('education_records').select('id', { count: 'exact', head: true }),
+    const [pipeMonth, pipeTotal, soMonth, soTotal] = await Promise.all([
       client.from('pipeline_entries').select('id', { count: 'exact', head: true }).eq('reporting_month', month).is('crm_id', null),
       client.from('pipeline_entries').select('id', { count: 'exact', head: true }).is('crm_id', null),
       client.from('sellout_records').select('id', { count: 'exact', head: true }).eq('reporting_month', month),
       client.from('sellout_records').select('id', { count: 'exact', head: true }),
     ]);
-    document.getElementById('education-kpi-row').innerHTML = `
-      <div class="kpi-tile"><div class="kpi-label">Records for ${month}</div><div class="kpi-value">${eduMonth.count ?? 0}</div></div>
-      <div class="kpi-tile"><div class="kpi-label">Total Records (All Time)</div><div class="kpi-value">${eduTotal.count ?? 0}</div></div>
-    `;
     document.getElementById('pipeline-csv-kpi-row').innerHTML = `
       <div class="kpi-tile"><div class="kpi-label">CSV-Imported for ${month}</div><div class="kpi-value">${pipeMonth.count ?? 0}</div></div>
       <div class="kpi-tile"><div class="kpi-label">Total CSV-Imported (All Time)</div><div class="kpi-value">${pipeTotal.count ?? 0}</div></div>
@@ -1718,7 +1758,159 @@
       <div class="kpi-tile"><div class="kpi-label">Total Records (All Time)</div><div class="kpi-value">${soTotal.count ?? 0}</div></div>
     `;
   }
-  importMonthInput.addEventListener('change', refreshImportKpis);
+  async function onImportMonthChange() {
+    await refreshImportKpis();
+    renderEducationKpis();
+    renderEducationRecords();
+  }
+  importMonthInput.addEventListener('change', onImportMonthChange);
+
+  // ---------- Education Records: browse, review, delete ----------
+  // Education never had any read UI at all -- a mis-imported certificate could
+  // only be fixed by editing the database directly. company/email are the raw
+  // values from the file (persisted via SOURCES' alsoStore, see above) so a
+  // reviewer can tell which company/address produced a given row, not just
+  // which rep firm it resolved to.
+  async function loadEducationRecords() {
+    const { data, error } = await client.from('education_records').select('*').order('completion_date', { ascending: false, nullsFirst: false });
+    if (error) {
+      document.getElementById('edu-search-results').innerHTML = `<tr><td colspan="9" class="empty-note">Failed to load: ${escapeHtml(error.message)}</td></tr>`;
+      return;
+    }
+    educationRecordsCache = data || [];
+    await loadCrmContacts(); // keep the "no CRM match" check current
+    populateEduSearchFirmFilter();
+    renderEducationKpis();
+    renderEducationRecords();
+  }
+
+  function populateEduSearchFirmFilter() {
+    const sel = document.getElementById('edu-search-firm');
+    const current = sel.value;
+    sel.innerHTML = '<option value="">All</option>' + firmsCache.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`).join('');
+    sel.value = current || '';
+  }
+
+  // Computed live against the current CRM contacts cache rather than stored as
+  // a flag on the row -- so a person added to CRM after their certificate was
+  // imported clears the flag automatically instead of needing a manual recheck.
+  function isUnmatchedEmail(r) {
+    if (!r.email) return false;
+    return !(contactsCache.byEmail && contactsCache.byEmail.has(normalizeEmail(r.email)));
+  }
+  function expiryStatus(r) {
+    if (!r.expiration_date) return null;
+    const today = todayISO();
+    if (r.expiration_date < today) return 'expired';
+    const soon = new Date();
+    soon.setDate(soon.getDate() + 60);
+    if (r.expiration_date <= soon.toISOString().slice(0, 10)) return 'expiring';
+    return null;
+  }
+
+  function renderEducationKpis() {
+    const month = importMonthInput.value;
+    const forMonth = educationRecordsCache.filter(r => r.reporting_month === month).length;
+    const unmatched = educationRecordsCache.filter(isUnmatchedEmail).length;
+    const expired = educationRecordsCache.filter(r => expiryStatus(r) === 'expired').length;
+    document.getElementById('education-kpi-row').innerHTML = `
+      <div class="kpi-tile"><div class="kpi-label">Records for ${month}</div><div class="kpi-value">${forMonth}</div></div>
+      <div class="kpi-tile"><div class="kpi-label">Total Records (All Time)</div><div class="kpi-value">${educationRecordsCache.length}</div></div>
+      <div class="kpi-tile"><div class="kpi-label">No CRM Contact Match</div><div class="kpi-value">${unmatched}</div></div>
+      <div class="kpi-tile"><div class="kpi-label">Expired Certificates</div><div class="kpi-value">${expired}</div></div>
+    `;
+  }
+
+  function getFilteredEducationRecords() {
+    const q = document.getElementById('edu-search-input').value.trim().toLowerCase();
+    const firmFilter = document.getElementById('edu-search-firm').value;
+    const filter = document.getElementById('edu-search-filter').value;
+    let rows = educationRecordsCache;
+    if (firmFilter) rows = rows.filter(r => r.rep_firm_id === firmFilter);
+    if (filter === 'unmatched') rows = rows.filter(isUnmatchedEmail);
+    else if (filter === 'expired') rows = rows.filter(r => expiryStatus(r) === 'expired');
+    else if (filter === 'expiring') rows = rows.filter(r => expiryStatus(r) === 'expiring');
+    if (q) rows = rows.filter(r => `${r.person_name || ''} ${r.company || ''} ${r.course_name || ''}`.toLowerCase().includes(q));
+    return rows;
+  }
+
+  function renderEducationRecords() {
+    const rows = getFilteredEducationRecords();
+    document.getElementById('edu-search-count').textContent = `Showing ${rows.length} of ${educationRecordsCache.length} certificates`;
+    const tbody = document.getElementById('edu-search-results');
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="9" class="empty-note">${educationRecordsCache.length ? 'No certificates match the current filters.' : 'No certificates imported yet.'}</td></tr>`;
+      return;
+    }
+    const firmNameById = new Map(firmsCache.map(f => [f.id, f.name]));
+    tbody.innerHTML = rows.map(r => {
+      const badges = [];
+      if (isUnmatchedEmail(r)) badges.push('<span class="status-badge open" title="Email does not match any CRM contact">No CRM match</span>');
+      const es = expiryStatus(r);
+      if (es === 'expired') badges.push('<span class="status-badge lost">Expired</span>');
+      else if (es === 'expiring') badges.push('<span class="status-badge open">Expires soon</span>');
+      return `
+        <tr>
+          <td>${escapeHtml(r.person_name || '')}</td>
+          <td>${escapeHtml(r.company || '')}</td>
+          <td>${escapeHtml(r.course_name || '')}</td>
+          <td>${r.completion_date || ''}</td>
+          <td>${r.expiration_date || ''}</td>
+          <td>${escapeHtml(firmNameById.get(r.rep_firm_id) || '')}</td>
+          <td>${r.reporting_month || ''}</td>
+          <td>${badges.join(' ')}</td>
+          <td><button type="button" class="link-btn danger" data-del-education="${r.id}">Delete</button></td>
+        </tr>
+      `;
+    }).join('');
+    tbody.querySelectorAll('[data-del-education]').forEach(btn => btn.addEventListener('click', () => deleteEducationRecord(btn.dataset.delEducation)));
+  }
+
+  async function deleteEducationRecord(id) {
+    if (!confirm('Delete this certificate record? This cannot be undone.')) return;
+    const { error } = await client.from('education_records').delete().eq('id', id);
+    if (error) { alert('Could not delete: ' + error.message); return; }
+    educationRecordsCache = educationRecordsCache.filter(r => r.id !== id);
+    renderEducationKpis();
+    renderEducationRecords();
+  }
+
+  async function exportEducationToExcel() {
+    const btn = document.getElementById('edu-export-btn');
+    btn.disabled = true;
+    btn.textContent = 'Exporting…';
+    try {
+      const rows = getFilteredEducationRecords();
+      if (!rows.length) {
+        alert('No certificates match the current filters — nothing to export.');
+        return;
+      }
+      const firmNameById = new Map(firmsCache.map(f => [f.id, f.name]));
+      const sheetRows = rows.map(r => ({
+        'Person': r.person_name || '',
+        'Company': r.company || '',
+        'Email': r.email || '',
+        'Training Certificate': r.course_name || '',
+        'Achieved On': r.completion_date || '',
+        'Expires': r.expiration_date || '',
+        'Rep Firm': firmNameById.get(r.rep_firm_id) || '',
+        'Reporting Month': r.reporting_month || '',
+        'No CRM Match': isUnmatchedEmail(r) ? 'Yes' : '',
+      }));
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheetRows), 'Education');
+      const dateStr = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(wb, `audac-education-export-${dateStr}.xlsx`);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Export to Excel';
+    }
+  }
+
+  document.getElementById('edu-search-input').addEventListener('input', renderEducationRecords);
+  document.getElementById('edu-search-firm').addEventListener('change', renderEducationRecords);
+  document.getElementById('edu-search-filter').addEventListener('change', renderEducationRecords);
+  document.getElementById('edu-export-btn').addEventListener('click', exportEducationToExcel);
 
   // ---------- Company -> Firm Mappings ----------
   // The only other UI for rep_firm_aliases is the one-time "ask" prompt
@@ -1864,7 +2056,7 @@
     document.getElementById('activity-search-to').value = nowMonth;
     document.getElementById('activity-search-from').value = trailingMonths(nowMonth, 6)[5];
     await fetchAllAttachmentCounts();
-    await Promise.all([loadActivitySearchRange(), loadAuditLog(), loadPipelineEntries(), refreshImportKpis(), loadCompanyMappings()]);
+    await Promise.all([loadActivitySearchRange(), loadAuditLog(), loadPipelineEntries(), refreshImportKpis(), loadCompanyMappings(), loadEducationRecords()]);
     switchTab((window.location.hash || '').replace('#', ''));
   })();
 </script>
