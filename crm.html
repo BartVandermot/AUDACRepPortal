@@ -225,6 +225,7 @@
   let accountsRepFirmByExternalId = new Map();
   let dataverseAccountsByNameKey = new Map(); // possible-merge candidates for a manually-added account, grouped by normalized name
   let dataverseContactsByEmailKey = new Map(); // possible-merge candidates for a manually-added contact, grouped by normalized email
+  let dataverseContactsByAccountNameKey = new Map(); // same, grouped by parent account + normalized name (email's fallback signal)
 
   function escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
@@ -496,13 +497,19 @@
     `;
   }
 
-  // Same idea as accountMergeRowHtml, matched by normalized email instead --
-  // a manual contact often has no email at all, in which case there's no
-  // reliable automatic signal and no merge control shows (no name-based
-  // guessing, since two different people commonly share a display name).
+  // Two signals, either one is enough to suggest a match: same email (strong
+  // on its own, works across different accounts), or same name **within the
+  // same account** (name alone is too weak globally -- two unrelated people
+  // commonly share a name -- but scoped to one company it's reliable, the
+  // same reasoning merge_manual_crm_account uses to reconcile contacts
+  // automatically when the account itself gets merged). No email and no
+  // same-account name match means no reliable signal, so no control shows.
   function contactMergeRowHtml(c) {
-    if (!c.email_key) return '';
-    const candidates = dataverseContactsByEmailKey.get(c.email_key) || [];
+    const byEmail = c.email_key ? (dataverseContactsByEmailKey.get(c.email_key) || []) : [];
+    const nameKey = (c.full_name && c.parent_account_external_id) ? `${c.parent_account_external_id}|${c.full_name.trim().toLowerCase()}` : null;
+    const byName = nameKey ? (dataverseContactsByAccountNameKey.get(nameKey) || []) : [];
+    const seen = new Set();
+    const candidates = [...byEmail, ...byName].filter(cc => !seen.has(cc.external_id) && seen.add(cc.external_id));
     if (!candidates.length) return '';
     const opts = ['<option value="">Possible match — merge into…</option>']
       .concat(candidates.map(cc => `<option value="${cc.external_id}">${escapeHtml(cc.full_name || cc.email || '(no name)')}</option>`)).join('');
@@ -725,10 +732,19 @@
       dataverseAccountsByNameKey.set(a.name_key, list);
     });
     dataverseContactsByEmailKey = new Map();
-    allContactsCache.filter(c => c.source !== 'manual' && c.email_key).forEach(c => {
-      const list = dataverseContactsByEmailKey.get(c.email_key) || [];
-      list.push(c);
-      dataverseContactsByEmailKey.set(c.email_key, list);
+    dataverseContactsByAccountNameKey = new Map();
+    allContactsCache.filter(c => c.source !== 'manual').forEach(c => {
+      if (c.email_key) {
+        const list = dataverseContactsByEmailKey.get(c.email_key) || [];
+        list.push(c);
+        dataverseContactsByEmailKey.set(c.email_key, list);
+      }
+      if (c.full_name && c.parent_account_external_id) {
+        const key = `${c.parent_account_external_id}|${c.full_name.trim().toLowerCase()}`;
+        const list = dataverseContactsByAccountNameKey.get(key) || [];
+        list.push(c);
+        dataverseContactsByAccountNameKey.set(key, list);
+      }
     });
 
     // Every row's updated_at is touched on every sync run (whether or not
