@@ -270,7 +270,7 @@
     <div style="overflow-x:auto;">
       <table class="detail">
         <thead><tr>
-          <th>Person</th><th>Company</th><th>Training Certificate</th><th>Achieved On</th>
+          <th>Person</th><th>Company</th><th>Activity</th><th>Country</th><th>Training Certificate</th><th>Achieved On</th>
           <th>Expires</th><th>Rep Firm</th><th>Reporting Month</th><th></th><th></th>
         </tr></thead>
         <tbody id="edu-search-results"></tbody>
@@ -1001,8 +1001,7 @@
       source: 'education', label: 'Education Records', table: 'education_records',
       // Matches the real education.audac.eu export columns: FirstName, LastName,
       // CompanyName, CompanyActivity, Country, Email, AchievedOn, ExpirationDate,
-      // TrainingCertificate. CompanyActivity/Country aren't captured -- nothing in
-      // this app uses them yet.
+      // TrainingCertificate.
       fields: [
         // alsoStore: company/email are normally resolution-only lookups (see
         // pipeline/sellout below), but Education also persists them so the
@@ -1018,6 +1017,8 @@
         { key: 'course_name', label: 'Training Certificate', required: true },
         { key: 'completion_date', label: 'Achieved On', required: false, type: 'date' },
         { key: 'expiration_date', label: 'Expiration Date', required: false, type: 'date' },
+        { key: 'company_activity', label: 'Company Activity', required: false },
+        { key: 'country', label: 'Country', required: false },
       ],
       // Same person + course + completion date is the same real certificate no matter
       // which reporting month it gets filed under (or which rep firm it now resolves
@@ -1774,7 +1775,7 @@
   async function loadEducationRecords() {
     const { data, error } = await client.from('education_records').select('*').order('completion_date', { ascending: false, nullsFirst: false });
     if (error) {
-      document.getElementById('edu-search-results').innerHTML = `<tr><td colspan="9" class="empty-note">Failed to load: ${escapeHtml(error.message)}</td></tr>`;
+      document.getElementById('edu-search-results').innerHTML = `<tr><td colspan="11" class="empty-note">Failed to load: ${escapeHtml(error.message)}</td></tr>`;
       return;
     }
     educationRecordsCache = data || [];
@@ -1830,7 +1831,7 @@
     if (filter === 'unmatched') rows = rows.filter(isUnmatchedEmail);
     else if (filter === 'expired') rows = rows.filter(r => expiryStatus(r) === 'expired');
     else if (filter === 'expiring') rows = rows.filter(r => expiryStatus(r) === 'expiring');
-    if (q) rows = rows.filter(r => `${r.person_name || ''} ${r.company || ''} ${r.course_name || ''}`.toLowerCase().includes(q));
+    if (q) rows = rows.filter(r => `${r.person_name || ''} ${r.company || ''} ${r.course_name || ''} ${r.country || ''}`.toLowerCase().includes(q));
     return rows;
   }
 
@@ -1839,7 +1840,7 @@
     document.getElementById('edu-search-count').textContent = `Showing ${rows.length} of ${educationRecordsCache.length} certificates`;
     const tbody = document.getElementById('edu-search-results');
     if (!rows.length) {
-      tbody.innerHTML = `<tr><td colspan="9" class="empty-note">${educationRecordsCache.length ? 'No certificates match the current filters.' : 'No certificates imported yet.'}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="11" class="empty-note">${educationRecordsCache.length ? 'No certificates match the current filters.' : 'No certificates imported yet.'}</td></tr>`;
       return;
     }
     const firmNameById = new Map(firmsCache.map(f => [f.id, f.name]));
@@ -1853,6 +1854,8 @@
         <tr>
           <td>${escapeHtml(r.person_name || '')}</td>
           <td>${escapeHtml(r.company || '')}</td>
+          <td>${escapeHtml(r.company_activity || '')}</td>
+          <td>${escapeHtml(r.country || '')}</td>
           <td>${escapeHtml(r.course_name || '')}</td>
           <td>${r.completion_date || ''}</td>
           <td>${r.expiration_date || ''}</td>
@@ -1889,6 +1892,8 @@
       const sheetRows = rows.map(r => ({
         'Person': r.person_name || '',
         'Company': r.company || '',
+        'Company Activity': r.company_activity || '',
+        'Country': r.country || '',
         'Email': r.email || '',
         'Training Certificate': r.course_name || '',
         'Achieved On': r.completion_date || '',
