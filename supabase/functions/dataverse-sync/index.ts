@@ -13,8 +13,8 @@
 // "accounts" first -- "contacts" resolves rep firm via its parent account in
 // crm_accounts; "opportunities" resolves rep firm via (in priority order) its
 // Involved Installer account, the Contact's own resolved firm via
-// crm_contacts (auto-matched or manually overridden on CRM Data -- that's
-// also where a manager fixes one that didn't resolve), or the free-typed
+// crm_contacts (auto-matched or manually overridden on Accounts & Contacts --
+// that's also where a manager fixes one that didn't resolve), or the free-typed
 // Location field, since almost every opportunity is filed under Intellimix
 // as the customer account.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -547,12 +547,12 @@ Deno.serve(async (req: Request) => {
       // account, looked up in crm_accounts; (2) the Contact's own resolved
       // firm via crm_contacts -- that contact was already synced and
       // territory-matched to a firm by the accounts/contacts phases, or
-      // hand-corrected on CRM Data if it wasn't; (3) the free-typed Location
-      // field, parsed for a state/province. An opportunity that resolves none
-      // of these has nowhere to go (unlike crm_contacts, pipeline_entries.
-      // rep_firm_id is not-null) and is skipped -- its Contact (if any) is
-      // flagged blocks_pipeline_sync so it's visible on CRM Data without
-      // anyone needing to be watching this sync's live output.
+      // hand-corrected on Accounts & Contacts if it wasn't; (3) the free-typed
+      // Location field, parsed for a state/province. An opportunity that
+      // resolves none of these has nowhere to go (unlike crm_contacts,
+      // pipeline_entries.rep_firm_id is not-null) and is skipped -- its
+      // Contact (if any) is flagged blocks_pipeline_sync so it's visible on
+      // Accounts & Contacts without anyone needing to watch this sync's live output.
       const installerIds = [...new Set(rows.map((r: any) => r._pvs_involvedinstallerid_value).filter(Boolean))];
       let installerById = new Map<string, { name: string; repFirmId: string | null }>();
       if (installerIds.length) {
