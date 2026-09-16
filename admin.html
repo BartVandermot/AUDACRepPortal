@@ -1030,6 +1030,12 @@
       // gets those specific fields filled in from the re-uploaded row instead of
       // being silently skipped as a plain duplicate.
       backfillFields: ['company', 'email', 'company_activity', 'country', 'expiration_date'],
+      // A certificate counts toward the month it was actually achieved, not
+      // whichever month happened to be selected in the Reporting Month picker at
+      // upload time -- that decoupling is exactly what let the same real
+      // certificate get filed under two different months across two uploads.
+      // Falls back to the picker only when a row has no Achieved On date at all.
+      reportingMonthFrom: 'completion_date',
     },
     {
       source: 'pipeline', label: 'Pipeline', table: 'pipeline_entries',
@@ -1652,6 +1658,9 @@
         if (f.resolutionOnly && !f.alsoStore) continue;
         record[f.key] = buildFieldValue(f, mapping, headers, r);
       }
+      if (sourceConfig.reportingMonthFrom && record[sourceConfig.reportingMonthFrom]) {
+        record.reporting_month = String(record[sourceConfig.reportingMonthFrom]).slice(0, 7);
+      }
       if (requiredFields.some(f => record[f.key] === null || record[f.key] === undefined)) { skippedMissingFields++; return; }
 
       const companyLabel = (companyIdx >= 0 ? String(r[companyIdx] || '').trim() : '') || '(no company name)';
@@ -1768,8 +1777,12 @@
     if (skippedMissingFields) details.push(`<li>${skippedMissingFields} row(s) <strong>not imported</strong> — missing required data</li>`);
     if (noContactMatchCount) details.push(`<li>${noContactMatchCount} row(s) in this file had an email that <strong>doesn't match any CRM contact yet</strong> — resolved via company name instead; that person likely isn't in CRM yet</li>`);
 
+    // Reporting month is assigned per-row (from Achieved On) for sources with
+    // reportingMonthFrom, so the headline can't name a single month the way it can
+    // for sources where every row in the batch shares the picker's month.
+    const monthLabel = sourceConfig.reportingMonthFrom ? '' : ` for ${month}`;
     statusEl.className = 'upload-status ' + (unidentifiableFileRows.length ? 'err' : (skippedMissingFields || blankTotal || duplicateCount || noContactMatchCount ? 'warn' : 'ok'));
-    statusEl.innerHTML = `<strong>Imported ${toInsert.length} of ${rows.length} row(s) for ${month}.</strong>` +
+    statusEl.innerHTML = `<strong>Imported ${toInsert.length} of ${rows.length} row(s)${monthLabel}.</strong>` +
       (details.length ? `<ul style="margin:6px 0 0 18px; padding:0;">${details.join('')}</ul>` : '');
 
     if (sourceConfig.source === 'education') await loadEducationRecords();
