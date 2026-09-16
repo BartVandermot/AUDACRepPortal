@@ -1025,6 +1025,11 @@
       // to), so this is checked across all months -- exactly the shape of the "same
       // file re-uploaded" incident this exists to catch.
       duplicateKey: { fields: ['person_name', 'course_name', 'completion_date'], scopeToMonth: false },
+      // A record that already exists (per duplicateKey) but is still missing one of
+      // these -- e.g. imported before company/email/expiration_date were tracked --
+      // gets those specific fields filled in from the re-uploaded row instead of
+      // being silently skipped as a plain duplicate.
+      backfillFields: ['company', 'email', 'company_activity', 'country', 'expiration_date'],
     },
     {
       source: 'pipeline', label: 'Pipeline', table: 'pipeline_entries',
@@ -1663,21 +1668,39 @@
     // built after a real duplicate upload silently doubled 51 real certificates,
     // because nothing checked whether this data was already there.
     let duplicateCount = 0;
+    let backfilledCount = 0;
     if (sourceConfig.duplicateKey) {
       const { fields: keyFields, scopeToMonth } = sourceConfig.duplicateKey;
-      let existingQuery = client.from(sourceConfig.table).select(keyFields.join(','));
+      const backfillFields = sourceConfig.backfillFields || [];
+      const selectCols = ['id', ...keyFields, ...backfillFields];
+      let existingQuery = client.from(sourceConfig.table).select(selectCols.join(','));
       if (scopeToMonth) existingQuery = existingQuery.eq('reporting_month', month);
       const { data: existingRows } = await existingQuery;
-      const existingKeys = new Set((existingRows || []).map(row => buildDuplicateKey(row, keyFields)));
+      const existingByKey = new Map((existingRows || []).map(row => [buildDuplicateKey(row, keyFields), row]));
 
-      const freshCandidates = candidates.filter(c => !existingKeys.has(buildDuplicateKey(c.record, keyFields)));
+      const freshCandidates = [];
+      const backfillPatches = []; // { id, patch }
+      for (const c of candidates) {
+        const existing = existingByKey.get(buildDuplicateKey(c.record, keyFields));
+        if (!existing) { freshCandidates.push(c); continue; }
+        const patch = {};
+        for (const f of backfillFields) {
+          const existingBlank = existing[f] === null || existing[f] === undefined || existing[f] === '';
+          if (existingBlank && c.record[f] !== null && c.record[f] !== undefined && c.record[f] !== '') patch[f] = c.record[f];
+        }
+        if (Object.keys(patch).length) backfillPatches.push({ id: existing.id, patch });
+      }
       duplicateCount = candidates.length - freshCandidates.length;
+      backfilledCount = backfillPatches.length;
 
       if (duplicateCount > 0) {
+        const plainSkipCount = duplicateCount - backfilledCount;
         const proceed = confirm(
           `${duplicateCount} of ${candidates.length} row(s) in this file already appear to be imported ` +
           `(matching ${keyFields.map(f => f.replace(/_/g, ' ')).join(' + ')}${scopeToMonth ? ' for ' + month : ''}). ` +
-          `They'll be skipped automatically so nothing gets duplicated.\n\n` +
+          (backfilledCount
+            ? `${backfilledCount} of those are missing details (like company or expiration date) that this file has — those will be filled in. ${plainSkipCount} have nothing new to add and will be skipped as-is.\n\n`
+            : `They'll be skipped automatically so nothing gets duplicated.\n\n`) +
           `Import the other ${freshCandidates.length} row(s)?`
         );
         if (!proceed) {
@@ -1685,13 +1708,17 @@
           statusEl.textContent = `Import cancelled — ${duplicateCount} row(s) looked like duplicates of existing records. Nothing was imported.`;
           return;
         }
+        if (backfillPatches.length) {
+          await Promise.all(backfillPatches.map(({ id, patch }) => client.from(sourceConfig.table).update(patch).eq('id', id)));
+        }
         candidates = freshCandidates;
       }
     }
 
     if (!candidates.length) {
       statusEl.className = 'upload-status warn';
-      statusEl.textContent = `No new rows to import — all ${duplicateCount} row(s) in this file already exist.`;
+      statusEl.textContent = `No new rows to import — all ${duplicateCount} row(s) in this file already exist` +
+        (backfilledCount ? `. Filled in missing details on ${backfilledCount} of them.` : '.');
       return;
     }
 
@@ -1723,7 +1750,8 @@
     const details = [];
     if (matchedTotal) details.push(`<li>${matchedTotal} matched to a rep firm — ${formatSummaryList(matchedParts)}</li>`);
     if (blankTotal) details.push(`<li>${blankTotal} imported with <strong>no rep firm mapping</strong> — ${formatSummaryList(blankParts)}</li>`);
-    if (duplicateCount) details.push(`<li>${duplicateCount} row(s) <strong>skipped</strong> — already imported previously</li>`);
+    if (duplicateCount - backfilledCount > 0) details.push(`<li>${duplicateCount - backfilledCount} row(s) <strong>skipped</strong> — already imported previously</li>`);
+    if (backfilledCount) details.push(`<li>${backfilledCount} already-imported row(s) had <strong>missing details filled in</strong> from this file (e.g. company, email, expiration date)</li>`);
     if (unidentifiableFileRows.length) details.push(`<li>${unidentifiableFileRows.length} row(s) <strong>not imported</strong> — no company or contact match at all (file row${unidentifiableFileRows.length > 1 ? 's' : ''} ${formatSummaryList(unidentifiableFileRows.map(String))})</li>`);
     if (skippedMissingFields) details.push(`<li>${skippedMissingFields} row(s) <strong>not imported</strong> — missing required data</li>`);
     if (noContactMatchCount) details.push(`<li>${noContactMatchCount} row(s) in this file had an email that <strong>doesn't match any CRM contact yet</strong> — resolved via company name instead; that person likely isn't in CRM yet</li>`);
