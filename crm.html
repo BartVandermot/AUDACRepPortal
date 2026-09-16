@@ -154,7 +154,7 @@
       <table class="crm-table">
         <thead>
           <tr>
-            <th>Account</th><th>City / State</th><th>Country</th>
+            <th>Account</th><th>City</th><th>State</th><th>Zip</th><th>Country</th>
             <th>Relationship Type</th><th>Partner Type</th><th>Classification</th>
             <th>Contacts</th><th>Rep Firm</th>
           </tr>
@@ -333,7 +333,9 @@
       const mainRow = `
         <tr data-id="${a.external_id}">
           <td><button class="row-name-btn" data-toggle="${a.external_id}"><span class="expand-caret">${caret}</span>${escapeHtml(a.name)}</button></td>
-          <td>${escapeHtml(a.city || '')}${a.city && a.state_raw ? ', ' : ''}${escapeHtml(a.state_raw || '')}${a.zip ? ' ' + escapeHtml(a.zip) : ''}</td>
+          <td>${escapeHtml(a.city || '')}</td>
+          <td>${escapeHtml(a.state_raw || '')}</td>
+          <td>${escapeHtml(a.zip || '')}</td>
           <td>${escapeHtml(a.country_code || '')}</td>
           <td>${escapeHtml(a.relationship_type || '')}</td>
           <td>${escapeHtml(a.audac_partner_type || '')}</td>
@@ -347,7 +349,7 @@
         </tr>
       `;
       if (!isOpen) return mainRow;
-      return mainRow + `<tr class="contacts-row"><td colspan="8">${renderAccountContactsPanel(a.external_id)}</td></tr>`;
+      return mainRow + `<tr class="contacts-row"><td colspan="10">${renderAccountContactsPanel(a.external_id)}</td></tr>`;
     }).join('');
 
     tbody.querySelectorAll('select.firm-assign[data-account]').forEach(sel => {
