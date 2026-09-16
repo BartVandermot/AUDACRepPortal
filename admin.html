@@ -1676,19 +1676,31 @@
       let existingQuery = client.from(sourceConfig.table).select(selectCols.join(','));
       if (scopeToMonth) existingQuery = existingQuery.eq('reporting_month', month);
       const { data: existingRows } = await existingQuery;
-      const existingByKey = new Map((existingRows || []).map(row => [buildDuplicateKey(row, keyFields), row]));
+      // Grouped as an array per key, not a single row -- some keys already have more
+      // than one existing row sharing it (duplicates imported before this dedupe
+      // guard existed, e.g. the same certificate filed under two reporting months),
+      // and every one of them needs the same backfill, not just whichever happened
+      // to be last in the query result.
+      const existingByKey = new Map();
+      for (const row of existingRows || []) {
+        const key = buildDuplicateKey(row, keyFields);
+        if (!existingByKey.has(key)) existingByKey.set(key, []);
+        existingByKey.get(key).push(row);
+      }
 
       const freshCandidates = [];
       const backfillPatches = []; // { id, patch }
       for (const c of candidates) {
-        const existing = existingByKey.get(buildDuplicateKey(c.record, keyFields));
-        if (!existing) { freshCandidates.push(c); continue; }
-        const patch = {};
-        for (const f of backfillFields) {
-          const existingBlank = existing[f] === null || existing[f] === undefined || existing[f] === '';
-          if (existingBlank && c.record[f] !== null && c.record[f] !== undefined && c.record[f] !== '') patch[f] = c.record[f];
+        const existingGroup = existingByKey.get(buildDuplicateKey(c.record, keyFields));
+        if (!existingGroup) { freshCandidates.push(c); continue; }
+        for (const existing of existingGroup) {
+          const patch = {};
+          for (const f of backfillFields) {
+            const existingBlank = existing[f] === null || existing[f] === undefined || existing[f] === '';
+            if (existingBlank && c.record[f] !== null && c.record[f] !== undefined && c.record[f] !== '') patch[f] = c.record[f];
+          }
+          if (Object.keys(patch).length) backfillPatches.push({ id: existing.id, patch });
         }
-        if (Object.keys(patch).length) backfillPatches.push({ id: existing.id, patch });
       }
       duplicateCount = candidates.length - freshCandidates.length;
       backfilledCount = backfillPatches.length;
