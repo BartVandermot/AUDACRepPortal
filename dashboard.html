@@ -137,6 +137,7 @@
       <label for="month-select">Reporting Month</label>
       <input type="month" id="month-select">
     </div>
+    <button type="button" class="audac-btn-outline" id="generate-exec-report-btn">Generate Executive Report</button>
   </div>
 
   <div id="alerts-panel"></div>
@@ -896,6 +897,150 @@
             .eq('reporting_month', '${month}');
           document.getElementById('save-status').textContent = error ? ('Error: ' + error.message) : 'Saved.';
         });
+      <\/script>
+      </body></html>`);
+    win.document.close();
+  }
+
+  // ---------- Executive Report (PDF/print) ----------
+  // A manager already sees every firm's data on this page (get_rag_scorecard
+  // permits 'manager', not just 'executive'), so generating the same
+  // cross-firm rollup Tom's Executive View shows -- KPIs, scorecard,
+  // exceptions, dormant accounts, 6-month trends -- needs no role change or
+  // new account for whoever it gets shared with (e.g. AVL); it's a
+  // print/PDF artifact, same pattern as the per-firm agenda above, just
+  // scoped to every firm instead of one.
+  function priorMonth(month, back) {
+    const [y, m] = month.split('-').map(Number);
+    const d = new Date(y, m - 1 - back, 1);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  }
+
+  document.getElementById('generate-exec-report-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('generate-exec-report-btn');
+    // Opened synchronously, in the same tick as the click, and filled in once the
+    // data below arrives -- a popup blocker treats window.open as untrusted the
+    // moment it happens after an await, even one triggered directly by this click.
+    const win = window.open('', '_blank');
+    if (win) { win.document.write('<p style="font-family:sans-serif;color:#888;padding:40px;">Generating report…</p>'); win.document.close(); }
+    btn.disabled = true;
+    btn.textContent = 'Generating…';
+    try {
+      const month = monthInput.value;
+      const trendMonths = [];
+      for (let i = 5; i >= 0; i--) trendMonths.push(priorMonth(month, i));
+      const seriesByMonth = {};
+      await Promise.all(trendMonths.map(async m => {
+        const { data } = await client.rpc('get_rag_scorecard', { p_month: m });
+        seriesByMonth[m] = data || [];
+      }));
+      if (!win) { alert('Your browser blocked the report popup. Please allow popups for this site and try again.'); return; }
+      openExecutiveReportWindow(win, scorecardCache, month, dormantByFirm, trendMonths, seriesByMonth);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Generate Executive Report';
+    }
+  });
+
+  function openExecutiveReportWindow(win, rows, month, dormantMap, trendMonths, seriesByMonth) {
+    const totalActivities = rows.reduce((s, r) => s + Number(r.activity_count), 0);
+    const activeReps = rows.filter(r => Number(r.activity_count) > 0).length;
+    const totalPipelineValue = rows.reduce((s, r) => s + Number(r.pipeline_value_usd || 0), 0);
+    const curSellout = rows.reduce((s, r) => s + Number(r.sellout_revenue || 0), 0);
+    const priorSellout = rows.reduce((s, r) => s + Number(r.prior_sellout_revenue || 0), 0);
+    const momPct = priorSellout === 0 ? null : ((curSellout - priorSellout) / priorSellout) * 100;
+
+    const ragColorBg = { Green: '#e8f5e9', Amber: '#fff6e0', Red: '#fdeaea' };
+    const ragColorFg = { Green: '#2e7d32', Amber: '#b8860b', Red: '#b3261e' };
+    const scorecardRows = rows.map(row => `
+      <tr>
+        <td>${escapeHtml(row.firm_name)}</td>
+        <td>${row.activity_count}</td>
+        <td>${row.demo_gear_count}</td>
+        <td>${row.pipeline_count} (${fmtMoney(row.pipeline_value_usd)})</td>
+        <td>${row.education_count}</td>
+        <td>${momCell(row)}</td>
+        <td><span class="rag-badge" style="background:${ragColorBg[row.rag_status]};color:${ragColorFg[row.rag_status]};">${row.rag_status}</span></td>
+      </tr>
+    `).join('');
+
+    const flagged = rows.filter(r => r.rag_status === 'Red' || Number(r.activity_count) === 0);
+    const exceptionsHtml = flagged.length
+      ? `<ul>${flagged.map(r => `<li><strong>${escapeHtml(r.firm_name)}</strong> — ${Number(r.activity_count) === 0 ? 'no activity submitted' : r.activity_count + ' activities'}, RAG: ${r.rag_status}</li>`).join('')}</ul>`
+      : '<p style="color:#2e7d32;">No exceptions — all reps on track.</p>';
+
+    const dormantEntries = [...dormantMap.entries()].filter(([, accts]) => accts.length > 0);
+    const totalDormant = dormantEntries.reduce((s, [, accts]) => s + accts.length, 0);
+    const firmName = (id) => (rows.find(r => r.rep_firm_id === id) || {}).firm_name || '(unknown firm)';
+    const dormantHtml = dormantEntries.length
+      ? `<p><strong>${totalDormant} account${totalDormant === 1 ? '' : 's'}</strong> with no linked activity in the last 3 months: ${dormantEntries.map(([id, accts]) => `${escapeHtml(firmName(id))} (${accts.length})`).join(', ')}.</p>`
+      : '<p style="color:#2e7d32;">No dormant accounts.</p>';
+
+    const activityData = trendMonths.map(m => seriesByMonth[m].reduce((s, r) => s + Number(r.activity_count), 0));
+    const pipelineData = trendMonths.map(m => seriesByMonth[m].reduce((s, r) => s + Number(r.pipeline_value_usd || 0), 0));
+    const selloutData = trendMonths.map(m => seriesByMonth[m].reduce((s, r) => s + Number(r.sellout_revenue || 0), 0));
+
+    win.document.write(`<!doctype html><html><head><meta charset="utf-8">
+      <title>Executive Report — ${escapeHtml(month)}</title>
+      <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap" rel="stylesheet">
+      <style>
+        body{font-family:'Montserrat',sans-serif;color:#333;max-width:900px;margin:40px auto;padding:0 20px;}
+        h1{font-size:22px;margin-bottom:2px;} .sub{color:#888;font-size:13px;margin-bottom:24px;}
+        h2{font-size:15px;text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid #d9a653;padding-bottom:6px;margin-top:32px;}
+        table{width:100%;border-collapse:collapse;font-size:13px;margin-top:10px;}
+        th,td{padding:8px 10px;border-bottom:1px solid #eee;text-align:left;}
+        th{background:#f8f8f8;text-transform:uppercase;font-size:11px;letter-spacing:.4px;}
+        .rag-badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase;}
+        .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-top:14px;}
+        .kpi-tile{background:#f8f8f8;border-radius:4px;padding:16px;}
+        .kpi-label{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#999;}
+        .kpi-value{font-size:24px;font-weight:700;color:#000;margin-top:6px;}
+        .charts-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px;margin-top:14px;}
+        .chart-card{background:#f8f8f8;border-radius:4px;padding:14px;}
+        .chart-card h3{font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;margin:0 0 10px;}
+        .exceptions-box{background:#fdeaea;border-radius:4px;padding:14px 18px;margin-top:10px;}
+        .dormant-box{background:#fff6e0;border-radius:4px;padding:14px 18px;margin-top:10px;}
+        .btn{background:#d9a653;border:none;padding:10px 20px;font-weight:700;font-size:12px;text-transform:uppercase;border-radius:3px;cursor:pointer;margin-right:8px;}
+        @media print { .no-print { display:none; } }
+      </style></head><body>
+      <h1>Executive Performance Report</h1>
+      <div class="sub">${escapeHtml(month)} — generated ${new Date().toLocaleDateString()}</div>
+
+      <div class="kpi-grid">
+        <div class="kpi-tile"><div class="kpi-label">Total Activities</div><div class="kpi-value">${totalActivities}</div></div>
+        <div class="kpi-tile"><div class="kpi-label">Active Reps</div><div class="kpi-value">${activeReps} / ${rows.length}</div></div>
+        <div class="kpi-tile"><div class="kpi-label">Total Pipeline Value</div><div class="kpi-value">${fmtMoney(totalPipelineValue)}</div></div>
+        <div class="kpi-tile"><div class="kpi-label">Sell-out MoM</div><div class="kpi-value">${momPct === null ? '—' : (momPct > 0 ? '+' : '') + momPct.toFixed(1) + '%'}</div></div>
+      </div>
+
+      <h2>Rep Scorecard</h2>
+      <table><thead><tr><th>Firm</th><th>Activities</th><th>Demo Gear</th><th>Pipeline</th><th>Education</th><th>Sell-out MoM</th><th>RAG</th></tr></thead>
+      <tbody>${scorecardRows}</tbody></table>
+
+      <h2>Exceptions</h2>
+      <div class="exceptions-box">${exceptionsHtml}</div>
+
+      <h2>Dormant Accounts</h2>
+      <div class="dormant-box">${dormantHtml}</div>
+
+      <h2>6-Month Trends</h2>
+      <div class="charts-grid">
+        <div class="chart-card"><h3>Activities</h3><canvas id="chart-activities"></canvas></div>
+        <div class="chart-card"><h3>Pipeline Value</h3><canvas id="chart-pipeline"></canvas></div>
+        <div class="chart-card"><h3>Sell-out Revenue</h3><canvas id="chart-sellout"></canvas></div>
+      </div>
+
+      <div class="no-print" style="margin-top:24px;">
+        <button class="btn" onclick="window.print()">Print / Save as PDF</button>
+      </div>
+
+      <script src="https://cdn.jsdelivr.net/npm/chart.js@4"><\/script>
+      <script>
+        const labels = ${JSON.stringify(trendMonths)};
+        const commonOpts = { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } };
+        new Chart(document.getElementById('chart-activities'), { type: 'line', data: { labels, datasets: [{ data: ${JSON.stringify(activityData)}, borderColor: '#d9a653', backgroundColor: '#d9a65333', fill: true, tension: .3 }] }, options: commonOpts });
+        new Chart(document.getElementById('chart-pipeline'), { type: 'bar', data: { labels, datasets: [{ data: ${JSON.stringify(pipelineData)}, backgroundColor: '#000000' }] }, options: commonOpts });
+        new Chart(document.getElementById('chart-sellout'), { type: 'line', data: { labels, datasets: [{ data: ${JSON.stringify(selloutData)}, borderColor: '#2e7d32', backgroundColor: '#2e7d3233', fill: true, tension: .3 }] }, options: commonOpts });
       <\/script>
       </body></html>`);
     win.document.close();
