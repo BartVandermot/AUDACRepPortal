@@ -655,7 +655,11 @@ Deno.serve(async (req: Request) => {
       }
 
       if (upserts.length) {
-        const { error } = await svc.from("pipeline_entries").upsert(upserts, { onConflict: "crm_id,reporting_month" });
+        // crm_id alone -- not (crm_id, reporting_month) -- so a deal that
+        // transitions from Open to Won/Lost (which moves it from its created
+        // month to its closed month) updates its one existing row instead of
+        // leaving a stale duplicate behind under the old month.
+        const { error } = await svc.from("pipeline_entries").upsert(upserts, { onConflict: "crm_id" });
         if (error) throw new Error(`pipeline_entries upsert failed: ${error.message}`);
       }
 

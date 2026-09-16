@@ -323,11 +323,45 @@
       </table>
     </div>
 
-    <div class="upload-hint" style="margin-top:22px;">D365 export (.xlsx or .csv) — imported for the Reporting Month selected above.</div>
+    <div class="upload-hint" style="margin-top:22px;">D365 export (.xlsx or .csv) — imported for the deal's own Created Date, not necessarily the month selected above (that's only used as a fallback when a row has no created date at all).</div>
     <div class="kpi-row" id="pipeline-csv-kpi-row"></div>
     <input type="file" accept=".csv,.xlsx,.xls" id="file-pipeline">
     <div id="mapping-area-pipeline"></div>
     <div id="status-pipeline"></div>
+
+    <div class="dd-sub-title" style="margin-top:22px;">Imported Pipeline Records (CSV)</div>
+    <div class="upload-hint">Every pipeline row imported via the CSV fallback above (separate from the CRM-synced Opportunities table further up).</div>
+    <div class="toolbar" style="margin-bottom:12px;">
+      <div>
+        <label for="pipe-csv-search-input">Search</label>
+        <input type="text" id="pipe-csv-search-input" placeholder="Project, account…">
+      </div>
+      <div>
+        <label for="pipe-csv-search-firm">Rep Firm</label>
+        <select id="pipe-csv-search-firm"><option value="">All</option></select>
+      </div>
+      <div>
+        <label for="pipe-csv-search-filter">Show</label>
+        <select id="pipe-csv-search-filter">
+          <option value="">All</option>
+          <option value="norepfirm">No rep firm mapping</option>
+        </select>
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <button type="button" class="audac-btn-outline" id="pipe-csv-export-btn">Export to Excel</button>
+      </div>
+    </div>
+    <div class="result-count" id="pipe-csv-search-count"></div>
+    <div style="overflow-x:auto;">
+      <table class="detail">
+        <thead><tr>
+          <th>Project</th><th>Account</th><th>Rep Firm</th><th>Value</th>
+          <th>Created</th><th>Expected Close</th><th>Reporting Month</th><th></th><th></th>
+        </tr></thead>
+        <tbody id="pipe-csv-search-results"></tbody>
+      </table>
+    </div>
   </div>
 
   <div class="tab-panel" id="tab-sellout">
@@ -388,6 +422,7 @@
   let pipelineEntriesCache = [];
   let mappingsCache = [];
   let educationRecordsCache = [];
+  let pipelineCsvCache = [];
   let profileEmailById = new Map();
 
   const CONTACT_TYPES = ['Dealer', 'Consultant', 'End User'];
@@ -1054,6 +1089,10 @@
       // re-uploaded, not a legitimately recurring monthly value -- checked across
       // all months, same reasoning as education.
       duplicateKey: { fields: ['account_name', 'project_name', 'created_date'], scopeToMonth: false },
+      // A deal counts toward the month it was actually created, not whichever
+      // month happened to be selected in the picker at upload time -- same
+      // reasoning (and the same historical bug this avoids) as Education.
+      reportingMonthFrom: 'created_date',
     },
     {
       source: 'sellout', label: 'Sell-out', table: 'sellout_records',
@@ -1786,6 +1825,7 @@
       (details.length ? `<ul style="margin:6px 0 0 18px; padding:0;">${details.join('')}</ul>` : '');
 
     if (sourceConfig.source === 'education') await loadEducationRecords();
+    else if (sourceConfig.source === 'pipeline') await loadPipelineCsvEntries();
     else await refreshImportKpis();
   }
 
@@ -1797,16 +1837,10 @@
   // successful import.
   async function refreshImportKpis() {
     const month = importMonthInput.value;
-    const [pipeMonth, pipeTotal, soMonth, soTotal] = await Promise.all([
-      client.from('pipeline_entries').select('id', { count: 'exact', head: true }).eq('reporting_month', month).is('crm_id', null),
-      client.from('pipeline_entries').select('id', { count: 'exact', head: true }).is('crm_id', null),
+    const [soMonth, soTotal] = await Promise.all([
       client.from('sellout_records').select('id', { count: 'exact', head: true }).eq('reporting_month', month),
       client.from('sellout_records').select('id', { count: 'exact', head: true }),
     ]);
-    document.getElementById('pipeline-csv-kpi-row').innerHTML = `
-      <div class="kpi-tile"><div class="kpi-label">CSV-Imported for ${month}</div><div class="kpi-value">${pipeMonth.count ?? 0}</div></div>
-      <div class="kpi-tile"><div class="kpi-label">Total CSV-Imported (All Time)</div><div class="kpi-value">${pipeTotal.count ?? 0}</div></div>
-    `;
     document.getElementById('sellout-kpi-row').innerHTML = `
       <div class="kpi-tile"><div class="kpi-label">Records for ${month}</div><div class="kpi-value">${soMonth.count ?? 0}</div></div>
       <div class="kpi-tile"><div class="kpi-label">Total Records (All Time)</div><div class="kpi-value">${soTotal.count ?? 0}</div></div>
@@ -1816,8 +1850,125 @@
     await refreshImportKpis();
     renderEducationKpis();
     renderEducationRecords();
+    renderPipelineCsvKpis();
+    renderPipelineCsvEntries();
   }
   importMonthInput.addEventListener('change', onImportMonthChange);
+
+  // ---------- Pipeline (CSV): browse, review, delete ----------
+  // Same gap Education had -- the CSV fallback had a KPI tile but no way to
+  // see, search, or fix an individual imported row; separate from the
+  // CRM-synced Opportunities table above, which already has its own browse UI.
+  async function loadPipelineCsvEntries() {
+    const { data, error } = await client.from('pipeline_entries').select('*').is('crm_id', null).order('created_date', { ascending: false, nullsFirst: false });
+    if (error) {
+      document.getElementById('pipe-csv-search-results').innerHTML = `<tr><td colspan="9" class="empty-note">Failed to load: ${escapeHtml(error.message)}</td></tr>`;
+      return;
+    }
+    pipelineCsvCache = data || [];
+    populatePipeCsvFirmFilter();
+    renderPipelineCsvKpis();
+    renderPipelineCsvEntries();
+  }
+
+  function populatePipeCsvFirmFilter() {
+    const sel = document.getElementById('pipe-csv-search-firm');
+    const current = sel.value;
+    sel.innerHTML = '<option value="">All</option>' + firmsCache.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`).join('');
+    sel.value = current || '';
+  }
+
+  function renderPipelineCsvKpis() {
+    const month = importMonthInput.value;
+    const forMonth = pipelineCsvCache.filter(r => r.reporting_month === month).length;
+    const noRepFirm = pipelineCsvCache.filter(r => !r.rep_firm_id).length;
+    document.getElementById('pipeline-csv-kpi-row').innerHTML = `
+      <div class="kpi-tile"><div class="kpi-label">Created in ${month}</div><div class="kpi-value">${forMonth}</div></div>
+      <div class="kpi-tile"><div class="kpi-label">Total CSV-Imported (All Time)</div><div class="kpi-value">${pipelineCsvCache.length}</div></div>
+      <div class="kpi-tile"><div class="kpi-label">No Rep Firm Mapping</div><div class="kpi-value">${noRepFirm}</div></div>
+    `;
+  }
+
+  function getFilteredPipelineCsvEntries() {
+    const q = document.getElementById('pipe-csv-search-input').value.trim().toLowerCase();
+    const firmFilter = document.getElementById('pipe-csv-search-firm').value;
+    const filter = document.getElementById('pipe-csv-search-filter').value;
+    let rows = pipelineCsvCache;
+    if (firmFilter) rows = rows.filter(r => r.rep_firm_id === firmFilter);
+    if (filter === 'norepfirm') rows = rows.filter(r => !r.rep_firm_id);
+    if (q) rows = rows.filter(r => `${r.project_name || ''} ${r.account_name || ''}`.toLowerCase().includes(q));
+    return rows;
+  }
+
+  function renderPipelineCsvEntries() {
+    const rows = getFilteredPipelineCsvEntries();
+    document.getElementById('pipe-csv-search-count').textContent = `Showing ${rows.length} of ${pipelineCsvCache.length} imported pipeline record(s)`;
+    const tbody = document.getElementById('pipe-csv-search-results');
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="9" class="empty-note">${pipelineCsvCache.length ? 'No records match the current filters.' : 'No CSV pipeline records imported yet.'}</td></tr>`;
+      return;
+    }
+    const firmNameById = new Map(firmsCache.map(f => [f.id, f.name]));
+    const fmtMoney = (v) => v == null ? '' : Number(v).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+    tbody.innerHTML = rows.map(r => `
+      <tr>
+        <td>${escapeHtml(r.project_name || '')}</td>
+        <td>${escapeHtml(r.account_name || '')}</td>
+        <td>${escapeHtml(firmNameById.get(r.rep_firm_id) || '')}</td>
+        <td>${fmtMoney(r.value_usd)}</td>
+        <td>${r.created_date || ''}</td>
+        <td>${r.expected_close_date || ''}</td>
+        <td>${r.reporting_month || ''}</td>
+        <td>${r.rep_firm_id ? '' : '<span class="status-badge open">No rep firm</span>'}</td>
+        <td><button type="button" class="link-btn danger" data-del-pipeline-csv="${r.id}">Delete</button></td>
+      </tr>
+    `).join('');
+    tbody.querySelectorAll('[data-del-pipeline-csv]').forEach(btn => btn.addEventListener('click', () => deletePipelineCsvEntry(btn.dataset.delPipelineCsv)));
+  }
+
+  async function deletePipelineCsvEntry(id) {
+    if (!confirm('Delete this pipeline record? This cannot be undone.')) return;
+    const { error } = await client.from('pipeline_entries').delete().eq('id', id);
+    if (error) { alert('Could not delete: ' + error.message); return; }
+    pipelineCsvCache = pipelineCsvCache.filter(r => r.id !== id);
+    renderPipelineCsvKpis();
+    renderPipelineCsvEntries();
+  }
+
+  async function exportPipelineCsvToExcel() {
+    const btn = document.getElementById('pipe-csv-export-btn');
+    btn.disabled = true;
+    btn.textContent = 'Exporting…';
+    try {
+      const rows = getFilteredPipelineCsvEntries();
+      if (!rows.length) {
+        alert('No records match the current filters — nothing to export.');
+        return;
+      }
+      const firmNameById = new Map(firmsCache.map(f => [f.id, f.name]));
+      const sheetRows = rows.map(r => ({
+        'Project': r.project_name || '',
+        'Account': r.account_name || '',
+        'Rep Firm': firmNameById.get(r.rep_firm_id) || '',
+        'Value (USD)': r.value_usd ?? '',
+        'Created': r.created_date || '',
+        'Expected Close': r.expected_close_date || '',
+        'Reporting Month': r.reporting_month || '',
+      }));
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheetRows), 'Pipeline CSV');
+      const dateStr = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(wb, `audac-pipeline-csv-export-${dateStr}.xlsx`);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Export to Excel';
+    }
+  }
+
+  document.getElementById('pipe-csv-search-input').addEventListener('input', renderPipelineCsvEntries);
+  document.getElementById('pipe-csv-search-firm').addEventListener('change', renderPipelineCsvEntries);
+  document.getElementById('pipe-csv-search-filter').addEventListener('change', renderPipelineCsvEntries);
+  document.getElementById('pipe-csv-export-btn').addEventListener('click', exportPipelineCsvToExcel);
 
   // ---------- Education Records: browse, review, delete ----------
   // Education never had any read UI at all -- a mis-imported certificate could
@@ -2114,7 +2265,7 @@
     document.getElementById('activity-search-to').value = nowMonth;
     document.getElementById('activity-search-from').value = trailingMonths(nowMonth, 6)[5];
     await fetchAllAttachmentCounts();
-    await Promise.all([loadActivitySearchRange(), loadAuditLog(), loadPipelineEntries(), refreshImportKpis(), loadCompanyMappings(), loadEducationRecords()]);
+    await Promise.all([loadActivitySearchRange(), loadAuditLog(), loadPipelineEntries(), refreshImportKpis(), loadCompanyMappings(), loadEducationRecords(), loadPipelineCsvEntries()]);
     switchTab((window.location.hash || '').replace('#', ''));
   })();
 </script>
