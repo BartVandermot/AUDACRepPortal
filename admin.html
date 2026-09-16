@@ -921,7 +921,11 @@
       source: 'education', label: 'Education Records', table: 'education_records',
       fields: [
         { key: 'company', label: 'Company / Dealer Name', required: true, resolutionOnly: true },
-        { key: 'email', label: 'Email (matches CRM contact for more precise firm resolution)', required: false, resolutionOnly: true },
+        // Required (as a mapping, not per-row -- resolutionOnly fields never
+        // block an individual row at import time): someone with a real
+        // education account should already exist as a CRM contact, so this
+        // is the reliable resolution path, not an optional nice-to-have.
+        { key: 'email', label: 'Email (matches CRM contact for more precise firm resolution)', required: true, resolutionOnly: true },
         { key: 'person_name', label: 'Person Name', required: true, parts: [{ key: 'first', label: 'First Name' }, { key: 'last', label: 'Last Name' }] },
         { key: 'course_name', label: 'Course Name', required: true },
         { key: 'completion_date', label: 'Completion Date', required: false, type: 'date' },
@@ -1532,11 +1536,22 @@
     let candidates = []; // { record, companyLabel }
     const unidentifiableFileRows = []; // 1-indexed spreadsheet row numbers (header = row 1)
     let skippedMissingFields = 0;
+    let noContactMatchCount = 0;
     const requiredFields = sourceConfig.fields.filter(f => f.required && !f.resolutionOnly);
 
     rows.forEach((r, i) => {
       const res = classifyCompanyResolution(r, companyIdx, emailIdx, accountsByKey, aliasByKey, contactsByEmail);
       if (res.status === 'error') { unidentifiableFileRows.push(i + 2); return; }
+
+      // Someone with a real education account should already exist as a CRM
+      // contact -- an email that's present but matches nothing there usually
+      // means that person hasn't been synced/entered into CRM yet, worth a
+      // heads-up even though the row still imports via the company/alias
+      // fallback below.
+      if (emailIdx >= 0) {
+        const emailRaw = String(r[emailIdx] || '').trim();
+        if (emailRaw && !(contactsByEmail && contactsByEmail.has(normalizeEmail(emailRaw)))) noContactMatchCount++;
+      }
 
       const record = { rep_firm_id: res.repFirmId || null, reporting_month: month };
       for (const f of sourceConfig.fields) {
@@ -1622,8 +1637,9 @@
     if (duplicateCount) details.push(`<li>${duplicateCount} row(s) <strong>skipped</strong> — already imported previously</li>`);
     if (unidentifiableFileRows.length) details.push(`<li>${unidentifiableFileRows.length} row(s) <strong>not imported</strong> — no company or contact match at all (file row${unidentifiableFileRows.length > 1 ? 's' : ''} ${formatSummaryList(unidentifiableFileRows.map(String))})</li>`);
     if (skippedMissingFields) details.push(`<li>${skippedMissingFields} row(s) <strong>not imported</strong> — missing required data</li>`);
+    if (noContactMatchCount) details.push(`<li>${noContactMatchCount} row(s) in this file had an email that <strong>doesn't match any CRM contact yet</strong> — resolved via company name instead; that person likely isn't in CRM yet</li>`);
 
-    statusEl.className = 'upload-status ' + (unidentifiableFileRows.length ? 'err' : (skippedMissingFields || blankTotal || duplicateCount ? 'warn' : 'ok'));
+    statusEl.className = 'upload-status ' + (unidentifiableFileRows.length ? 'err' : (skippedMissingFields || blankTotal || duplicateCount || noContactMatchCount ? 'warn' : 'ok'));
     statusEl.innerHTML = `<strong>Imported ${toInsert.length} of ${rows.length} row(s) for ${month}.</strong>` +
       (details.length ? `<ul style="margin:6px 0 0 18px; padding:0;">${details.join('')}</ul>` : '');
   }
