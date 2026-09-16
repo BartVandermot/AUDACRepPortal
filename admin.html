@@ -120,6 +120,13 @@
   .status-badge.open { background: var(--amber-bg); color: var(--amber); }
   .status-badge.won { background: var(--green-bg); color: var(--green); }
   .status-badge.lost { background: var(--red-bg); color: var(--red); }
+
+  .kpi-row { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 22px; }
+  .kpi-tile { background: var(--audac-section-bg); border-radius: 4px; padding: 14px 20px; min-width: 140px; }
+  .kpi-tile .kpi-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #999; }
+  .kpi-tile .kpi-value { font-size: 22px; font-weight: 700; color: var(--audac-black); margin-top: 4px; }
+  select.mapping-firm-select { font-family: 'Montserrat', sans-serif; font-size: 12.5px; padding: 6px 8px; border: 1px solid #ddd; border-radius: 3px; max-width: 240px; }
+  .stale-note { font-size: 11.5px; color: var(--amber); margin-top: 6px; }
 </style>
 </head>
 <body>
@@ -147,6 +154,7 @@
     <button type="button" class="tab-btn" data-tab="education">Education</button>
     <button type="button" class="tab-btn" data-tab="pipeline">Pipeline</button>
     <button type="button" class="tab-btn" data-tab="sellout">Sell-out</button>
+    <button type="button" class="tab-btn" data-tab="mappings">Company Mappings</button>
   </div>
 
   <!-- Shared by the three CSV-import tabs -- kept visible regardless of which
@@ -227,6 +235,7 @@
   <!-- ---------- CSV import tabs ---------- -->
   <div class="tab-panel" id="tab-education">
     <h2 class="section-title">Education Records</h2>
+    <div class="kpi-row" id="education-kpi-row"></div>
     <div class="upload-hint">education.audac.eu export (.xlsx or .csv)</div>
     <input type="file" accept=".csv,.xlsx,.xls" id="file-education">
     <div id="mapping-area-education"></div>
@@ -279,6 +288,7 @@
     </div>
 
     <div class="upload-hint" style="margin-top:22px;">D365 export (.xlsx or .csv) — imported for the Reporting Month selected above.</div>
+    <div class="kpi-row" id="pipeline-csv-kpi-row"></div>
     <input type="file" accept=".csv,.xlsx,.xls" id="file-pipeline">
     <div id="mapping-area-pipeline"></div>
     <div id="status-pipeline"></div>
@@ -286,12 +296,43 @@
 
   <div class="tab-panel" id="tab-sellout">
     <h2 class="section-title">Sell-out</h2>
+    <div class="kpi-row" id="sellout-kpi-row"></div>
     <div class="upload-hint">AVL sell-out export (.xlsx or .csv) — imported for the Reporting Month selected above.</div>
     <input type="file" accept=".csv,.xlsx,.xls" id="file-sellout">
     <div id="mapping-area-sellout"></div>
     <div id="status-sellout"></div>
   </div>
 
+  <div class="tab-panel" id="tab-mappings">
+    <h2 class="section-title">Company → Firm Mappings</h2>
+    <div class="upload-hint">Every company/dealer name from an Education, Pipeline, or Sell-out import that didn't already match a synced CRM account — assigned to a firm, or marked "Skip" (not rep-tracked). These decisions are permanent until changed here; they're never re-asked once set, even if the company's CRM data changes later, so a mapping can go stale if a CRM account for it shows up afterward.</div>
+
+    <div class="kpi-row" id="mappings-kpi-row"></div>
+
+    <div class="toolbar">
+      <div>
+        <label for="mappings-search-input">Search</label>
+        <input type="text" id="mappings-search-input" placeholder="Company name…">
+      </div>
+      <div>
+        <label for="mappings-filter">Show</label>
+        <select id="mappings-filter">
+          <option value="">All</option>
+          <option value="assigned">Assigned to a firm</option>
+          <option value="skipped">Skipped</option>
+          <option value="stale">Stale — CRM now disagrees</option>
+        </select>
+      </div>
+    </div>
+    <div class="result-count" id="mappings-result-count"></div>
+
+    <div style="overflow-x:auto;">
+      <table class="detail">
+        <thead><tr><th>Company</th><th>Assignment</th><th></th></tr></thead>
+        <tbody id="mappings-body"></tbody>
+      </table>
+    </div>
+  </div>
 
 </main>
 
@@ -309,6 +350,8 @@
   let auditLogCache = [];
   let selectedActivityIds = new Set();
   let pipelineEntriesCache = [];
+  let mappingsCache = [];
+  let profileEmailById = new Map();
 
   const CONTACT_TYPES = ['Dealer', 'Consultant', 'End User'];
   const ACTIVITY_TYPES = [
@@ -366,7 +409,7 @@
   }
 
   // ---------- Tabs ----------
-  const TAB_NAMES = ['activities', 'education', 'pipeline', 'sellout'];
+  const TAB_NAMES = ['activities', 'education', 'pipeline', 'sellout', 'mappings'];
   const CSV_IMPORT_TABS = ['education', 'pipeline', 'sellout'];
   function switchTab(name) {
     if (!TAB_NAMES.includes(name)) name = 'activities';
@@ -1642,7 +1685,168 @@
     statusEl.className = 'upload-status ' + (unidentifiableFileRows.length ? 'err' : (skippedMissingFields || blankTotal || duplicateCount || noContactMatchCount ? 'warn' : 'ok'));
     statusEl.innerHTML = `<strong>Imported ${toInsert.length} of ${rows.length} row(s) for ${month}.</strong>` +
       (details.length ? `<ul style="margin:6px 0 0 18px; padding:0;">${details.join('')}</ul>` : '');
+
+    await refreshImportKpis();
   }
+
+  // ---------- At-a-glance counts for the three CSV-import tabs ----------
+  // No overview existed at all before this -- nothing told Melissa whether
+  // this month's import for a given source actually happened without
+  // opening that tab and scrolling past the upload form. Refreshed on init,
+  // whenever the shared Reporting Month changes, and right after a
+  // successful import.
+  async function refreshImportKpis() {
+    const month = importMonthInput.value;
+    const [eduMonth, eduTotal, pipeMonth, pipeTotal, soMonth, soTotal] = await Promise.all([
+      client.from('education_records').select('id', { count: 'exact', head: true }).eq('reporting_month', month),
+      client.from('education_records').select('id', { count: 'exact', head: true }),
+      client.from('pipeline_entries').select('id', { count: 'exact', head: true }).eq('reporting_month', month).is('crm_id', null),
+      client.from('pipeline_entries').select('id', { count: 'exact', head: true }).is('crm_id', null),
+      client.from('sellout_records').select('id', { count: 'exact', head: true }).eq('reporting_month', month),
+      client.from('sellout_records').select('id', { count: 'exact', head: true }),
+    ]);
+    document.getElementById('education-kpi-row').innerHTML = `
+      <div class="kpi-tile"><div class="kpi-label">Records for ${month}</div><div class="kpi-value">${eduMonth.count ?? 0}</div></div>
+      <div class="kpi-tile"><div class="kpi-label">Total Records (All Time)</div><div class="kpi-value">${eduTotal.count ?? 0}</div></div>
+    `;
+    document.getElementById('pipeline-csv-kpi-row').innerHTML = `
+      <div class="kpi-tile"><div class="kpi-label">CSV-Imported for ${month}</div><div class="kpi-value">${pipeMonth.count ?? 0}</div></div>
+      <div class="kpi-tile"><div class="kpi-label">Total CSV-Imported (All Time)</div><div class="kpi-value">${pipeTotal.count ?? 0}</div></div>
+    `;
+    document.getElementById('sellout-kpi-row').innerHTML = `
+      <div class="kpi-tile"><div class="kpi-label">Records for ${month}</div><div class="kpi-value">${soMonth.count ?? 0}</div></div>
+      <div class="kpi-tile"><div class="kpi-label">Total Records (All Time)</div><div class="kpi-value">${soTotal.count ?? 0}</div></div>
+    `;
+  }
+  importMonthInput.addEventListener('change', refreshImportKpis);
+
+  // ---------- Company -> Firm Mappings ----------
+  // The only other UI for rep_firm_aliases is the one-time "ask" prompt
+  // during an import when a company has no mapping yet -- once set (assigned
+  // or explicitly skipped), that decision is invisible forever, with no way
+  // to review or correct it short of editing the database directly. This is
+  // the missing management surface, and it also flags the specific failure
+  // mode that invisibility enables: a company aliased before it had a synced
+  // CRM account can go stale the moment that account (and a real resolved
+  // rep firm) shows up later, since the alias is checked first and never
+  // automatically revisited.
+  function isStaleMapping(alias) {
+    if (!accountsCache.loaded) return false;
+    const crmFirmId = accountsCache.byKey.get(alias.alias_key);
+    return crmFirmId !== undefined && crmFirmId !== null && crmFirmId !== alias.rep_firm_id;
+  }
+
+  async function loadCompanyMappings() {
+    const { data, error } = await client.from('rep_firm_aliases').select('*').order('display_name');
+    if (error) {
+      document.getElementById('mappings-body').innerHTML = `<tr><td colspan="3" class="empty-note">Failed to load: ${escapeHtml(error.message)}</td></tr>`;
+      return;
+    }
+    mappingsCache = data || [];
+    const updatedByIds = [...new Set(mappingsCache.map(a => a.updated_by).filter(Boolean))];
+    if (updatedByIds.length) {
+      const { data: profs } = await client.from('profiles').select('id, email').in('id', updatedByIds);
+      profileEmailById = new Map((profs || []).map(p => [p.id, p.email]));
+    }
+    await loadCrmAccounts();
+    renderMappingsKpis();
+    renderMappingsTable();
+  }
+
+  function renderMappingsKpis() {
+    const total = mappingsCache.length;
+    const assigned = mappingsCache.filter(a => a.rep_firm_id).length;
+    const stale = mappingsCache.filter(isStaleMapping).length;
+    document.getElementById('mappings-kpi-row').innerHTML = `
+      <div class="kpi-tile"><div class="kpi-label">Total Mappings</div><div class="kpi-value">${total}</div></div>
+      <div class="kpi-tile"><div class="kpi-label">Assigned to a Firm</div><div class="kpi-value">${assigned}</div></div>
+      <div class="kpi-tile"><div class="kpi-label">Skipped</div><div class="kpi-value">${total - assigned}</div></div>
+      <div class="kpi-tile"><div class="kpi-label">Stale — CRM Disagrees</div><div class="kpi-value">${stale}</div></div>
+    `;
+  }
+
+  function getFilteredMappings() {
+    const q = document.getElementById('mappings-search-input').value.trim().toLowerCase();
+    const filter = document.getElementById('mappings-filter').value;
+    let rows = mappingsCache;
+    if (q) rows = rows.filter(a => a.display_name.toLowerCase().includes(q));
+    if (filter === 'assigned') rows = rows.filter(a => a.rep_firm_id);
+    else if (filter === 'skipped') rows = rows.filter(a => !a.rep_firm_id);
+    else if (filter === 'stale') rows = rows.filter(isStaleMapping);
+    return rows;
+  }
+
+  function renderMappingsTable() {
+    const rows = getFilteredMappings();
+    document.getElementById('mappings-result-count').textContent = `Showing ${rows.length} of ${mappingsCache.length} mappings`;
+    const tbody = document.getElementById('mappings-body');
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="3" class="empty-note">${mappingsCache.length ? 'No mappings match the current filters.' : 'No company mappings yet.'}</td></tr>`;
+      return;
+    }
+    const firmOptions = ['<option value="">Skip — not a rep-tracked account</option>']
+      .concat(firmsCache.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`)).join('');
+    const firmNameById = new Map(firmsCache.map(f => [f.id, f.name]));
+
+    tbody.innerHTML = rows.map(a => {
+      const stale = isStaleMapping(a);
+      const crmFirmName = stale ? (firmNameById.get(accountsCache.byKey.get(a.alias_key)) || 'Unknown firm') : null;
+      const staleNote = stale
+        ? `<div class="stale-note">CRM now resolves this to <strong>${escapeHtml(crmFirmName)}</strong> — <button type="button" class="link-btn" data-fix-mapping="${escapeHtml(a.alias_key)}">Use this instead</button></div>`
+        : '';
+      const email = a.updated_by ? profileEmailById.get(a.updated_by) : null;
+      const when = a.updated_at ? new Date(a.updated_at).toLocaleDateString() : '';
+      return `
+        <tr data-alias-key="${escapeHtml(a.alias_key)}">
+          <td>${escapeHtml(a.display_name)}</td>
+          <td>
+            <select class="mapping-firm-select" data-alias-key="${escapeHtml(a.alias_key)}">${firmOptions}</select>
+            ${staleNote}
+            ${email ? `<div class="muted" style="font-size:11px; margin-top:4px;">Set by ${escapeHtml(email)}${when ? ' · ' + when : ''}</div>` : ''}
+          </td>
+          <td><button type="button" class="link-btn danger" data-remove-mapping="${escapeHtml(a.alias_key)}">Remove</button></td>
+        </tr>
+      `;
+    }).join('');
+
+    tbody.querySelectorAll('select.mapping-firm-select').forEach(sel => {
+      const key = sel.dataset.aliasKey;
+      const alias = mappingsCache.find(a => a.alias_key === key);
+      sel.value = alias.rep_firm_id || '';
+      sel.addEventListener('change', () => saveMappingFirm(key, sel.value || null));
+    });
+    tbody.querySelectorAll('[data-fix-mapping]').forEach(btn => {
+      btn.addEventListener('click', () => saveMappingFirm(btn.dataset.fixMapping, accountsCache.byKey.get(btn.dataset.fixMapping)));
+    });
+    tbody.querySelectorAll('[data-remove-mapping]').forEach(btn => {
+      btn.addEventListener('click', () => removeMapping(btn.dataset.removeMapping));
+    });
+  }
+
+  async function saveMappingFirm(aliasKey, repFirmId) {
+    const { error } = await client.from('rep_firm_aliases').update({
+      rep_firm_id: repFirmId || null, updated_by: currentUser.id, updated_at: new Date().toISOString(),
+    }).eq('alias_key', aliasKey);
+    if (error) { alert('Could not update mapping: ' + error.message); return; }
+    const alias = mappingsCache.find(a => a.alias_key === aliasKey);
+    if (alias) { alias.rep_firm_id = repFirmId || null; alias.updated_by = currentUser.id; alias.updated_at = new Date().toISOString(); }
+    await loadAliases(true); // keeps the shared cache the import flows read in sync
+    renderMappingsKpis();
+    renderMappingsTable();
+  }
+
+  async function removeMapping(aliasKey) {
+    if (!confirm('Remove this mapping? The next import mentioning this company will ask for a firm again.')) return;
+    const { error } = await client.from('rep_firm_aliases').delete().eq('alias_key', aliasKey);
+    if (error) { alert('Could not remove mapping: ' + error.message); return; }
+    mappingsCache = mappingsCache.filter(a => a.alias_key !== aliasKey);
+    await loadAliases(true);
+    renderMappingsKpis();
+    renderMappingsTable();
+  }
+
+  document.getElementById('mappings-search-input').addEventListener('input', renderMappingsTable);
+  document.getElementById('mappings-filter').addEventListener('change', renderMappingsTable);
 
   // ---------- Init ----------
   (async function init() {
@@ -1660,7 +1864,7 @@
     document.getElementById('activity-search-to').value = nowMonth;
     document.getElementById('activity-search-from').value = trailingMonths(nowMonth, 6)[5];
     await fetchAllAttachmentCounts();
-    await Promise.all([loadActivitySearchRange(), loadAuditLog(), loadPipelineEntries()]);
+    await Promise.all([loadActivitySearchRange(), loadAuditLog(), loadPipelineEntries(), refreshImportKpis(), loadCompanyMappings()]);
     switchTab((window.location.hash || '').replace('#', ''));
   })();
 </script>
