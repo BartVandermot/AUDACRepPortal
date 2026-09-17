@@ -74,6 +74,7 @@
   .badge-parent.via-state { background: var(--amber-bg); color: var(--amber); }
   .badge-parent.via-manual { background: #eee; color: #777; }
   .badge-parent.override { background: #eee; color: #777; }
+  .badge-parent.inactive { background: var(--red-bg); color: var(--red); }
   .muted { color: #bbb; }
 
   tr.contacts-row td { background: var(--audac-section-bg); padding: 14px 20px; }
@@ -156,6 +157,14 @@
           <option value="dataverse">Synced from CRM</option>
         </select>
       </div>
+      <div class="field">
+        <label for="status-filter">Status</label>
+        <select id="status-filter">
+          <option value="active">Active</option>
+          <option value="inactive">Inactive in CRM</option>
+          <option value="">All</option>
+        </select>
+      </div>
       <button class="audac-btn-outline" id="export-btn">Export to Excel</button>
     </div>
 
@@ -206,6 +215,14 @@
           <option value="manual">Manually overridden</option>
           <option value="auto">Auto (from account)</option>
           <option value="blocking">Blocking pipeline sync</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="contact-status-filter">Status</label>
+        <select id="contact-status-filter">
+          <option value="active">Active</option>
+          <option value="inactive">Inactive in CRM</option>
+          <option value="">All</option>
         </select>
       </div>
     </div>
@@ -341,31 +358,39 @@
         level === 'active_only' ? ' [country filter unavailable — active records only]' :
         level === 'none' ? ' [WARNING: no server-side filter applied — pulled the full table]' : '';
 
+      // Sent unchanged on every page of a phase's run -- lets the final page
+      // tell "confirmed active by this run" from "not seen since before it
+      // started" (deactivated in Dataverse since the last sync) without any
+      // server-side state between these stateless invocations.
+      const accSyncStartedAt = new Date().toISOString();
       let cursor = null;
-      let accTotal = 0, accMatchedByParent = 0, accMatchedByState = 0, accOutOfTerritory = 0, accNoState = 0, accPreservedOverrides = 0, accLevel = 'full';
+      let accTotal = 0, accMatchedByParent = 0, accMatchedByState = 0, accOutOfTerritory = 0, accNoState = 0, accPreservedOverrides = 0, accDeactivated = 0, accLevel = 'full';
       let firstAccountsPage = true;
       do {
         btn.textContent = `Syncing accounts… (${accTotal} so far)`;
-        const res = await invokeCrmSync({ phase: 'accounts', cursor });
+        const res = await invokeCrmSync({ phase: 'accounts', cursor, syncStartedAt: accSyncStartedAt });
         accTotal += res.processed;
         accMatchedByParent += res.matchedByParent || 0;
         accMatchedByState += res.matchedByState || 0;
         accOutOfTerritory += res.outOfTerritory;
         accNoState += res.noState;
         accPreservedOverrides += res.preservedOverrides || 0;
+        accDeactivated += res.deactivated || 0;
         if (firstAccountsPage) { accLevel = res.filterLevel || 'full'; firstAccountsPage = false; }
         cursor = res.nextCursor;
       } while (cursor);
 
+      const conSyncStartedAt = new Date().toISOString();
       cursor = null;
-      let conTotal = 0, conMatched = 0, conPreservedOverrides = 0, conLevel = 'full';
+      let conTotal = 0, conMatched = 0, conPreservedOverrides = 0, conDeactivated = 0, conLevel = 'full';
       let firstContactsPage = true;
       do {
         btn.textContent = `Syncing contacts… (${conTotal} so far)`;
-        const res = await invokeCrmSync({ phase: 'contacts', cursor });
+        const res = await invokeCrmSync({ phase: 'contacts', cursor, syncStartedAt: conSyncStartedAt });
         conTotal += res.processed;
         conMatched += res.matchedToFirm;
         conPreservedOverrides += res.preservedOverrides || 0;
+        conDeactivated += res.deactivated || 0;
         if (firstContactsPage) { conLevel = res.filterLevel || 'full'; firstContactsPage = false; }
         cursor = res.nextCursor;
       } while (cursor);
@@ -375,9 +400,9 @@
       statusEl.textContent =
         `Synced ${accTotal} account(s)${filterNote(accLevel)} — ${accMatched} matched to a rep firm ` +
         `(${accMatchedByParent} via parent/own account, ${accMatchedByState} via state, ${accPreservedOverrides} kept as manually corrected), ` +
-        `${accOutOfTerritory} outside configured territories, ${accNoState} missing/unrecognized state. ` +
+        `${accOutOfTerritory} outside configured territories, ${accNoState} missing/unrecognized state, ${accDeactivated} no longer active in CRM. ` +
         `Synced ${conTotal} contact(s)${filterNote(conLevel)} — ${conMatched} have a rep firm ` +
-        `(${conPreservedOverrides} kept as manually corrected, the rest inherited from their account).`;
+        `(${conPreservedOverrides} kept as manually corrected, the rest inherited from their account), ${conDeactivated} no longer active in CRM.`;
 
       await loadAll();
     } catch (err) {
@@ -448,11 +473,17 @@
     const q = document.getElementById('search-input').value.trim().toLowerCase();
     const firmFilter = document.getElementById('firm-filter').value;
     const sourceFilter = document.getElementById('source-filter').value;
+    const statusFilter = document.getElementById('status-filter').value;
 
     let rows = accountsCache.filter(a => matchesSearch(a, q));
     if (firmFilter === '__unassigned') rows = rows.filter(a => !a.rep_firm_id);
     else if (firmFilter) rows = rows.filter(a => a.rep_firm_id === firmFilter);
     if (sourceFilter) rows = rows.filter(a => (a.source || 'dataverse') === sourceFilter);
+    // Manual rows are never touched by the sync's deactivation sweep, so they
+    // stay is_active=true forever -- this naturally never hides them under
+    // "Active" or shows them under "Inactive", with no special-casing needed.
+    if (statusFilter === 'active') rows = rows.filter(a => a.is_active !== false);
+    else if (statusFilter === 'inactive') rows = rows.filter(a => a.is_active === false);
     if (needsReviewOnly()) {
       rows = rows.filter(a => !a.rep_firm_id || a.source === 'manual');
       // An unassigned account with contacts or activity under it matters far
@@ -497,7 +528,7 @@
       const mainRow = `
         <tr data-id="${a.external_id}">
           <td><input type="checkbox" class="row-select" data-account="${a.external_id}" ${selectedAccountIds.has(a.external_id) ? 'checked' : ''}></td>
-          <td><button class="row-name-btn" data-toggle="${a.external_id}"><span class="expand-caret">${caret}</span>${escapeHtml(a.name)}</button></td>
+          <td><button class="row-name-btn" data-toggle="${a.external_id}"><span class="expand-caret">${caret}</span>${escapeHtml(a.name)}</button>${a.is_active === false ? '<span class="badge-parent inactive" title="No longer in Dataverse’s active set as of the last sync">Inactive in CRM</span>' : ''}</td>
           <td>${escapeHtml(a.city || '')}</td>
           <td>${escapeHtml(a.state_raw || '')}</td>
           <td>${escapeHtml(a.zip || '')}</td>
@@ -709,7 +740,7 @@
     return `
       <tr data-contact-id="${c.external_id}">
         ${checkboxCell}
-        <td>${escapeHtml(c.full_name || '')}</td>
+        <td>${escapeHtml(c.full_name || '')}${c.is_active === false ? '<span class="badge-parent inactive" title="No longer in Dataverse’s active set as of the last sync">Inactive in CRM</span>' : ''}</td>
         <td>${escapeHtml(c.email || '')}</td>
         ${accountCell}
         <td>${sourceCell}${mergeControl}</td>
@@ -753,6 +784,7 @@
   document.getElementById('search-input').addEventListener('input', renderAccounts);
   document.getElementById('firm-filter').addEventListener('change', renderAccounts);
   document.getElementById('source-filter').addEventListener('change', renderAccounts);
+  document.getElementById('status-filter').addEventListener('change', renderAccounts);
   document.getElementById('needs-review-toggle').addEventListener('change', () => { renderAccounts(); renderContactsFlatTable(); });
 
   // ---------- CRM Contacts (flat list) ----------
@@ -796,6 +828,7 @@
     const q = document.getElementById('contact-search-input').value.trim().toLowerCase();
     const firmFilter = document.getElementById('contact-firm-filter').value;
     const resolutionFilter = document.getElementById('contact-resolution-filter').value;
+    const statusFilter = document.getElementById('contact-status-filter').value;
 
     let rows = allContactsCache.filter(c => matchesContactSearch(c, q));
     if (firmFilter === '__unassigned') rows = rows.filter(c => !c.rep_firm_id);
@@ -803,6 +836,8 @@
     if (resolutionFilter === 'manual') rows = rows.filter(c => c.rep_firm_overridden);
     else if (resolutionFilter === 'auto') rows = rows.filter(c => !c.rep_firm_overridden);
     else if (resolutionFilter === 'blocking') rows = rows.filter(c => c.blocks_pipeline_sync);
+    if (statusFilter === 'active') rows = rows.filter(c => c.is_active !== false);
+    else if (statusFilter === 'inactive') rows = rows.filter(c => c.is_active === false);
     if (needsReviewOnly()) {
       rows = rows.filter(c => !c.rep_firm_id || c.blocks_pipeline_sync);
       // A blocking contact is actively costing real pipeline data every sync
@@ -896,6 +931,7 @@
   document.getElementById('contact-search-input').addEventListener('input', renderContactsFlatTable);
   document.getElementById('contact-firm-filter').addEventListener('change', renderContactsFlatTable);
   document.getElementById('contact-resolution-filter').addEventListener('change', renderContactsFlatTable);
+  document.getElementById('contact-status-filter').addEventListener('change', renderContactsFlatTable);
 
   // Manually-added accounts/contacts never make it into Dataverse on their own --
   // a manager has to key them in there by hand. This gives them an .xlsx of exactly
@@ -970,8 +1006,8 @@
   async function loadAll() {
     const [firmsRes, accountsRes, contactsRes, zipRangesRes] = await Promise.all([
       client.from('rep_firms').select('id, name, crm_account_external_id, states').eq('status', 'active').order('name'),
-      client.from('crm_accounts').select('external_id, name, name_key, street, city, state_raw, state_code, zip, country_code, website, relationship_type, business_type, audac_partner_type, classification, rep_firm_id, rep_firm_overridden, parent_account_external_id, source, updated_by, updated_at').order('name'),
-      client.from('crm_contacts').select('external_id, full_name, email, email_key, parent_account_external_id, rep_firm_id, rep_firm_overridden, blocks_pipeline_sync, source, updated_by, updated_at').order('full_name'),
+      client.from('crm_accounts').select('external_id, name, name_key, street, city, state_raw, state_code, zip, country_code, website, relationship_type, business_type, audac_partner_type, classification, rep_firm_id, rep_firm_overridden, parent_account_external_id, source, is_active, updated_by, updated_at').order('name'),
+      client.from('crm_contacts').select('external_id, full_name, email, email_key, parent_account_external_id, rep_firm_id, rep_firm_overridden, blocks_pipeline_sync, source, is_active, updated_by, updated_at').order('full_name'),
       client.from('rep_firm_zip_ranges').select('rep_firm_id, state_code, zip3_start, zip3_end'),
     ]);
 

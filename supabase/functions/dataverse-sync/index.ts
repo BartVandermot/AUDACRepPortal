@@ -312,7 +312,7 @@ Deno.serve(async (req: Request) => {
     const { data: profile } = await svc.from("profiles").select("role").eq("id", userData.user.id).maybeSingle();
     if (!profile || profile.role !== "manager") return jsonResponse({ error: "Manager role required" }, 403);
 
-    let payload: { phase?: string; cursor?: string | null } = {};
+    let payload: { phase?: string; cursor?: string | null; syncStartedAt?: string } = {};
     try {
       payload = await req.json();
     } catch {
@@ -325,6 +325,14 @@ Deno.serve(async (req: Request) => {
 
     const phase = payload.phase === "contacts" ? "contacts" : payload.phase === "opportunities" ? "opportunities" : "accounts";
     const cursor = payload.cursor || null;
+    // The same value the caller sends on every page of one logical sync run
+    // (set once, before the first request) -- lets the final page tell "every
+    // active account/contact just re-confirmed by this run" from "hasn't been
+    // seen by any run since before this one started," i.e. deactivated in
+    // Dataverse since the last sync. Left undefined by an older/other caller,
+    // the sweep below simply doesn't run rather than guessing -- never
+    // deactivating anything on a false assumption.
+    const syncStartedAt = payload.syncStartedAt || null;
 
     const token = await getDataverseToken();
 
@@ -442,6 +450,8 @@ Deno.serve(async (req: Request) => {
             parent_account_external_id: parentId,
             rep_firm_id: repFirmId,
             rep_firm_overridden: !!overridden,
+            is_active: true,
+            last_synced_at: syncStartedAt || new Date().toISOString(),
             updated_by: userData.user.id,
             updated_at: new Date().toISOString(),
           };
@@ -452,11 +462,29 @@ Deno.serve(async (req: Request) => {
         if (error) throw new Error(`crm_accounts upsert failed: ${error.message}`);
       }
 
+      // Last page of a run that's tracking itself (see syncStartedAt above) --
+      // anything still marked active that this run didn't just re-confirm
+      // (last_synced_at from a prior run, or never synced) is no longer in
+      // Dataverse's active set, i.e. deactivated since the last sync. Manual
+      // (non-Dataverse) rows are never touched by this.
+      let deactivated = 0;
+      if (!nextLink && syncStartedAt) {
+        const { data: staleRows, error: sweepErr } = await svc.from("crm_accounts")
+          .update({ is_active: false })
+          .eq("is_active", true)
+          .neq("source", "manual")
+          .or(`last_synced_at.is.null,last_synced_at.lt.${syncStartedAt}`)
+          .select("external_id");
+        if (sweepErr) throw new Error(`crm_accounts deactivation sweep failed: ${sweepErr.message}`);
+        deactivated = staleRows?.length || 0;
+      }
+
       return jsonResponse({
         phase: "accounts",
         done: !nextLink,
         nextCursor: nextLink,
         processed: upserts.length,
+        deactivated,
         matched: matchedByParent + matchedByState,
         matchedByParent,
         matchedByState,
@@ -511,6 +539,8 @@ Deno.serve(async (req: Request) => {
             parent_account_external_id: parentId,
             rep_firm_id: repFirmId,
             rep_firm_overridden: !!overridden,
+            is_active: true,
+            last_synced_at: syncStartedAt || new Date().toISOString(),
             updated_by: userData.user.id,
             updated_at: new Date().toISOString(),
           };
@@ -521,11 +551,25 @@ Deno.serve(async (req: Request) => {
         if (error) throw new Error(`crm_contacts upsert failed: ${error.message}`);
       }
 
+      // Same deactivation sweep as accounts, see there for the reasoning.
+      let deactivated = 0;
+      if (!nextLink && syncStartedAt) {
+        const { data: staleRows, error: sweepErr } = await svc.from("crm_contacts")
+          .update({ is_active: false })
+          .eq("is_active", true)
+          .neq("source", "manual")
+          .or(`last_synced_at.is.null,last_synced_at.lt.${syncStartedAt}`)
+          .select("external_id");
+        if (sweepErr) throw new Error(`crm_contacts deactivation sweep failed: ${sweepErr.message}`);
+        deactivated = staleRows?.length || 0;
+      }
+
       return jsonResponse({
         phase: "contacts",
         done: !nextLink,
         nextCursor: nextLink,
         processed: upserts.length,
+        deactivated,
         matchedToFirm,
         preservedOverrides,
         filterLevel,
