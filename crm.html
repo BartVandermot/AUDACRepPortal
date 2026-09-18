@@ -69,6 +69,7 @@
   .row-name-btn { background: none; border: none; padding: 0; font: inherit; color: var(--audac-black); font-weight: 500; cursor: pointer; text-align: left; text-decoration: underline; text-decoration-color: #ddd; }
   .row-name-btn:hover { text-decoration-color: var(--audac-gold); }
   select.firm-assign { font-family: 'Montserrat', sans-serif; font-size: 12.5px; padding: 6px 8px; border: 1px solid #ddd; border-radius: 3px; max-width: 190px; }
+  .repfirm-current { font-weight: 500; color: var(--audac-black); margin-bottom: 5px; }
   .badge-parent { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; padding: 2px 7px; border-radius: 10px; margin-left: 6px; }
   .badge-parent.via-parent { background: var(--green-bg); color: var(--green); }
   .badge-parent.via-state { background: var(--amber-bg); color: var(--amber); }
@@ -135,6 +136,9 @@
       <span id="last-updated-note"></span>
     </div>
 
+    <h2 class="section-title" style="margin-top:0; padding-top:0; border-top:none;">CRM Accounts</h2>
+    <p class="upload-hint">The Rep Firm column shows which firm an account is currently assigned to. "Own account", "via parent" and "via state" all mean the system worked it out automatically and will keep recalculating it on every sync; "manual override" means someone picked a firm directly below, which sync will then leave alone. Use the dropdown under a firm's name to pick a different one, or choose "Automatic" to hand control back to the system.</p>
+
     <div class="kpi-row" id="kpi-row"></div>
 
     <div class="toolbar">
@@ -192,7 +196,7 @@
     </div>
 
     <h2 class="section-title">CRM Contacts</h2>
-    <p class="upload-hint">Every contact synced from CRM, with the rep firm it currently resolves to — inherited from its account above unless manually corrected here. Use this when a specific person needs a different firm than the rest of their account, or isn't a rep at all.</p>
+    <p class="upload-hint">Every contact synced from CRM, with the rep firm it's currently assigned to shown under their name. By default that's "Automatic" — it just matches whatever firm the contact's own account above resolves to. Use the dropdown under a firm's name if one specific person needs a different firm than the rest of their account, or isn't a rep at all; choosing "Automatic" again removes that override.</p>
 
     <div class="kpi-row" id="contacts-kpi-row"></div>
 
@@ -213,7 +217,7 @@
         <select id="contact-resolution-filter">
           <option value="">All</option>
           <option value="manual">Manually overridden</option>
-          <option value="auto">Auto (from account)</option>
+          <option value="auto">Automatic (from account)</option>
           <option value="blocking">Blocking pipeline sync</option>
         </select>
       </div>
@@ -290,6 +294,11 @@
 
   function needsReviewOnly() {
     return document.getElementById('needs-review-toggle').checked;
+  }
+
+  function repFirmName(id) {
+    if (!id) return null;
+    return (firmsCache.find(f => f.id === id) || {}).name || null;
   }
 
   // A hover tooltip rather than always-visible text -- across hundreds of
@@ -502,7 +511,7 @@
 
     document.getElementById('result-count').textContent = `Showing ${rows.length} of ${accountsCache.length} accounts`;
 
-    const firmOptions = ['<option value="auto">Auto (recompute)</option>', '<option value="">Unassigned</option>']
+    const firmOptions = ['<option value="auto">Automatic (recalculated on sync)</option>', '<option value="">Unassigned</option>']
       .concat(firmsCache.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`)).join('');
 
     const tbody = document.getElementById('accounts-body');
@@ -539,8 +548,8 @@
           <td>${contactCount || '<span class="muted">0</span>'}</td>
           <td>${sourceCell}${mergeControl}</td>
           <td>
+            <div class="repfirm-current">${a.rep_firm_id ? escapeHtml(repFirmName(a.rep_firm_id) || 'Unknown firm') : '<span class="muted">Unassigned</span>'}${badge}</div>
             <select class="firm-assign" data-account="${a.external_id}">${firmOptions}</select>
-            ${badge}
           </td>
         </tr>
       `;
@@ -725,7 +734,7 @@
     return `<table class="detail"><thead><tr><th>Contact</th><th>Email</th><th>Source</th><th>Rep Firm</th></tr></thead><tbody>${rows.map(c => contactRowHtml(c)).join('')}</tbody></table>`;
   }
 
-  const contactFirmOptionsHtml = () => ['<option value="auto">Auto (inherit from account)</option>', '<option value="">Unassigned</option>']
+  const contactFirmOptionsHtml = () => ['<option value="auto">Automatic (matches parent account)</option>', '<option value="">Unassigned</option>']
     .concat(firmsCache.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`)).join('');
 
   // showAccount and bulkSelectable are only true in the flat CRM Contacts
@@ -745,9 +754,11 @@
         ${accountCell}
         <td>${sourceCell}${mergeControl}</td>
         <td>
+          <div class="repfirm-current">${c.rep_firm_id ? escapeHtml(repFirmName(c.rep_firm_id) || 'Unknown firm') : '<span class="muted">Unassigned</span>'}
+            ${c.rep_firm_overridden ? `<span class="manual-override-badge"${overrideTooltip(c)}>Override</span>` : ''}
+            ${c.blocks_pipeline_sync ? '<span class="manual-override-badge" style="background:var(--red-bg); color:var(--red);">Blocking pipeline sync</span>' : ''}
+          </div>
           <select class="firm-assign" data-contact="${c.external_id}">${contactFirmOptionsHtml()}</select>
-          ${c.rep_firm_overridden ? `<span class="manual-override-badge"${overrideTooltip(c)}>Override</span>` : ''}
-          ${c.blocks_pipeline_sync ? '<span class="manual-override-badge" style="background:var(--red-bg); color:var(--red);">Blocking pipeline sync</span>' : ''}
         </td>
       </tr>
     `;
