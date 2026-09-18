@@ -387,12 +387,20 @@
       currentlyLinked.crm_contact_external_id = null;
     }
     if (newRepId) {
-      const { error } = await client.from('profiles').update({ crm_contact_external_id: contactExternalId }).eq('id', newRepId);
-      if (error) { alert('Could not update link: ' + error.message); return; }
       const rep = repsCache.find(r => r.id === newRepId);
-      if (rep) rep.crm_contact_external_id = contactExternalId;
+      // The CRM already has this person's real name -- no reason to also
+      // ask them or a manager to type it in by hand once the accounts are
+      // linked, but a name a manager already entered by hand takes priority
+      // over whatever's in Dataverse.
+      const contact = contactsCache.find(c => c.external_id === contactExternalId);
+      const patch = { crm_contact_external_id: contactExternalId };
+      if (contact?.full_name && !rep?.full_name) patch.full_name = contact.full_name;
+      const { error } = await client.from('profiles').update(patch).eq('id', newRepId);
+      if (error) { alert('Could not update link: ' + error.message); return; }
+      if (rep) Object.assign(rep, patch);
     }
     renderRepFirmAccounts();
+    renderReps();
   }
 
   // "Independent Rep Firm" accounts not yet claimed by any rep_firms row --

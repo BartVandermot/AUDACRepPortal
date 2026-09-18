@@ -122,8 +122,8 @@
         </div>
         <button type="submit" class="audac-btn" id="login-btn">Sign In</button>
       </form>
-      <div class="field" id="signup-name-field" style="margin-top:16px;">
-        <label for="signup-fullname">Full Name <span style="font-weight:400; color:#999;">(new accounts only)</span></label>
+      <div class="field" id="signup-name-field" hidden style="margin-top:16px;">
+        <label for="signup-fullname">Full Name</label>
         <input type="text" id="signup-fullname" autocomplete="name" placeholder="e.g. Jane Smith">
       </div>
       <button type="button" class="link-btn" id="create-password-btn">New here? Create a password account</button>
@@ -238,13 +238,28 @@
   // rep clicks a confirmation link, same email caveats magic link had.
   document.getElementById('create-password-btn').addEventListener('click', async () => {
     errorMsg.style.display = 'none';
+    const nameField = document.getElementById('signup-name-field');
+    const btn = document.getElementById('create-password-btn');
+    const statusEl = document.getElementById('password-action-status');
+
+    // First click just reveals the name field -- asking for it up front,
+    // before someone's even decided to create an account, reads as a
+    // required field on the sign-in form itself. Second click (name field
+    // now visible) actually creates the account.
+    if (nameField.hidden) {
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+      if (!email || !password) { statusEl.textContent = 'Enter an email and a password above first.'; return; }
+      nameField.hidden = false;
+      document.getElementById('signup-fullname').focus();
+      btn.textContent = 'Create Account';
+      return;
+    }
+
     const email = document.getElementById('email').value.trim();
     const password = document.getElementById('password').value;
     const fullName = document.getElementById('signup-fullname').value.trim();
-    const statusEl = document.getElementById('password-action-status');
-    if (!email || !password) { statusEl.textContent = 'Enter an email and a password above, then click this again.'; return; }
     if (!fullName) { statusEl.textContent = 'Enter your full name above, then click this again.'; return; }
-    const btn = document.getElementById('create-password-btn');
     btn.disabled = true;
     statusEl.textContent = 'Creating account…';
     const { data, error } = await client.auth.signUp({ email, password, options: { data: { full_name: fullName } } });
