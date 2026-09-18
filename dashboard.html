@@ -379,8 +379,9 @@
     const locked = !!(currentReviewRow && currentReviewRow.is_finalized);
     renderFinalizeUI(locked);
 
+    const repByCreator = await fetchRepsByCreator(acts.data || []);
     const ddActivity = document.getElementById('dd-activity');
-    ddActivity.innerHTML = renderActivityTable(acts.data || [], { locked });
+    ddActivity.innerHTML = renderActivityTable(acts.data || [], { locked, repByCreator });
     wireActivityRows(ddActivity, acts.data || [], refreshAfterActivityChange);
     pipelineCacheById = new Map((pipe.data || []).map(p => [String(p.id), p]));
     const ddPipeline = document.getElementById('dd-pipeline');
@@ -479,22 +480,37 @@
   }
   document.getElementById('close-drilldown-btn').addEventListener('click', closeDrilldown);
 
-  function renderActivityTable(rows, opts = {}) {
-    const locked = !!opts.locked;
-    if (!rows.length) return '<div class="empty-note">No activity entries for this period.</div>';
-    return `<table class="detail"><thead><tr>
-      <th>Date</th><th>Account</th><th>Contact</th><th>Contact Type</th><th>Activity Type</th><th>Demo Gear</th><th>Topic / Opportunity</th><th>Files</th><th>Actions</th>
-    </tr></thead><tbody>${rows.map(r => activityRowHtml(r, locked)).join('')}</tbody></table>`;
+  // Firms can have more than one rep logged in under them (is_rep_admin),
+  // so who actually submitted a given entry isn't implied by the firm alone
+  // -- resolved here from profiles.full_name (falling back to the spoof-proof
+  // created_by_email already stored on the row) and passed into the table.
+  async function fetchRepsByCreator(rows) {
+    const creatorIds = [...new Set(rows.map(r => r.created_by).filter(Boolean))];
+    if (!creatorIds.length) return new Map();
+    const { data, error } = await client.from('profiles').select('id, full_name').in('id', creatorIds);
+    if (error || !data) return new Map();
+    return new Map(data.map(p => [p.id, p.full_name]));
   }
 
-  function activityRowHtml(r, locked) {
+  function renderActivityTable(rows, opts = {}) {
+    const locked = !!opts.locked;
+    const repByCreator = opts.repByCreator || new Map();
+    if (!rows.length) return '<div class="empty-note">No activity entries for this period.</div>';
+    return `<table class="detail"><thead><tr>
+      <th>Date</th><th>Sales Person</th><th>Account</th><th>Contact</th><th>Contact Type</th><th>Activity Type</th><th>Demo Gear</th><th>Topic / Opportunity</th><th>Files</th><th>Actions</th>
+    </tr></thead><tbody>${rows.map(r => activityRowHtml(r, locked, repByCreator)).join('')}</tbody></table>`;
+  }
+
+  function activityRowHtml(r, locked, repByCreator) {
     const attCount = attachmentCountByEntry.get(r.id) || 0;
     const filesCell = attCount > 0
       ? `<button type="button" class="link-btn" data-toggle-attachments="${r.id}">📎 ${attCount}</button>`
       : '<span class="muted">—</span>';
+    const salesPerson = repByCreator?.get(r.created_by) || r.created_by_email || 'Unknown';
     return `
       <tr data-activity-id="${r.id}">
         <td>${r.entry_date}</td>
+        <td>${escapeHtml(salesPerson)}</td>
         <td>${escapeHtml(r.account_name)}${r.account_external_id ? ' <span style="color:#2e7d32;font-size:11px;">✓</span>' : ''}</td>
         <td>${escapeHtml(r.contact_name || '')}</td>
         <td>${r.contact_type}</td>

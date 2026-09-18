@@ -223,6 +223,12 @@
     </div>
   </div>
 
+  <div id="name-prompt-bar" hidden style="background:#fff8e6; border:1px solid #eddca0; border-radius:4px; padding:10px 14px; margin-bottom:16px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+    <span>Your name isn't on file yet — it's shown next to your activity so your firm and AUDAC know who submitted what.</span>
+    <input type="text" id="name-prompt-input" placeholder="Your full name" style="padding:6px 8px; border:1px solid #ddd; border-radius:3px;">
+    <button type="button" class="audac-btn-outline" id="name-prompt-save-btn" style="width:auto; padding:6px 14px;">Save</button>
+  </div>
+
   <div id="my-submissions-section" hidden>
     <h2 style="padding-left:4px;" id="my-submissions-heading">My Submissions</h2>
     <div id="my-submissions-list"></div>
@@ -613,8 +619,23 @@
     }
 
     if (currentProfile?.rep_firm_id) lockFirmToProfile(currentProfile.rep_firm_id);
+    document.getElementById('name-prompt-bar').hidden = !!currentProfile?.full_name;
     await loadMySubmissions();
   }
+
+  document.getElementById('name-prompt-save-btn').addEventListener('click', async () => {
+    const input = document.getElementById('name-prompt-input');
+    const name = input.value.trim();
+    if (!name) return;
+    const btn = document.getElementById('name-prompt-save-btn');
+    btn.disabled = true;
+    const { error } = await client.rpc('set_my_full_name', { p_full_name: name });
+    btn.disabled = false;
+    if (error) { alert('Could not save your name: ' + error.message); return; }
+    if (currentProfile) currentProfile.full_name = name;
+    document.getElementById('name-prompt-bar').hidden = true;
+    loadMySubmissions();
+  });
 
   function lockFirmToProfile(firmId) {
     if (firmSelect.disabled) return; // already locked via a ?firm= link
@@ -629,6 +650,7 @@
     document.getElementById('auth-signed-out').hidden = !!currentSession;
     document.getElementById('auth-signed-in').hidden = !currentSession;
     if (currentSession) document.getElementById('signed-in-email').textContent = currentSession.user.email;
+    else document.getElementById('name-prompt-bar').hidden = true;
   }
 
   // Sign-in itself (Google/Microsoft/password) all lives on the shared
@@ -667,31 +689,32 @@
       return;
     }
     await fetchAllAttachmentCounts();
-    const territoryByCreator = showCreator ? await fetchTerritoriesByCreator(data) : new Map();
-    container.innerHTML = renderMySubmissionsTable(data, showCreator, territoryByCreator);
+    const profileByCreator = showCreator ? await fetchProfilesByCreator(data) : new Map();
+    container.innerHTML = renderMySubmissionsTable(data, showCreator, profileByCreator);
     wireActivityRows(container, data, loadMySubmissions);
   }
 
   // Only fetched for admins viewing the whole firm's list (see is_rep_admin
-  // above) -- a regular rep already knows their own territory.
-  async function fetchTerritoriesByCreator(rows) {
+  // above) -- a regular rep already knows their own name/territory.
+  async function fetchProfilesByCreator(rows) {
     const creatorIds = [...new Set(rows.map(r => r.created_by).filter(Boolean))];
     if (!creatorIds.length) return new Map();
-    const { data, error } = await client.from('profiles').select('id, territory_note').in('id', creatorIds);
+    const { data, error } = await client.from('profiles').select('id, full_name, territory_note').in('id', creatorIds);
     if (error || !data) return new Map();
-    return new Map(data.map(p => [p.id, p.territory_note]));
+    return new Map(data.map(p => [p.id, p]));
   }
 
-  function renderMySubmissionsTable(rows, showCreator, territoryByCreator) {
+  function renderMySubmissionsTable(rows, showCreator, profileByCreator) {
     return `<table class="detail"><thead><tr>
       <th>Date</th><th>Firm</th>${showCreator ? '<th>Submitted By</th><th>Territory</th>' : ''}<th>Account</th><th>Contact Type</th><th>Activity Type</th><th>Topic / Opportunity</th><th>Files</th><th>Actions</th>
-    </tr></thead><tbody>${rows.map(r => activityRowHtml(r, showCreator, territoryByCreator)).join('')}</tbody></table>`;
+    </tr></thead><tbody>${rows.map(r => activityRowHtml(r, showCreator, profileByCreator)).join('')}</tbody></table>`;
   }
 
-  function activityRowHtml(r, showCreator, territoryByCreator) {
+  function activityRowHtml(r, showCreator, profileByCreator) {
     const firmName = escapeHtml((firmsCache.find(f => f.id === r.rep_firm_id) || {}).name || '');
+    const creatorProfile = profileByCreator?.get(r.created_by);
     const creatorCell = showCreator
-      ? `<td>${escapeHtml(r.created_by_email || 'Anonymous')}</td><td>${escapeHtml(territoryByCreator?.get(r.created_by) || '')}</td>`
+      ? `<td>${escapeHtml(creatorProfile?.full_name || r.created_by_email || 'Anonymous')}</td><td>${escapeHtml(creatorProfile?.territory_note || '')}</td>`
       : '';
     const attCount = attachmentCountByEntry.get(r.id) || 0;
     const filesCell = attCount > 0

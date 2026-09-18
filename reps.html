@@ -126,7 +126,7 @@
     <div class="toolbar">
       <div class="field">
         <label for="search-input">Search reps</label>
-        <input type="text" id="search-input" placeholder="Email…">
+        <input type="text" id="search-input" placeholder="Email or name…">
       </div>
       <div class="field">
         <label for="firm-filter">Rep firm</label>
@@ -143,7 +143,7 @@
       <table class="rep-table">
         <thead>
           <tr>
-            <th>Email</th><th>Rep Firm</th><th>Territory</th><th>Admin</th><th>Signed Up</th>
+            <th>Full Name</th><th>Email</th><th>Rep Firm</th><th>Territory</th><th>Admin</th><th>Signed Up</th>
           </tr>
         </thead>
         <tbody id="reps-body"></tbody>
@@ -215,7 +215,7 @@
 
   function matchesSearch(r, q) {
     if (!q) return true;
-    return (r.email || '').toLowerCase().includes(q);
+    return (r.email || '').toLowerCase().includes(q) || (r.full_name || '').toLowerCase().includes(q);
   }
 
   function renderReps() {
@@ -234,6 +234,9 @@
     const tbody = document.getElementById('reps-body');
     tbody.innerHTML = rows.map(r => `
       <tr data-id="${r.id}">
+        <td>
+          <input type="text" class="fullname-input" data-rep="${r.id}" value="${escapeHtml(r.full_name || '')}" placeholder="e.g. Jane Smith">
+        </td>
         <td>${escapeHtml(r.email)}</td>
         <td>
           <select class="firm-assign" data-rep="${r.id}">${firmOptions}</select>
@@ -260,6 +263,9 @@
     tbody.querySelectorAll('input.territory-input').forEach(input => {
       input.addEventListener('change', () => saveTerritoryNote(input.dataset.rep, input.value.trim()));
     });
+    tbody.querySelectorAll('input.fullname-input').forEach(input => {
+      input.addEventListener('change', () => saveFullName(input.dataset.rep, input.value.trim()));
+    });
     tbody.querySelectorAll('.admin-toggle').forEach(cb => {
       cb.addEventListener('change', () => setAdmin(cb.dataset.rep, cb.checked));
     });
@@ -270,6 +276,13 @@
     if (error) { alert('Could not save territory: ' + error.message); return; }
     const rep = repsCache.find(r => r.id === repId);
     if (rep) rep.territory_note = note || null;
+  }
+
+  async function saveFullName(repId, name) {
+    const { error } = await client.from('profiles').update({ full_name: name || null }).eq('id', repId);
+    if (error) { alert('Could not save name: ' + error.message); return; }
+    const rep = repsCache.find(r => r.id === repId);
+    if (rep) rep.full_name = name || null;
   }
 
   async function assignFirm(repId, firmId) {
@@ -463,7 +476,7 @@
   async function loadAll() {
     const [firmsRes, repsRes, contactsRes, accountsRes] = await Promise.all([
       client.from('rep_firms').select('id, name, crm_account_external_id').eq('status', 'active').order('name'),
-      client.from('profiles').select('id, email, rep_firm_id, is_rep_admin, created_at, territory_note, crm_contact_external_id').eq('role', 'rep').order('created_at', { ascending: false }),
+      client.from('profiles').select('id, email, full_name, rep_firm_id, is_rep_admin, created_at, territory_note, crm_contact_external_id').eq('role', 'rep').order('created_at', { ascending: false }),
       client.from('crm_contacts').select('external_id, full_name, email, parent_account_external_id').order('full_name'),
       client.from('crm_accounts').select('external_id, name, city, state_code, relationship_type'),
     ]);
