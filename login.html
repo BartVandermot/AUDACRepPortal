@@ -122,15 +122,34 @@
         </div>
         <button type="submit" class="audac-btn" id="login-btn">Sign In</button>
       </form>
-      <div class="field" id="signup-name-field" hidden style="margin-top:16px;">
-        <label for="signup-fullname">Full Name</label>
-        <input type="text" id="signup-fullname" autocomplete="name" placeholder="e.g. Jane Smith">
-      </div>
-      <button type="button" class="link-btn" id="create-password-btn">New here? Create a password account</button>
+      <button type="button" class="link-btn" id="show-signup-btn">New here? Create an account</button>
       <button type="button" class="link-btn" id="forgot-password-btn">Forgot your password?</button>
       <span id="password-action-status"></span>
 
       <div class="footnote">Sales reps, managers &amp; executives all sign in here</div>
+    </div>
+
+    <div id="signup-view" hidden>
+      <h1>Create Your Account</h1>
+      <form id="signup-form">
+        <div class="field">
+          <label for="signup-fullname">Full Name</label>
+          <input type="text" id="signup-fullname" autocomplete="name" placeholder="e.g. Jane Smith" required>
+        </div>
+        <div class="field">
+          <label for="signup-email">Email</label>
+          <input type="email" id="signup-email" autocomplete="username" required>
+        </div>
+        <div class="field">
+          <label for="signup-password">Password</label>
+          <input type="password" id="signup-password" autocomplete="new-password" required>
+        </div>
+        <button type="submit" class="audac-btn" id="signup-btn">Create Account</button>
+      </form>
+      <span id="signup-status"></span>
+      <button type="button" class="link-btn" id="back-to-signin-btn">Already have an account? Sign in</button>
+
+      <div class="footnote">Signing up with Google or Microsoft instead? Go back and use those buttons — no form needed.</div>
     </div>
 
     <div id="recovery-view" hidden>
@@ -232,41 +251,44 @@
     if (error) showError(error.message);
   });
 
+  function showSignupView() {
+    errorMsg.style.display = 'none';
+    document.getElementById('signup-status').textContent = '';
+    document.getElementById('signin-view').hidden = true;
+    document.getElementById('signup-view').hidden = false;
+    // Carry over whatever they'd already typed on the sign-in screen so
+    // switching views doesn't feel like starting over.
+    document.getElementById('signup-email').value = document.getElementById('email').value.trim();
+    document.getElementById('signup-fullname').focus();
+  }
+  function showSigninView() {
+    errorMsg.style.display = 'none';
+    document.getElementById('signup-view').hidden = true;
+    document.getElementById('signin-view').hidden = false;
+  }
+  document.getElementById('show-signup-btn').addEventListener('click', showSignupView);
+  document.getElementById('back-to-signin-btn').addEventListener('click', showSigninView);
+
   // Self-service password account: a plain signUp, no admin API needed.
   // Works instantly with no email round-trip as long as "Confirm email" is
   // off in Auth settings; if it's on, GoTrue withholds the session until the
   // rep clicks a confirmation link, same email caveats magic link had.
-  document.getElementById('create-password-btn').addEventListener('click', async () => {
+  document.getElementById('signup-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
     errorMsg.style.display = 'none';
-    const nameField = document.getElementById('signup-name-field');
-    const btn = document.getElementById('create-password-btn');
-    const statusEl = document.getElementById('password-action-status');
-
-    // First click just reveals the name field -- asking for it up front,
-    // before someone's even decided to create an account, reads as a
-    // required field on the sign-in form itself. Second click (name field
-    // now visible) actually creates the account.
-    if (nameField.hidden) {
-      const email = document.getElementById('email').value.trim();
-      const password = document.getElementById('password').value;
-      if (!email || !password) { statusEl.textContent = 'Enter an email and a password above first.'; return; }
-      nameField.hidden = false;
-      document.getElementById('signup-fullname').focus();
-      btn.textContent = 'Create Account';
-      return;
-    }
-
-    const email = document.getElementById('email').value.trim();
-    const password = document.getElementById('password').value;
     const fullName = document.getElementById('signup-fullname').value.trim();
-    if (!fullName) { statusEl.textContent = 'Enter your full name above, then click this again.'; return; }
+    const email = document.getElementById('signup-email').value.trim();
+    const password = document.getElementById('signup-password').value;
+    const statusEl = document.getElementById('signup-status');
+    const btn = document.getElementById('signup-btn');
     btn.disabled = true;
-    statusEl.textContent = 'Creating account…';
+    btn.textContent = 'Creating Account…';
+    statusEl.textContent = '';
     const { data, error } = await client.auth.signUp({ email, password, options: { data: { full_name: fullName } } });
     btn.disabled = false;
+    btn.textContent = 'Create Account';
     if (error) { statusEl.textContent = 'Error: ' + error.message; return; }
     if (data.session) {
-      statusEl.textContent = '';
       await redirectForRole();
     } else if (data.user && data.user.identities && data.user.identities.length === 0) {
       // Supabase returns this same "success" shape whether or not the email
@@ -274,9 +296,9 @@
       // an empty identities array on an unconfirmed, sessionless response is
       // its documented signal that this email already has an account (e.g.
       // via Google/Microsoft) rather than one being newly created here.
-      statusEl.textContent = "This email already has an account. Use \"Forgot your password?\" below to set a password for it, or sign in with Google/Microsoft above if that's how you originally signed up.";
+      statusEl.textContent = "This email already has an account. Go back and use \"Forgot your password?\", or sign in with Google/Microsoft if that's how you originally signed up.";
     } else {
-      statusEl.textContent = 'Account created — check your email to confirm it, then sign in above.';
+      statusEl.textContent = 'Account created — check your email to confirm it, then sign in.';
     }
   });
 
@@ -297,6 +319,7 @@
 
   function showRecoveryView() {
     document.getElementById('signin-view').hidden = true;
+    document.getElementById('signup-view').hidden = true;
     document.getElementById('recovery-view').hidden = false;
   }
 
