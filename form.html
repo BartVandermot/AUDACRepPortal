@@ -620,7 +620,12 @@
 
     if (currentProfile?.rep_firm_id) lockFirmToProfile(currentProfile.rep_firm_id);
     document.getElementById('name-prompt-bar').hidden = !!currentProfile?.full_name;
+    updateSignedInGreeting();
     await loadMySubmissions();
+  }
+
+  function updateSignedInGreeting() {
+    document.getElementById('signed-in-email').textContent = currentProfile?.full_name || currentSession.user.email;
   }
 
   document.getElementById('name-prompt-save-btn').addEventListener('click', async () => {
@@ -634,6 +639,7 @@
     if (error) { alert('Could not save your name: ' + error.message); return; }
     if (currentProfile) currentProfile.full_name = name;
     document.getElementById('name-prompt-bar').hidden = true;
+    updateSignedInGreeting();
     loadMySubmissions();
   });
 

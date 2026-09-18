@@ -60,6 +60,7 @@
   select.crm-contact-login-assign { font-family: 'Montserrat', sans-serif; font-size: 12.5px; padding: 6px 8px; border: 1px solid #ddd; border-radius: 3px; max-width: 240px; }
   input.link-account-input { font-family: 'Montserrat', sans-serif; font-size: 12.5px; padding: 6px 8px; border: 1px dashed #ccc; border-radius: 3px; width: 100%; max-width: 260px; color: var(--audac-black); }
   .admin-badge { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; padding: 2px 8px; border-radius: 10px; background: var(--green-bg); color: var(--green); margin-left: 8px; }
+  .mismatch-flag { color: var(--amber); cursor: help; }
   .save-note { font-size: 11px; margin-left: 8px; }
   .muted { color: #bbb; }
   #loading-note { font-size: 13px; color: #aaa; padding: 20px 0; }
@@ -197,11 +198,16 @@
     const total = repsCache.length;
     const assigned = repsCache.filter(r => r.rep_firm_id).length;
     const admins = repsCache.filter(r => r.is_rep_admin).length;
+    // Only counts reps assigned to a firm -- an unassigned rep has no CRM
+    // contacts to link against yet, so flagging them here too would just be
+    // restating "Unassigned" under a different label.
+    const awaitingCrmLink = repsCache.filter(r => r.rep_firm_id && !r.crm_contact_external_id).length;
     document.getElementById('kpi-row').innerHTML = `
       <div class="kpi-tile"><div class="kpi-label">Reps Signed Up</div><div class="kpi-value">${total}</div></div>
       <div class="kpi-tile"><div class="kpi-label">Firm Assigned</div><div class="kpi-value">${assigned}</div></div>
       <div class="kpi-tile"><div class="kpi-label">Unassigned</div><div class="kpi-value">${total - assigned}</div></div>
       <div class="kpi-tile"><div class="kpi-label">Firm Admins</div><div class="kpi-value">${admins}</div></div>
+      <div class="kpi-tile"><div class="kpi-label">Awaiting CRM Link</div><div class="kpi-value">${awaitingCrmLink}</div></div>
     `;
   }
 
@@ -218,6 +224,19 @@
     return (r.email || '').toLowerCase().includes(q) || (r.full_name || '').toLowerCase().includes(q);
   }
 
+  function crmContactFor(rep) {
+    return rep.crm_contact_external_id ? contactsCache.find(c => c.external_id === rep.crm_contact_external_id) : null;
+  }
+
+  // A linked login drifting from its CRM contact's own name/email is worth a
+  // flag -- it usually means the rep signed up under a different email than
+  // their CRM record, or someone's CRM name changed after the link was made.
+  function mismatchWarning(fieldLabel, portalValue, crmValue) {
+    if (!portalValue || !crmValue) return '';
+    if (portalValue.trim().toLowerCase() === crmValue.trim().toLowerCase()) return '';
+    return ` <span class="mismatch-flag" title="Linked CRM contact's ${fieldLabel} is &quot;${escapeHtml(crmValue)}&quot; -- doesn't match this login">⚠</span>`;
+  }
+
   function renderReps() {
     const q = document.getElementById('search-input').value.trim().toLowerCase();
     const firmFilter = document.getElementById('firm-filter').value;
@@ -232,12 +251,16 @@
       .concat(firmsCache.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`)).join('');
 
     const tbody = document.getElementById('reps-body');
-    tbody.innerHTML = rows.map(r => `
+    tbody.innerHTML = rows.map(r => {
+      const contact = crmContactFor(r);
+      const nameWarning = contact ? mismatchWarning('name', r.full_name, contact.full_name) : '';
+      const emailWarning = contact ? mismatchWarning('email', r.email, contact.email) : '';
+      return `
       <tr data-id="${r.id}">
         <td>
-          <input type="text" class="fullname-input" data-rep="${r.id}" value="${escapeHtml(r.full_name || '')}" placeholder="e.g. Jane Smith">
+          <input type="text" class="fullname-input" data-rep="${r.id}" value="${escapeHtml(r.full_name || '')}" placeholder="e.g. Jane Smith">${nameWarning}
         </td>
-        <td>${escapeHtml(r.email)}</td>
+        <td>${escapeHtml(r.email)}${emailWarning}</td>
         <td>
           <select class="firm-assign" data-rep="${r.id}">${firmOptions}</select>
         </td>
@@ -252,7 +275,8 @@
         </td>
         <td>${r.created_at ? new Date(r.created_at).toLocaleDateString() : ''}</td>
       </tr>
-    `).join('');
+    `;
+    }).join('');
 
     tbody.querySelectorAll('select.firm-assign').forEach(sel => {
       const repId = sel.dataset.rep;

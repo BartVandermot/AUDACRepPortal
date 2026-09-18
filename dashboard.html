@@ -492,11 +492,27 @@
     return new Map(data.map(p => [p.id, p.full_name]));
   }
 
+  // Only meaningful once a firm has more than one person logging entries --
+  // for a single-rep firm every row already names the same person, so the
+  // summary would just repeat what's already on screen.
+  function summarizeByCreator(rows, repByCreator) {
+    const counts = new Map();
+    rows.forEach(r => {
+      const name = repByCreator?.get(r.created_by) || r.created_by_email || 'Unknown';
+      counts.set(name, (counts.get(name) || 0) + 1);
+    });
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  }
+
   function renderActivityTable(rows, opts = {}) {
     const locked = !!opts.locked;
     const repByCreator = opts.repByCreator || new Map();
     if (!rows.length) return '<div class="empty-note">No activity entries for this period.</div>';
-    return `<table class="detail"><thead><tr>
+    const byCreator = summarizeByCreator(rows, repByCreator);
+    const summaryHtml = byCreator.length > 1
+      ? `<div class="empty-note" style="color:#666;">Logged by: ${byCreator.map(([name, count]) => `${escapeHtml(name)} (${count})`).join(', ')}</div>`
+      : '';
+    return `${summaryHtml}<table class="detail"><thead><tr>
       <th>Date</th><th>Sales Person</th><th>Account</th><th>Contact</th><th>Contact Type</th><th>Activity Type</th><th>Demo Gear</th><th>Topic / Opportunity</th><th>Files</th><th>Actions</th>
     </tr></thead><tbody>${rows.map(r => activityRowHtml(r, locked, repByCreator)).join('')}</tbody></table>`;
   }
@@ -836,17 +852,27 @@
       });
     }
 
-    openAgendaWindow(row, month, acts.data || [], pipe.data || [], edu.data || [], existingReview ? existingReview.notes : '');
+    const repByCreator = await fetchRepsByCreator(acts.data || []);
+    openAgendaWindow(row, month, acts.data || [], pipe.data || [], edu.data || [], existingReview ? existingReview.notes : '', repByCreator);
 
     btn.disabled = false;
     btn.textContent = 'Generate Monthly Review Agenda';
   });
 
-  function openAgendaWindow(row, month, activities, pipeline, education, existingNotes) {
+  function openAgendaWindow(row, month, activities, pipeline, education, existingNotes, repByCreator) {
     const byType = {};
     activities.forEach(a => { byType[a.activity_type] = (byType[a.activity_type] || 0) + 1; });
     const typeRows = Object.entries(byType).map(([t, c]) => `<tr><td>${t}</td><td>${c}</td></tr>`).join('')
       || '<tr><td colspan="2" style="color:#999;">No activity recorded</td></tr>';
+
+    // Only worth a table once a firm has more than one person logging
+    // entries -- otherwise it's one row repeating the firm's own name.
+    const byCreator = summarizeByCreator(activities, repByCreator);
+    const byRepSection = byCreator.length > 1 ? `
+      <h2>Logged By</h2>
+      <table><thead><tr><th>Sales Person</th><th>Activities Logged</th></tr></thead><tbody>${
+        byCreator.map(([name, count]) => `<tr><td>${escapeHtml(name)}</td><td>${count}</td></tr>`).join('')
+      }</tbody></table>` : '';
 
     const pipelineRows = pipeline.map(p => `<tr><td>${escapeHtml(p.account_name)}</td><td>${escapeHtml(p.project_name||'')}</td><td>${escapeHtml(p.stage||'')}</td><td>${fmtMoney(p.value_usd)}</td></tr>`).join('')
       || '<tr><td colspan="4" style="color:#999;">No pipeline entries</td></tr>';
@@ -884,6 +910,7 @@
       <h2>Activity Summary</h2>
       <table><thead><tr><th>Activity Type</th><th>Count</th></tr></thead><tbody>${typeRows}</tbody></table>
       <p>Total activities: ${activities.length}. Demo gear used in ${row.demo_gear_count} of ${row.activity_count}.</p>
+      ${byRepSection}
 
       <h2>Education Status</h2>
       <table><thead><tr><th>Person</th><th>Company</th><th>Course</th><th>Completed</th></tr></thead><tbody>${eduRows}</tbody></table>
