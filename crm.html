@@ -188,7 +188,7 @@
             <th><input type="checkbox" id="accounts-select-all"></th>
             <th>Account</th><th>City</th><th>State</th><th>Zip</th><th>Country</th>
             <th>Relationship Type</th><th>Partner Type</th><th>Classification</th>
-            <th>Contacts</th><th>Source</th><th>Rep Firm</th>
+            <th>Contacts</th><th>Source</th><th>Rep Firm</th><th>Assign</th>
           </tr>
         </thead>
         <tbody id="accounts-body"></tbody>
@@ -242,7 +242,7 @@
 
     <div style="overflow-x:auto;">
       <table class="detail">
-        <thead><tr><th><input type="checkbox" id="contacts-select-all"></th><th>Contact</th><th>Email</th><th>Account</th><th>Source</th><th>Rep Firm</th></tr></thead>
+        <thead><tr><th><input type="checkbox" id="contacts-select-all"></th><th>Contact</th><th>Email</th><th>Account</th><th>Source</th><th>Rep Firm</th><th>Assign</th></tr></thead>
         <tbody id="contacts-body"></tbody>
       </table>
     </div>
@@ -547,14 +547,12 @@
           <td>${escapeHtml(a.classification || '')}</td>
           <td>${contactCount || '<span class="muted">0</span>'}</td>
           <td>${sourceCell}${mergeControl}</td>
-          <td>
-            <div class="repfirm-current">${a.rep_firm_id ? escapeHtml(repFirmName(a.rep_firm_id) || 'Unknown firm') : '<span class="muted">Unassigned</span>'}${badge}</div>
-            <select class="firm-assign" data-account="${a.external_id}">${firmOptions}</select>
-          </td>
+          <td><div class="repfirm-current">${a.rep_firm_id ? escapeHtml(repFirmName(a.rep_firm_id) || 'Unknown firm') : '<span class="muted">Unassigned</span>'}${badge}</div></td>
+          <td><select class="firm-assign" data-account="${a.external_id}">${firmOptions}</select></td>
         </tr>
       `;
       if (!isOpen) return mainRow;
-      return mainRow + `<tr class="contacts-row"><td colspan="12">${renderAccountContactsPanel(a.external_id)}</td></tr>`;
+      return mainRow + `<tr class="contacts-row"><td colspan="13">${renderAccountContactsPanel(a.external_id)}</td></tr>`;
     }).join('');
 
     tbody.querySelectorAll('select.firm-assign[data-account]').forEach(sel => {
@@ -731,7 +729,7 @@
   function renderAccountContactsPanel(accountExternalId) {
     const rows = allContactsCache.filter(c => c.parent_account_external_id === accountExternalId);
     if (!rows.length) return '<div class="empty-note">No contacts synced for this account.</div>';
-    return `<table class="detail"><thead><tr><th>Contact</th><th>Email</th><th>Source</th><th>Rep Firm</th></tr></thead><tbody>${rows.map(c => contactRowHtml(c)).join('')}</tbody></table>`;
+    return `<table class="detail"><thead><tr><th>Contact</th><th>Email</th><th>Source</th><th>Rep Firm</th><th>Assign</th></tr></thead><tbody>${rows.map(c => contactRowHtml(c)).join('')}</tbody></table>`;
   }
 
   const contactFirmOptionsHtml = () => ['<option value="auto">Automatic (matches parent account)</option>', '<option value="">Unassigned</option>']
@@ -758,8 +756,8 @@
             ${c.rep_firm_overridden ? `<span class="manual-override-badge"${overrideTooltip(c)}>Override</span>` : ''}
             ${c.blocks_pipeline_sync ? '<span class="manual-override-badge" style="background:var(--red-bg); color:var(--red);">Blocking pipeline sync</span>' : ''}
           </div>
-          <select class="firm-assign" data-contact="${c.external_id}">${contactFirmOptionsHtml()}</select>
         </td>
+        <td><select class="firm-assign" data-contact="${c.external_id}">${contactFirmOptionsHtml()}</select></td>
       </tr>
     `;
   }
@@ -868,7 +866,7 @@
     const tbody = document.getElementById('contacts-body');
     tbody.innerHTML = rows.length
       ? rows.map(c => contactRowHtml(c, { showAccount: true, bulkSelectable: true })).join('')
-      : '<tr><td colspan="6" class="empty-note">No contacts match the current filters.</td></tr>';
+      : '<tr><td colspan="7" class="empty-note">No contacts match the current filters.</td></tr>';
 
     wireContactFirmSelects(tbody);
     wireMergeControls(tbody, 'contact');
