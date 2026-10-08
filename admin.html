@@ -173,7 +173,7 @@
     <div class="toolbar">
       <div>
         <label for="activity-search-input">Search</label>
-        <input type="text" id="activity-search-input" placeholder="Account, contact, topic, feedback…">
+        <input type="text" id="activity-search-input" placeholder="Rep, account, contact, topic, feedback…">
       </div>
       <div>
         <label for="activity-search-firm">Rep Firm</label>
@@ -416,6 +416,7 @@
   let currentUser = null;
   let firmsCache = [];
   let allActivityCache = [];
+  let repNameByCreator = new Map(); // profiles.id -> full_name, for the Sales Person column
   let attachmentCountByEntry = new Map();
   let auditLogCache = [];
   let selectedActivityIds = new Set();
@@ -499,18 +500,26 @@
   });
 
   // ---------- Activity table rendering (Search All Activity + audit log context) ----------
+  // Falls back to the email stored on the entry itself when the rep has no
+  // name on file yet, and to "Unknown" for entries submitted without a login.
+  function salesPersonFor(r) {
+    return repNameByCreator.get(r.created_by) || r.created_by_email || 'Unknown';
+  }
+
   function renderActivityTable(rows, opts = {}) {
     const showFirm = !!opts.showFirm;
     const selectable = !!opts.selectable;
     if (!rows.length) return '<div class="empty-note">No activity entries for this period.</div>';
     return `<table class="detail"><thead><tr>
       ${selectable ? '<th class="check-col"><input type="checkbox" id="activity-select-all"></th>' : ''}
-      <th>Date</th>${showFirm ? '<th>Firm</th>' : ''}<th>Account</th><th>Contact</th><th>Contact Type</th><th>Activity Type</th><th>Demo Gear</th><th>Topic / Opportunity</th><th>Files</th><th>Actions</th>
+      <th>Date</th>${showFirm ? '<th>Firm</th><th>Sales Person</th>' : ''}<th>Account</th><th>Contact</th><th>Contact Type</th><th>Activity Type</th><th>Demo Gear</th><th>Topic / Opportunity</th><th>Files</th><th>Actions</th>
     </tr></thead><tbody>${rows.map(r => activityRowHtml(r, showFirm, selectable)).join('')}</tbody></table>`;
   }
 
   function activityRowHtml(r, showFirm, selectable) {
-    const firmCell = showFirm ? `<td>${escapeHtml((firmsCache.find(f => f.id === r.rep_firm_id) || {}).name || '')}</td>` : '';
+    const firmCell = showFirm
+      ? `<td>${escapeHtml((firmsCache.find(f => f.id === r.rep_firm_id) || {}).name || '')}</td><td>${escapeHtml(salesPersonFor(r))}</td>`
+      : '';
     const attCount = attachmentCountByEntry.get(r.id) || 0;
     const filesCell = attCount > 0
       ? `<button type="button" class="link-btn" data-toggle-attachments="${r.id}">📎 ${attCount}</button>`
@@ -842,6 +851,13 @@
       return;
     }
     allActivityCache = data || [];
+    const creatorIds = [...new Set(allActivityCache.map(r => r.created_by).filter(Boolean))];
+    if (creatorIds.length) {
+      const { data: profs } = await client.from('profiles').select('id, full_name').in('id', creatorIds);
+      repNameByCreator = new Map((profs || []).filter(p => p.full_name).map(p => [p.id, p.full_name]));
+    } else {
+      repNameByCreator = new Map();
+    }
     renderActivitySearch();
   }
 
@@ -854,7 +870,7 @@
     if (firmFilter) rows = rows.filter(r => r.rep_firm_id === firmFilter);
     if (typeFilter) rows = rows.filter(r => r.activity_type === typeFilter);
     if (q) {
-      rows = rows.filter(r => `${r.account_name} ${r.contact_name || ''} ${r.topic_opportunity || ''} ${r.solution_feedback || ''} ${r.competitive_feedback || ''} ${r.additional_comments || ''}`.toLowerCase().includes(q));
+      rows = rows.filter(r => `${salesPersonFor(r)} ${r.account_name} ${r.contact_name || ''} ${r.topic_opportunity || ''} ${r.solution_feedback || ''} ${r.competitive_feedback || ''} ${r.additional_comments || ''}`.toLowerCase().includes(q));
     }
     return rows;
   }
@@ -903,6 +919,7 @@
         'Date': r.entry_date,
         'Reporting Month': r.reporting_month,
         'Rep Firm': firmNameById.get(r.rep_firm_id) || '',
+        'Sales Person': salesPersonFor(r),
         'Account': r.account_name,
         'Account Linked to CRM': r.account_external_id ? 'Yes' : 'No',
         'Contact': r.contact_name || '',
