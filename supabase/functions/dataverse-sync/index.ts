@@ -745,6 +745,7 @@ async function runPage(svc: any, phase: Phase, cursor: string | null, syncStarte
           crm_id: r.opportunityid,
           contact_external_id: contactId,
           contact_name: contactName,
+          last_synced_at: syncStartedAt || seenAt,
         });
       }
 
@@ -777,6 +778,21 @@ async function runPage(svc: any, phase: Phase, cursor: string | null, syncStarte
         if (error) throw new Error(`pipeline_entries upsert failed: ${error.message}`);
       }
 
+      // Last page of a logged full run: a synced deal this run didn't see is
+      // gone from Dynamics (deleted, e.g. a duplicate, or moved out of
+      // US/Canada) and must stop counting in the portal's pipeline. Only
+      // CRM-synced rows (crm_id set) -- CSV-imported pipeline is never touched.
+      let removedFromDynamics = 0;
+      if (!nextLink && syncStartedAt) {
+        const { data: gone, error: sweepErr } = await svc.from("pipeline_entries")
+          .delete()
+          .not("crm_id", "is", null)
+          .or(`last_synced_at.is.null,last_synced_at.lt.${syncStartedAt}`)
+          .select("crm_id");
+        if (sweepErr) throw new Error(`pipeline_entries cleanup failed: ${sweepErr.message}`);
+        removedFromDynamics = gone?.length || 0;
+      }
+
       // A contact seen on at least one unresolved deal this page stays
       // flagged even if it also resolved a different deal -- there's still
       // real pipeline data being lost for the one that didn't resolve.
@@ -799,6 +815,7 @@ async function runPage(svc: any, phase: Phase, cursor: string | null, syncStarte
         matchedByLocation,
         skippedNoMatch,
         historical,
+        removedFromDynamics,
         openCount,
         wonCount,
         lostCount,

@@ -289,7 +289,7 @@
   <div class="tab-panel" id="tab-pipeline">
     <h2 class="section-title">Pipeline</h2>
     <div class="action-row" style="margin-top:0;">
-      <button class="audac-btn" id="sync-opportunities-btn">Sync Opportunities from CRM</button>
+      <button class="audac-btn" id="sync-opportunities-btn">Sync from CRM</button>
     </div>
     <div class="upload-hint">Pulls Opportunities (US/Canada only, per the Opportunity's own Country Lookup field) live from Dynamics 365 — Open, Won, and Lost alike, so a deal's outcome stays visible once it closes instead of disappearing from the sync. Since almost every opportunity is filed under Intellimix as the customer, rep firm is resolved via, in order: the Involved Installer account, the CRM contact's own resolved-or-overridden firm, then the free-typed Location field. Open deals are tagged with the month they were <strong>created</strong> in CRM (a stable, one-row-ever assignment, not a fresh snapshot every sync); Won/Lost deals are tagged with the month they actually closed, so a win/loss lands on the scorecard for when it really happened. The file upload below stays available as a fallback for a specific past month.</div>
     <div id="status-opportunities"></div>
@@ -1326,79 +1326,27 @@
     document.getElementById('sync-opportunities-btn').addEventListener('click', runOpportunitySync);
   }
 
-  // Sync/count-check triggers moved to Accounts & Contacts -- invokeCrmSync stays here
-  // since runOpportunitySync (Pipeline tab, below) still needs it.
-  async function invokeCrmSync(body) {
-    const { data, error } = await client.functions.invoke('dataverse-sync', { body });
-    if (error || data?.error) {
-      // supabase-js hides the actual response body behind a generic message on non-2xx;
-      // the real error is in error.context (the raw Response), so unwrap it if present.
-      let detail = data?.error || error?.message || 'Unknown error';
-      if (error?.context && typeof error.context.json === 'function') {
-        try {
-          const respBody = await error.context.json();
-          if (respBody?.error) detail = respBody.error;
-        } catch (_) { /* keep generic message if body isn't JSON */ }
-      }
-      throw new Error(detail);
-    }
-    return data;
-  }
-
-  // All opportunities (Open, Won, Lost), scoped to US/Canada via the
-  // opportunity's own Country Lookup field. Rep firm is resolved server-side
-  // in priority order (Involved Installer account, the CRM contact's own
-  // resolved-or-overridden firm, then the free-typed Location field) -- this
-  // just accumulates the per-page stats the server reports. Any opportunity
-  // whose Contact couldn't be resolved gets that contact flagged
-  // blocks_pipeline_sync server-side, visible on the Accounts & Contacts page's
-  // contacts section -- this function no longer needs to surface or merge those itself.
+  // Same full CRM sync as "Sync now" on the dashboard (accounts, contacts,
+  // opportunities, logged in sync_runs). The old page-by-page opportunity-only
+  // loop skipped everything a full run does afterwards: removing deals deleted
+  // in Dynamics, re-deriving "Blocking pipeline sync", linking reps.
   async function runOpportunitySync() {
     const statusEl = document.getElementById('status-opportunities');
     const btn = document.getElementById('sync-opportunities-btn');
     btn.disabled = true;
     statusEl.className = '';
     statusEl.textContent = '';
-
     try {
-      const filterNote = (level) => level === 'full' ? '' :
-        level === 'none' ? ' [WARNING: no server-side filter applied — pulled opportunities from every country, not just US/Canada]' : '';
-
-      let cursor = null;
-      let total = 0, byInstaller = 0, byContactAccount = 0, byLocation = 0, skippedNoMatch = 0, level = 'full';
-      let openCount = 0, wonCount = 0, lostCount = 0;
-      let firstPage = true;
-      do {
-        btn.textContent = `Syncing opportunities… (${total} so far)`;
-        const res = await invokeCrmSync({ phase: 'opportunities', cursor });
-        total += res.processed + res.skippedNoMatch;
-        byInstaller += res.matchedByInstaller;
-        byContactAccount += res.matchedByContactAccount || 0;
-        byLocation += res.matchedByLocation;
-        skippedNoMatch += res.skippedNoMatch;
-        openCount += res.openCount;
-        wonCount += res.wonCount;
-        lostCount += res.lostCount;
-        if (firstPage) { level = res.filterLevel || 'full'; firstPage = false; }
-        cursor = res.nextCursor;
-      } while (cursor);
-
-      const matched = byInstaller + byContactAccount + byLocation;
-      statusEl.className = 'upload-status ' + (level === 'none' ? 'err' : matched ? 'ok' : 'warn');
-      statusEl.textContent =
-        `Synced ${total} US/Canada opportunit${total === 1 ? 'y' : 'ies'}${filterNote(level)} — ${matched} matched to a rep firm and imported ` +
-        `(${byInstaller} via installer account, ${byContactAccount} via CRM contact, ${byLocation} via location): ` +
-        `${openCount} open, ${wonCount} won, ${lostCount} lost. ` +
-        `${skippedNoMatch} unresolved` +
-        (skippedNoMatch ? ' — check the "Blocking pipeline sync" contacts on Accounts & Contacts.' : '.');
-
+      const run = await AudacSync.run(client, (r) => { btn.textContent = AudacSync.progressText(r); });
+      statusEl.className = 'upload-status ' + (run.status === 'ok' ? 'ok' : 'err');
+      statusEl.textContent = AudacSync.describe(run);
       await loadPipelineEntries();
     } catch (err) {
       statusEl.className = 'upload-status err';
-      statusEl.textContent = 'Opportunity sync failed: ' + err.message;
+      statusEl.textContent = 'Sync failed: ' + err.message;
     } finally {
       btn.disabled = false;
-      btn.textContent = 'Sync Opportunities from CRM';
+      btn.textContent = 'Sync from CRM';
     }
   }
 

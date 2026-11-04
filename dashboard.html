@@ -1386,7 +1386,7 @@
   const NOT_ASSIGNABLE = new Set(['Independent Rep Firm', 'Competitor', 'Supplier']);
   async function loadOpsData() {
     const [accts, zips, blocking, manualContacts, reps, skipped, lastPipe, lastEdu, sellAny, lastRuns, lastOkRun, lastEduBatch] = await Promise.all([
-      AudacData.all(client.from('crm_accounts').select('name_key, source, rep_firm_id, relationship_type, state_code, is_active, last_synced_at').order('external_id')),
+      AudacData.all(client.from('crm_accounts').select('name_key, source, rep_firm_id, relationship_type, state_code, country_code, is_active, last_synced_at').order('external_id')),
       client.from('rep_firm_zip_ranges').select('state_code'),
       client.from('crm_contacts').select('external_id', { count: 'exact', head: true }).eq('blocks_pipeline_sync', true),
       client.from('crm_contacts').select('external_id', { count: 'exact', head: true }).eq('source', 'manual'),
@@ -1424,7 +1424,10 @@
       manualContacts: manualContacts.count || 0,
       mergeable: manual.filter(a => a.name_key && syncedKeys.has(a.name_key)).length,
       unassignedCovered: unassigned.filter(a => covered.has(a.state_code)).length,
-      unassignedElsewhere: unassigned.filter(a => !covered.has(a.state_code)).length,
+      unassignedElsewhere: unassigned.filter(a => a.state_code && !covered.has(a.state_code)).length,
+      // US accounts with no State (and no ZIP to derive it from) in Dynamics:
+      // not "outside every territory" -- just unplaceable until fixed there.
+      unassignedNoState: unassigned.filter(a => !a.state_code && a.country_code === 'US').length,
       repsNoFirm: repRows.filter(r => !r.rep_firm_id).length,
       repsNoLink: repRows.filter(r => r.rep_firm_id && !r.crm_contact_external_id).length,
       repsNoName: repRows.filter(r => !r.full_name).length,
@@ -1460,7 +1463,7 @@
     });
     if (ops.blocking) items.push({
       state: 'bad', main: `<b class="ops-count">${plural(ops.blocking, 'contact')}</b> ${ops.blocking === 1 ? 'blocks' : 'block'} the pipeline sync`,
-      sub: 'Their deals can’t be credited to a firm. Give each a firm, then run <a href="/admin#pipeline">Sync Opportunities</a> again.',
+      sub: 'Their deals can’t be credited to a firm. Give each a firm, then sync again (or wait for tonight’s sync).',
       href: '/crm?view=blocking', action: 'Fix',
     });
     if (ops.manualAccounts || ops.manualContacts) items.push({
@@ -1475,6 +1478,11 @@
       state: 'todo', main: `<b class="ops-count">${plural(ops.unassignedCovered, 'active account')}</b> in your territories without a rep firm`,
       sub: ops.unassignedElsewhere ? `${ops.unassignedElsewhere} more ${ops.unassignedElsewhere === 1 ? 'lies' : 'lie'} outside every territory and ${ops.unassignedElsewhere === 1 ? 'is' : 'are'} left alone.` : '',
       href: '/crm?view=unassigned', action: 'Assign',
+    });
+    if (ops.unassignedNoState) items.push({
+      state: 'off', main: `<b class="ops-count">${plural(ops.unassignedNoState, 'US account')}</b> without a state in Dynamics`,
+      sub: 'No State and no usable ZIP, so no rep firm can be found. Fill in the address in Dynamics; the next sync places them.',
+      href: '/crm?view=nostate', action: 'List',
     });
     if (ops.repsAttention) items.push({
       state: 'todo', main: `<b class="ops-count">${plural(ops.repsAttention, 'rep')}</b> to finish setting up`,
