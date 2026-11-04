@@ -256,8 +256,8 @@ const COUNTRY_GUID_CA = "c1abf5cd-c846-e811-a9c6-000d3a254a9a";
 // something worth a schema column for a single country.
 const PAG_CANADA_FIRM_ID = "c1a84e17-3e17-4af0-8f8b-47c229e8fda1";
 
-// Intellimix became the distributor on this date. Deals that were already
-// closed (Won/Lost) before it belong to the previous distributor's era: they
+// Intellimix became the distributor on this date. Closed (Won/Lost) deals from
+// before it belong to the previous distributor's era (see previousEra below): they
 // aren't credited to any rep firm, aren't listed as skipped, and don't flag
 // their contact as blocking (decided by Bart, 2026-11-04).
 const DISTRIBUTOR_START = "2025-06-23";
@@ -635,8 +635,17 @@ async function runPage(svc: any, phase: Phase, cursor: string | null, syncStarte
 
       for (const r of rows) {
         const status = STATUS_BY_STATECODE[r.statecode] ?? null;
+        // Previous-distributor era: closed before the start date -- or created
+        // AND expected to close before it. The second test catches old deals
+        // that were only closed administratively later (a Feb 2026 cleanup set
+        // actualclosedate on 2021-2024 deals), without touching a deal created
+        // just before the start that was genuinely won afterwards.
+        const createdOn = String(r.createdon || "").slice(0, 10);
+        const expectedOn = String(r.estimatedclosedate || "").slice(0, 10);
         const closedOn = String(r.actualclosedate || r.estimatedclosedate || "").slice(0, 10);
-        if (status !== "Open" && status !== null && closedOn && closedOn < DISTRIBUTOR_START) {
+        const previousEra = (closedOn && closedOn < DISTRIBUTOR_START)
+          || (createdOn && expectedOn && createdOn < DISTRIBUTOR_START && expectedOn < DISTRIBUTOR_START);
+        if ((status === "Won" || status === "Lost") && previousEra) {
           historical++;
           historicalIds.push(r.opportunityid);
           continue;
