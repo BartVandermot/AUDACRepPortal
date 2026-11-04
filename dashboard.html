@@ -65,7 +65,7 @@
   table.detail th { background-color: var(--color-surface); }
   .empty-note { font-size: 12.5px; color: var(--color-text-muted); padding: 10px 2px; }
 
-  #alerts-panel { display: none; margin-bottom: 20px; }
+  #alerts-panel { display: none; }
   .alert-row { padding: 12px 16px; border-radius: 4px; font-size: 13px; margin-bottom: 8px; }
   .alert-row a { color: inherit; text-decoration: underline; cursor: pointer; }
   .alert-row.alert-red { background: var(--red-bg); color: var(--red); }
@@ -133,6 +133,30 @@
   .dk-bar .a, .dk-sub b.a { background: var(--color-warning); color: var(--color-warning); }
   .dk-bar .r, .dk-sub b.r { background: var(--color-danger); color: var(--color-danger); }
   .dk-sub b { background: none !important; font-weight: 650; }
+  .dk-row { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-3); }
+  .dk-spark { flex: none; width: 112px; height: 36px; color: var(--color-gold); overflow: visible; }
+  .dk-spark .area { fill: currentColor; opacity: .12; }
+  .dk-tile.dk-rag .dk-sub { font-size: 12.5px; }
+  .dk-help { font-size: 12px; color: var(--color-text-muted); }
+  .dk-help summary { cursor: pointer; list-style: none; text-decoration: underline; text-underline-offset: 3px; }
+  .dk-help summary::-webkit-details-marker { display: none; }
+  .dk-help[open] { flex-basis: 100%; }
+  .dk-help .rag-legend { margin: 8px 0 0; font-size: 12px; color: var(--color-text-muted); }
+  /* Signals: compact, expandable notes under the KPIs (actions live in "Needs your attention") */
+  .signals { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 var(--space-5); }
+  .signal summary {
+    display: inline-flex; align-items: center; gap: 8px; cursor: pointer; list-style: none;
+    font-size: 12.5px; line-height: 18px; padding: 5px 12px; border-radius: 999px;
+    border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-text-secondary);
+  }
+  .signal summary::-webkit-details-marker { display: none; }
+  .signal summary:hover { border-color: var(--color-border-strong); color: var(--color-text-primary); }
+  .signal summary::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--sig, var(--color-text-muted)); }
+  .signal summary b { color: var(--color-text-primary); font-weight: 650; }
+  .signal.sig-red { --sig: var(--color-danger); } .signal.sig-amber { --sig: var(--color-warning); }
+  .signal[open] { flex-basis: 100%; }
+  .signal .sig-body { font-size: 12.5px; line-height: 20px; color: var(--color-text-secondary); padding: 8px 12px 2px; }
+  .signal .sig-body a { color: var(--color-text-primary); }
   /* Operations row: month-close checklist + work list */
   .ops-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: var(--space-4); margin-bottom: var(--space-4); align-items: start; }
   .ops-card {
@@ -222,11 +246,6 @@
   <div id="alerts-panel"></div>
 
   <div id="loading-note">Loading scorecard…</div>
-  <div class="rag-legend" id="rag-legend" style="display:none;">
-    <span class="rl-item"><span class="rag-badge rag-red">Red</span> 0–3 activities logged this month</span>
-    <span class="rl-item"><span class="rag-badge rag-amber">Amber</span> 4–7 activities, or 8+ with no open pipeline or no new opportunities entered this month</span>
-    <span class="rl-item"><span class="rag-badge rag-green">Green</span> 8+ activities, open pipeline, and at least one new opportunity entered this month</span>
-  </div>
   <table class="scorecard" id="scorecard-table" style="display:none;">
     <thead>
       <tr>
@@ -342,6 +361,37 @@
     firmsCache = data || [];
   }
 
+  // Scorecards of earlier months, for the KPI trend lines (fetched once each).
+  const trendCache = new Map();
+  async function loadTrend(month) {
+    trendCache.set(month, scorecardCache);
+    const months = [];
+    for (let i = 5; i >= 1; i--) months.push(priorMonth(month, i));
+    const missing = months.filter(m => !trendCache.has(m));
+    if (missing.length) {
+      await Promise.all(missing.map(async m => {
+        const { data } = await client.rpc('get_rag_scorecard', { p_month: m });
+        trendCache.set(m, data || []);
+      }));
+    }
+    if (monthInput.value === month) renderDashKpis();
+  }
+
+  // Small trend line for a KPI tile: the selected month is the dot on the right.
+  function sparkline(values, title) {
+    if (values.length < 2) return '';
+    const w = 112, h = 36, pad = 3;
+    const max = Math.max(...values), min = Math.min(...values, 0);
+    const x = (i) => pad + i * (w - 2 * pad) / (values.length - 1);
+    const y = (v) => h - pad - ((v - min) / ((max - min) || 1)) * (h - 2 * pad);
+    const pts = values.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`);
+    const last = values.length - 1;
+    return `<svg class="dk-spark" viewBox="0 0 ${w} ${h}" role="img" aria-label="${escapeHtml(title)}"><title>${escapeHtml(title)}</title>`
+      + `<polygon class="area" points="${x(0).toFixed(1)},${h - pad} ${pts.join(' ')} ${x(last).toFixed(1)},${h - pad}"/>`
+      + `<polyline points="${pts.join(' ')}" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`
+      + `<circle cx="${x(last).toFixed(1)}" cy="${y(values[last]).toFixed(1)}" r="3" fill="currentColor"/></svg>`;
+  }
+
   // Bento summary above the scorecard: the month across all firms at a glance.
   function renderDashKpis() {
     const rows = scorecardCache;
@@ -358,23 +408,42 @@
     const pct = (n) => (n / rows.length) * 100;
     const momHtml = mom === null ? '<span class="dk-sub">No prior month to compare</span>'
       : `<span class="dk-sub ${mom > 0 ? 'up' : mom < 0 ? 'down' : ''}">${mom > 0 ? '+' : ''}${mom}% vs last month</span>`;
+    // Trend over the last 6 months (only once those scorecards are loaded).
+    const month = monthInput.value;
+    const trendMonths = [];
+    for (let i = 5; i >= 1; i--) trendMonths.push(priorMonth(month, i));
+    const haveTrend = trendMonths.every(m => trendCache.has(m));
+    const series = (k) => haveTrend ? [...trendMonths.map(m => (trendCache.get(m) || []).reduce((s2, r) => s2 + Number(r[k] || 0), 0)), sum(k)] : [];
+    const spark = (k, what, money) => {
+      const v = series(k);
+      if (!v.length) return '';
+      const label = `${what}, last 6 months: ${v.map((n, i) => `${monthLabel(i < 5 ? trendMonths[i] : month).split(' ')[0].slice(0, 3)} ${money ? fmtMoney(n) : n}`).join(', ')}`;
+      return sparkline(v, label);
+    };
+    const tile = (label, value, sub, k, money) => `<div class="dk-tile"><span class="dk-label">${label}</span><div class="dk-row"><span class="dk-value">${value}</span>${spark(k, label, money)}</div>${sub}</div>`;
     box.innerHTML = `
-      <div class="dk-tile"><span class="dk-label">Activities logged</span><span class="dk-value">${acts}</span><span class="dk-sub">${demos} with demo gear</span></div>
-      <div class="dk-tile"><span class="dk-label">Open pipeline</span><span class="dk-value">${fmtMoney(openV)}</span><span class="dk-sub">${openN} open opportunit${openN === 1 ? 'y' : 'ies'}</span></div>
-      <div class="dk-tile"><span class="dk-label">New pipeline this month</span><span class="dk-value">${fmtMoney(newV)}</span><span class="dk-sub">${newN} new opportunit${newN === 1 ? 'y' : 'ies'}</span></div>
-      <div class="dk-tile"><span class="dk-label">Sell-out</span><span class="dk-value">${fmtMoney(sell)}</span>${momHtml}</div>
-      <div class="dk-tile dk-rag"><span class="dk-label">Firms by status</span>
+      ${tile('Activities logged', acts, `<span class="dk-sub">${demos} with demo gear</span>`, 'activity_count', false)}
+      ${tile('Open pipeline', fmtMoney(openV), `<span class="dk-sub">${openN} open opportunit${openN === 1 ? 'y' : 'ies'}</span>`, 'open_pipeline_value_usd', true)}
+      ${tile('New pipeline this month', fmtMoney(newV), `<span class="dk-sub">${newN} new opportunit${newN === 1 ? 'y' : 'ies'}</span>`, 'new_pipeline_value_usd', true)}
+      ${tile('Sell-out', fmtMoney(sell), momHtml, 'sellout_revenue', true)}
+      <div class="dk-tile dk-rag"><span class="dk-label">Firm health</span>
         <div class="dk-bar" role="img" aria-label="${rag.Green} green, ${rag.Amber} amber, ${rag.Red} red">
           <i class="g" style="width:${pct(rag.Green)}%"></i><i class="a" style="width:${pct(rag.Amber)}%"></i><i class="r" style="width:${pct(rag.Red)}%"></i>
         </div>
-        <span class="dk-sub"><b class="g">${rag.Green}</b> green · <b class="a">${rag.Amber}</b> amber · <b class="r">${rag.Red}</b> red</span></div>`;
+        <span class="dk-sub"><b class="g">${rag.Green}</b> green · <b class="a">${rag.Amber}</b> amber · <b class="r">${rag.Red}</b> red</span>
+        <details class="dk-help"><summary>How it's scored</summary>
+          <div class="rag-legend">
+            <span class="rl-item"><span class="rag-badge rag-red">Red</span> 0–3 activities logged this month</span>
+            <span class="rl-item"><span class="rag-badge rag-amber">Amber</span> 4–7 activities, or 8+ with no open pipeline or no new opportunities entered this month</span>
+            <span class="rl-item"><span class="rag-badge rag-green">Green</span> 8+ activities, open pipeline, and at least one new opportunity entered this month</span>
+          </div>
+        </details></div>`;
     box.hidden = false;
   }
 
   async function loadScorecard() {
     document.getElementById('loading-note').style.display = 'block';
     document.getElementById('scorecard-table').style.display = 'none';
-    document.getElementById('rag-legend').style.display = 'none';
     const month = monthInput.value;
     const [scorecardRes] = await Promise.all([
       client.rpc('get_rag_scorecard', { p_month: month }),
@@ -389,11 +458,11 @@
     await loadReviewState(month);
     renderScorecard();
     renderDashKpis();
+    loadTrend(month);
     renderAlerts();
     renderMonthClose();
     document.getElementById('loading-note').style.display = 'none';
     document.getElementById('scorecard-table').style.display = ''; // CSS decides: table on desktop, scrollable block on phones
-    document.getElementById('rag-legend').style.display = 'flex';
     if (selectedFirmId) {
       const stillThere = scorecardCache.find(r => r.rep_firm_id === selectedFirmId);
       if (stillThere) openDrilldown(selectedFirmId, { scroll: false }); else closeDrilldown();
@@ -437,10 +506,13 @@
     }
     const firmName = (id) => (firmsCache.find(f => f.id === id) || {}).name || '(unknown firm)';
     panel.style.display = 'block';
-    panel.innerHTML =
-      (zeroActivityFirms.length ? `<div class="alert-row alert-red"><strong>${zeroActivityFirms.length} firm${zeroActivityFirms.length === 1 ? '' : 's'} with NO activity logged this month:</strong> ${zeroActivityFirms.map(r => `<a href="#" data-open-firm="${r.rep_firm_id}">${escapeHtml(r.firm_name)}</a>`).join(', ')}</div>` : '') +
-      (lowActivityRedFirms.length ? `<div class="alert-row alert-red"><strong>${lowActivityRedFirms.length} firm${lowActivityRedFirms.length === 1 ? '' : 's'} at Red RAG this month:</strong> ${lowActivityRedFirms.map(r => `<a href="#" data-open-firm="${r.rep_firm_id}">${escapeHtml(r.firm_name)}</a>`).join(', ')}</div>` : '') +
-      (dormantEntries.length ? `<div class="alert-row alert-amber"><strong>${totalDormant} account${totalDormant === 1 ? '' : 's'}</strong> with no linked activity in the last 3 months, across ${dormantEntries.length} firm${dormantEntries.length === 1 ? '' : 's'}: ${dormantEntries.map(([id, accts]) => `<a href="#" data-open-firm="${id}">${escapeHtml(firmName(id))} (${accts.length})</a>`).join(', ')}</div>` : '');
+    const firmLinkList = (rows) => rows.map(r => `<a href="#" data-open-firm="${r.rep_firm_id}">${escapeHtml(r.firm_name)}</a>`).join(', ');
+    const signal = (cls, summary, body) => `<details class="signal ${cls}"><summary>${summary}</summary><div class="sig-body">${body}</div></details>`;
+    panel.innerHTML = '<div class="signals">' +
+      (zeroActivityFirms.length ? signal('sig-red', `<b>${zeroActivityFirms.length}</b> firm${zeroActivityFirms.length === 1 ? '' : 's'} without activity`, `Nothing logged this month by ${firmLinkList(zeroActivityFirms)}.`) : '') +
+      (lowActivityRedFirms.length ? signal('sig-red', `<b>${lowActivityRedFirms.length}</b> more at red`, `Fewer than 4 activities this month: ${firmLinkList(lowActivityRedFirms)}.`) : '') +
+      (dormantEntries.length ? signal('sig-amber', `<b>${totalDormant}</b> dormant account${totalDormant === 1 ? '' : 's'}`, `No linked activity in the last 3 months, per firm: ${dormantEntries.map(([id, accts]) => `<a href="#" data-open-firm="${id}">${escapeHtml(firmName(id))} (${accts.length})</a>`).join(', ')}.`) : '') +
+      '</div>';
     panel.querySelectorAll('[data-open-firm]').forEach(a => {
       a.addEventListener('click', (e) => {
         e.preventDefault();
