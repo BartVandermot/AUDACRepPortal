@@ -588,6 +588,7 @@ They can no longer log or import activities. Everything they logged stays, under
   (async function init() {
     const g = await guard();
     if (!g) return;
+    AudacSync.showAlert(client);
     currentUser = g.user;
     document.getElementById('user-email').textContent = g.profile.email;
     await loadAll();

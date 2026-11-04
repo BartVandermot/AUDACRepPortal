@@ -692,6 +692,7 @@
   (async function init() {
     const g = await guard();
     if (!g) return;
+    AudacSync.showAlert(client);
     document.getElementById('user-email').textContent = g.profile.email;
     await loadFirms();
   })();

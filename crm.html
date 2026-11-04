@@ -1095,6 +1095,7 @@
   (async function init() {
     const g = await guard();
     if (!g) return;
+    AudacSync.showAlert(client);
     currentUser = g.user;
     document.getElementById('user-email').textContent = g.profile.email;
     await loadAll();

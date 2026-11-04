@@ -457,6 +457,7 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="/assets/audac-shell.js"></script>
 <script src="/assets/audac-data.js"></script>
+<script src="/assets/audac-sync.js"></script>
 <script>
   const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
@@ -2512,6 +2513,7 @@
   (async function init() {
     const g = await guard();
     if (!g) return;
+    AudacSync.showAlert(client);
     currentUser = g.user;
     document.getElementById('user-email').textContent = g.profile.email;
     importMonthInput.value = currentMonthValue();

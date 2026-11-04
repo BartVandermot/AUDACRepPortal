@@ -7,6 +7,7 @@
   const MAX_WAIT_MS = 10 * 60 * 1000;
   const PHASE_LABEL = { accounts: 'accounts', contacts: 'contacts', opportunities: 'opportunities', done: 'finishing' };
 
+  const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   function plural(n, one, many) { return `${n} ${n === 1 ? one : (many || one + 's')}`; }
 
   window.AudacSync = {
@@ -48,7 +49,9 @@
     // Start + watch in one go.
     async run(client, onUpdate) {
       const { runId } = await this.start(client);
-      return this.watch(client, runId, onUpdate);
+      const run = await this.watch(client, runId, onUpdate);
+      this.showAlert(client); // clears (or updates) the red bar
+      return run;
     },
 
     progressText(run) {
@@ -68,6 +71,42 @@
       ].filter(Boolean);
       return `Synced ${parts.join(', ')}${secs ? ` in ${secs}s` : ''}.`
         + (s.blockingContacts ? ` ${plural(s.blockingContacts, 'contact')} still ${s.blockingContacts === 1 ? 'blocks' : 'block'} the pipeline.` : '');
+    },
+
+    // Red bar at the top of a manager page when the CRM data can't be trusted:
+    // the last run failed, or nothing synced successfully for STALE_HOURS
+    // (the nightly job itself didn't run). Hidden while a run is in progress.
+    STALE_HOURS: 36,
+    async showAlert(client) {
+      const main = document.querySelector('main.page');
+      if (!main) return;
+      const [[last], ok] = await Promise.all([this.latest(client, 1), this.lastOk(client)]);
+      document.getElementById('sync-alert')?.remove();
+      if (!last || last.status === 'running') return;
+      const okAt = ok?.finished_at || null;
+      const staleHours = okAt ? (Date.now() - new Date(okAt)) / 3600000 : Infinity;
+      let msg = null;
+      if (last.status === 'error') {
+        msg = `<b>The CRM sync failed</b> ${this.ago(last.finished_at || last.started_at)}: ${esc(last.error || 'unknown error')}.`;
+      } else if (staleHours > this.STALE_HOURS) {
+        msg = `<b>The CRM hasn't synced since ${okAt ? this.ago(okAt) : 'ever'}.</b> The nightly sync didn't run.`;
+      }
+      if (!msg) return;
+      if (!document.getElementById('sync-alert-style')) {
+        const st = document.createElement('style');
+        st.id = 'sync-alert-style';
+        st.textContent = `.sync-alert{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:0 0 16px;padding:10px 14px;border:1px solid var(--color-danger);border-radius:12px;background:var(--color-danger-tint);color:var(--color-text-primary);font-size:13px}
+.sync-alert b{color:var(--color-danger)}.sync-alert span{flex:1 1 320px}.sync-alert a{color:var(--color-text-primary);font-weight:600;white-space:nowrap}`;
+        document.head.appendChild(st);
+      }
+      const bar = document.createElement('div');
+      bar.id = 'sync-alert';
+      bar.className = 'sync-alert';
+      bar.setAttribute('role', 'alert');
+      const onDashboard = location.pathname.replace(/\.html$/, '') === '/dashboard';
+      bar.innerHTML = `<span>${msg} Data from Dynamics may be out of date until a sync succeeds.</span>`
+        + (onDashboard ? '' : '<a href="/dashboard">Retry from the dashboard →</a>');
+      main.prepend(bar);
     },
 
     ago(iso) {

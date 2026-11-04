@@ -1591,6 +1591,7 @@ Their activity entries for ${monthLabel(m)} get locked until re-opened.`)) retur
   (async function init() {
     const g = await guard();
     if (!g) return;
+    AudacSync.showAlert(client);
     currentUser = g.user;
     document.getElementById('user-email').textContent = g.profile.email;
     await loadFirms();
