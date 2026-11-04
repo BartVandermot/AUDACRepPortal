@@ -2,10 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0c0e">
 <title>AUDAC Rep Portal — Executive View</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/audac-ui.css">
 <style>
   :root {
     --audac-gold: #d9a653;
@@ -27,23 +29,23 @@
   header.audac-header img.logo { height: 30px; filter: invert(1); }
   header.audac-header .wordmark { font-weight: 700; font-size: 18px; letter-spacing: 3px; color: #fff; display: none; }
   header.audac-header h1 { font-size: 14px; font-weight: 400; margin: 0; color: var(--audac-gold); letter-spacing: 1px; text-transform: uppercase; }
-  .user-box { display: flex; align-items: center; gap: 14px; font-size: 13px; color: #ccc; }
-  .signout-btn { background: transparent; border: 1px solid #555; color: #fff; padding: 7px 14px; border-radius: 3px; cursor: pointer; font-family: inherit; font-size: 12px; }
+  .user-box { display: flex; align-items: center; gap: 14px; font-size: 13px; color: var(--color-text-secondary); }
+  .signout-btn { background: transparent; border: 1px solid var(--color-border-strong); color: #fff; padding: 7px 14px; border-radius: 3px; cursor: pointer; font-family: inherit; font-size: 12px; }
   main { max-width: 1200px; margin: 0 auto; padding: 28px 20px 100px; }
   .toolbar { display: flex; align-items: center; margin-bottom: 20px; }
   .toolbar label { font-size: 13px; font-weight: 500; color: var(--audac-black); margin-right: 8px; }
-  input[type="month"] { font-family: 'Montserrat', sans-serif; font-size: 14px; padding: 9px 12px; border: 1px solid #ddd; border-radius: 3px; background: #fff; color: var(--audac-black); }
+  input[type="month"] { font-family: 'Montserrat', sans-serif; font-size: 14px; padding: 9px 12px; border: 1px solid var(--color-border-strong); border-radius: 3px; background-color: var(--color-surface); color: var(--audac-black); }
 
   .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 12px; }
   .kpi-tile { background: var(--audac-section-bg); border-radius: 4px; padding: 20px; }
-  .kpi-tile .kpi-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #999; }
+  .kpi-tile .kpi-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--color-text-muted); }
   .kpi-tile .kpi-value { font-size: 28px; font-weight: 700; color: var(--audac-black); margin-top: 8px; }
-  .kpi-tile .kpi-sub { font-size: 12px; color: #999; margin-top: 4px; }
+  .kpi-tile .kpi-sub { font-size: 12px; color: var(--color-text-muted); margin-top: 4px; }
 
   h2.section-title { font-size: 15px; font-weight: 700; color: var(--audac-black); text-transform: uppercase; letter-spacing: .5px; margin: 36px 0 14px; }
 
-  table.scorecard { width: 100%; border-collapse: collapse; background: #fff; }
-  table.scorecard th, table.scorecard td { padding: 12px 14px; text-align: left; font-size: 13px; border-bottom: 1px solid #eee; }
+  table.scorecard { width: 100%; border-collapse: collapse; background-color: var(--color-surface); }
+  table.scorecard th, table.scorecard td { padding: 12px 14px; text-align: left; font-size: 13px; border-bottom: 1px solid var(--color-border); }
   table.scorecard th { background: var(--audac-section-bg); color: var(--audac-black); font-weight: 700; text-transform: uppercase; font-size: 11px; letter-spacing: .5px; }
   .rag-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; }
   .rag-green { background: var(--green-bg); color: var(--green); }
@@ -51,7 +53,7 @@
   .rag-red { background: var(--red-bg); color: var(--red); }
   .mom-up { color: var(--green); font-weight: 700; }
   .mom-down { color: var(--red); font-weight: 700; }
-  .mom-flat { color: #999; }
+  .mom-flat { color: var(--color-text-muted); }
 
   .rag-legend { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; font-size: 12px; color: var(--audac-text); margin: 0 0 14px; }
   .rag-legend .rl-item { display: flex; align-items: center; gap: 6px; }
@@ -63,31 +65,29 @@
 
   .exceptions { background: var(--red-bg); border-radius: 4px; padding: 18px 22px; }
   .exceptions h3 { margin: 0 0 10px; font-size: 13px; color: var(--red); text-transform: uppercase; letter-spacing: .4px; }
-  .exceptions ul { margin: 0; padding-left: 18px; font-size: 13px; color: #7a1f1a; }
+  .exceptions ul { margin: 0; padding-left: 18px; font-size: 13px; color: #f4b3b0; }
   .exceptions .none { color: var(--green); font-size: 13px; }
   .exceptions-amber { background: var(--amber-bg); border-radius: 4px; padding: 18px 22px; margin-top: 12px; }
   .exceptions-amber h3 { margin: 0 0 10px; font-size: 13px; color: var(--amber); text-transform: uppercase; letter-spacing: .4px; }
-  .exceptions-amber ul { margin: 0; padding-left: 18px; font-size: 13px; color: #6b4a00; }
+  .exceptions-amber ul { margin: 0; padding-left: 18px; font-size: 13px; color: #f1d7a6; }
 
-  #loading-note { font-size: 13px; color: #aaa; padding: 20px 0; }
+  #loading-note { font-size: 13px; color: var(--color-text-muted); padding: 20px 0; }
 </style>
+<link rel="stylesheet" href="/assets/audac-legacy.css">
 </head>
-<body>
+<body data-nav="executive" data-active="executive">
 
-<header class="audac-header">
-  <div class="brand">
-    <img class="logo" src="https://audac.eu/images/AUDAC-logo.webp" alt="AUDAC"
-         onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
-    <span class="wordmark">AUDAC</span>
-    <h1>Executive View</h1>
-  </div>
-  <div class="user-box">
-    <span id="user-email"></span>
-    <button class="signout-btn" id="signout-btn">Sign Out</button>
-  </div>
+<div class="app-shell">
+<aside class="sidebar glass-floating" id="app-sidebar" aria-label="Main menu"></aside>
+<div class="app-content">
+<header class="topbar">
+  <h1>Executive overview</h1>
+  <span class="spacer"></span>
+  <span id="user-email"></span>
+  <button type="button" class="icon-btn mobile-only" id="signout-btn" aria-label="Sign out" title="Sign out"></button>
 </header>
 
-<main>
+<main class="page">
   <div class="toolbar">
     <label for="month-select">Reporting Month</label>
     <input type="month" id="month-select">
@@ -124,9 +124,13 @@
     </div>
   </div>
 </main>
+</div>
+</div>
+<nav class="bottom-nav glass-floating" id="app-bottom-nav" aria-label="Main menu"></nav>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="/assets/audac-shell.js"></script>
 <script>
   const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
@@ -281,10 +285,10 @@
       type: 'line', data: { labels, datasets: [{ data: activityData, borderColor: '#d9a653', backgroundColor: '#d9a65333', fill: true, tension: .3 }] }, options: commonOpts,
     });
     charts['chart-pipeline'] = new Chart(document.getElementById('chart-pipeline'), {
-      type: 'bar', data: { labels, datasets: [{ data: pipelineData, backgroundColor: '#000000' }] }, options: commonOpts,
+      type: 'bar', data: { labels, datasets: [{ data: pipelineData, backgroundColor: '#8f9196' }] }, options: commonOpts,
     });
     charts['chart-sellout'] = new Chart(document.getElementById('chart-sellout'), {
-      type: 'line', data: { labels, datasets: [{ data: selloutData, borderColor: '#2e7d32', backgroundColor: '#2e7d3233', fill: true, tension: .3 }] }, options: commonOpts,
+      type: 'line', data: { labels, datasets: [{ data: selloutData, borderColor: '#71c68b', backgroundColor: '#71c68b26', fill: true, tension: .3 }] }, options: commonOpts,
     });
   }
 

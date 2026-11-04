@@ -1,0 +1,157 @@
+/* =====================================================================
+   Bridge for the manager/executive pages (dashboard, admin, crm, reps,
+   territories, executive). Loaded AFTER each page's own <style>, so these
+   rules win over the page's older light-theme rules without touching the
+   page's JavaScript. Tokens/components come from audac-ui.css.
+   ===================================================================== */
+
+/* 1. Old page tokens -> Premium Dark Glass tokens */
+:root {
+  --audac-gold: var(--color-gold);
+  --audac-black: var(--color-text-primary);   /* was used as heading/label text */
+  --audac-white: var(--color-surface);        /* was used as card/table background */
+  --audac-section-bg: var(--color-surface);
+  --audac-text: var(--color-text-secondary);
+  --green: var(--color-success);  --green-bg: rgba(113, 198, 139, 0.10);
+  --amber: var(--color-warning);  --amber-bg: rgba(232, 182, 91, 0.10);
+  --red: var(--color-danger);     --red-bg: var(--color-danger-tint);
+}
+body {
+  font-size: 15px; line-height: 22px;
+  color: var(--color-text-secondary);
+  background:
+    radial-gradient(ellipse 70% 38% at 88% 12%, rgba(217, 166, 83, 0.10), transparent 75%),
+    radial-gradient(ellipse 60% 35% at 0% 80%, rgba(90, 100, 120, 0.045), transparent 75%),
+    var(--color-bg);
+  background-attachment: fixed;
+}
+main.page { margin: 0; max-width: 1320px; padding: var(--space-6) var(--space-8) var(--space-10); }
+#user-email { display: none; }
+@media (max-width: 760px) {
+  main.page { padding: var(--space-5) var(--space-4) calc(112px + env(safe-area-inset-bottom, 0px)); }
+  /* Wide data tables scroll inside themselves on phones instead of widening the page */
+  table.detail, table.scorecard, table.crm-table, table.rep-table, table.territory-table, table.split-table {
+    display: block; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* 2. Headings & helper text */
+h2.section-title {
+  font-size: 16px; line-height: 22px; font-weight: 650; text-transform: none; letter-spacing: 0;
+  color: var(--color-text-primary); border-top-color: var(--color-border);
+}
+.dd-sub-title, .chart-card h3, .exceptions h3, .exceptions-amber h3 {
+  font-size: 12px; line-height: 16px; font-weight: 650; letter-spacing: 1.2px; text-transform: uppercase; color: var(--color-gold);
+}
+.upload-hint, .result-count, .empty-note, #loading-note, .admin-pointer, #crm-sync-status, #last-updated-note { color: var(--color-text-muted); }
+.admin-pointer { border-top-color: var(--color-border); }
+.admin-pointer a, .uncovered-box a, .alert-row a { color: var(--color-gold-light); }
+.toolbar label, .split-form label, .mapping-grid label, .import-month-bar label { color: var(--color-text-primary); font-weight: 600; }
+
+/* 3. Buttons: page rules -> design-system buttons */
+button.audac-btn, button.merge-btn {
+  min-height: 44px; padding: 0 var(--space-5); border-radius: var(--radius-button);
+  border: 1px solid rgba(255,236,190,0.28);
+  background: linear-gradient(180deg, var(--color-gold-light), var(--color-gold-deep));
+  color: #171714; font-size: 14px; font-weight: 650; letter-spacing: 0; text-transform: none;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.30), 0 6px 16px rgba(0,0,0,0.16);
+}
+button.merge-btn { min-height: 32px; padding: 0 var(--space-3); font-size: 12px; border-radius: 10px; }
+button.audac-btn:disabled, button.merge-btn:disabled { background: var(--color-surface-elevated); color: var(--color-text-muted); border-color: var(--color-border); box-shadow: none; }
+button.audac-btn-outline {
+  min-height: 44px; padding: 0 var(--space-4); border-radius: var(--radius-button);
+  background: var(--color-surface-elevated); border: 1px solid var(--color-border); color: var(--color-text-primary);
+  font-size: 14px; font-weight: 600; letter-spacing: 0; text-transform: none;
+}
+button.audac-btn-outline:hover { border-color: var(--color-border-strong); }
+button.audac-btn-outline.danger-outline { color: var(--color-danger); border-color: rgba(231,127,123,0.35); background: var(--color-danger-tint); }
+.link-btn { font-size: 13px; color: var(--color-text-primary); padding: 4px 2px; margin: 0 8px 0 0; text-underline-offset: 3px; }
+.link-btn.danger { color: var(--color-danger); }
+.row-name-btn { color: var(--color-text-primary); text-decoration-color: var(--color-border-strong); }
+.row-name-btn:hover { text-decoration-color: var(--color-gold); }
+
+/* 4. Tabs (Data Admin) */
+.tab-bar { border-bottom-color: var(--color-border); gap: var(--space-1); }
+.tab-btn { color: var(--color-text-muted); font-size: 14px; font-weight: 600; letter-spacing: 0; text-transform: none; padding: 12px 12px; margin-right: 4px; border-radius: 10px 10px 0 0; }
+.tab-btn:hover { color: var(--color-text-primary); background: rgba(255,255,255,0.03); }
+.tab-btn.active { color: var(--color-gold-light); border-bottom-color: var(--color-gold); }
+
+/* 5. KPI tiles / panels -> quiet surfaces */
+.kpi-tile, .chart-card, #drilldown, #split-panel, #states-panel {
+  background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-tile);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), var(--shadow-card);
+}
+#drilldown, #split-panel, #states-panel { border-radius: var(--radius-card); padding: var(--space-6); }
+.kpi-tile .kpi-label { font-size: 12px; font-weight: 600; letter-spacing: .4px; color: var(--color-text-secondary); text-transform: none; }
+.kpi-tile .kpi-value { color: var(--color-text-primary); font-weight: 650; font-variant-numeric: tabular-nums; }
+.kpi-tile .kpi-sub { color: var(--color-text-muted); }
+#drilldown .dd-header h3, .sp-header h3 { font-size: 18px; line-height: 24px; color: var(--color-text-primary); }
+
+/* 6. Data tables: opaque, quiet, readable */
+table.detail, table.scorecard, table.crm-table, table.rep-table, table.territory-table, table.split-table {
+  background: var(--color-bg-raised); border: 1px solid var(--color-border); border-radius: var(--radius-tile);
+  border-collapse: separate; border-spacing: 0; overflow: hidden; font-size: 13.5px; color: var(--color-text-primary);
+}
+table.detail th, table.scorecard th, table.crm-table th, table.rep-table th, table.territory-table th, table.split-table th {
+  background: var(--color-surface); color: var(--color-text-secondary); font-size: 11.5px; font-weight: 650; letter-spacing: .6px;
+  text-transform: uppercase; border-bottom: 1px solid var(--color-border);
+}
+table.detail td, table.scorecard td, table.crm-table td, table.rep-table td, table.territory-table td, table.split-table td {
+  border-bottom: 1px solid var(--color-border); color: var(--color-text-primary);
+}
+table.detail tbody tr:last-child td, table.scorecard tbody tr:last-child td, table.crm-table tbody tr:last-child td,
+table.rep-table tbody tr:last-child td, table.territory-table tbody tr:last-child td, table.split-table tbody tr:last-child td { border-bottom: 0; }
+table.scorecard tbody tr:hover, table.crm-table tbody tr:hover { background: rgba(255,255,255,0.03); }
+table.scorecard tbody tr.selected, table.crm-table tbody tr.selected { background: var(--color-gold-tint); }
+tr.contacts-row td, tr.attachments-row td, tr.audit-diff-row td { background: var(--color-surface); }
+tr.activity-edit-row td { background: var(--color-surface-elevated); border-bottom: 2px solid var(--color-gold); }
+tr.activity-edit-row .action-row { background: var(--color-surface-elevated); border-top-color: var(--color-gold); box-shadow: 0 -8px 18px rgba(0,0,0,.25); }
+.muted, .states-list .muted { color: var(--color-text-muted); }
+.expand-caret { color: var(--color-gold); }
+td.zip-range { color: var(--color-text-secondary); }
+
+/* 7. Compact controls inside dense UIs (tables, toolbars, bars) */
+table input, table select, .edit-grid input, .edit-grid select, .bulk-bar select, .mapping-grid select,
+select.firm-assign, select.merge-target-select, select.mapping-firm-select, select.crm-contact-login-assign,
+input.territory-input, input.link-account-input, .split-form input, .split-form select, .toolbar input, .toolbar select {
+  min-height: 38px; padding-top: 7px; padding-bottom: 7px; font-size: 14px; border-radius: 10px;
+  background-color: var(--color-input); color: var(--color-text-primary); border-color: var(--color-border-strong);
+}
+table select, .bulk-bar select, .mapping-grid select, .toolbar select, .split-form select,
+select.firm-assign, select.merge-target-select, select.mapping-firm-select, select.crm-contact-login-assign { padding-right: 34px; background-position: right 10px center; }
+input.link-account-input { border-style: dashed; }
+input[type="month"] { min-height: 44px; }
+.edit-grid label, tr.activity-edit-row > td > label { color: var(--color-text-primary); font-size: 13px; font-weight: 600; }
+tr.activity-edit-row textarea { font-size: 14px; }
+
+/* 8. Badges / status */
+.rag-badge, .status-badge, .badge-parent, .manual-override-badge, .admin-badge {
+  border-radius: 999px; font-weight: 650; letter-spacing: .4px; border: 1px solid transparent;
+}
+.rag-green, .status-badge.won, .badge-parent.via-parent, .admin-badge { background: var(--green-bg); color: var(--color-success); border-color: rgba(113,198,139,0.22); }
+.rag-amber, .status-badge.open, .badge-parent.via-state { background: var(--amber-bg); color: var(--color-warning); border-color: rgba(232,182,91,0.22); }
+.rag-red, .status-badge.lost, .badge-parent.inactive { background: var(--red-bg); color: var(--color-danger); border-color: rgba(231,127,123,0.25); }
+.badge-parent.via-manual, .badge-parent.override, .manual-override-badge { background: rgba(255,255,255,0.06); color: var(--color-text-secondary); border-color: var(--color-border); }
+.mom-up { color: var(--color-success); } .mom-down { color: var(--color-danger); } .mom-flat { color: var(--color-text-muted); }
+.mismatch-flag, .stale-note { color: var(--color-warning); }
+.save-note { color: var(--color-success); }
+
+/* 9. Alerts, status boxes, bars */
+.alert-row, .upload-status, .exceptions, .exceptions-amber, .uncovered-box { border-radius: var(--radius-tile); border: 1px solid transparent; }
+.alert-row.alert-red, .upload-status.err, .exceptions, .uncovered-box { background: var(--red-bg); color: #f4b3b0; border-color: rgba(231,127,123,0.30); }
+.alert-row.alert-amber, .upload-status.warn, .exceptions-amber { background: var(--amber-bg); color: #f1d7a6; border-color: rgba(232,182,91,0.30); }
+.upload-status.ok { background: var(--green-bg); color: #b5e6c4; border-color: rgba(113,198,139,0.3); }
+.exceptions ul, .exceptions-amber ul, .uncovered-box { color: var(--color-text-primary); }
+.exceptions .none { color: var(--color-success); }
+.bulk-bar { background: var(--color-surface-elevated); border: 1px solid rgba(217,166,83,0.35); border-radius: var(--radius-tile); color: var(--color-text-primary); }
+.page-meta-row, .import-month-bar { border-bottom-color: var(--color-border); }
+.review-toggle { color: var(--color-text-primary); }
+.state-check.conflict { background: var(--red-bg); }
+.state-check .conflict-note { color: var(--color-danger); }
+
+/* 10. Territory map + legend on dark */
+#usa-map-svg g path { stroke: var(--color-bg); }
+.map-legend .legend-note { border-top-color: var(--color-border); color: var(--color-text-secondary); }
+.legend-item:hover { color: var(--color-text-primary); }
+.map-legend .legend-swatch.conflict-demo { background: repeating-linear-gradient(45deg, var(--color-danger), var(--color-danger) 4px, var(--color-bg) 4px, var(--color-bg) 8px); }
+.map-legend .legend-swatch.split-demo { background: linear-gradient(to right, #8b8c90 50%, #4a4b4f 50%); }

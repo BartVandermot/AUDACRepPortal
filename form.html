@@ -213,8 +213,7 @@
     AudacShell.setSection(firm ? firm.name : '');
     if (currentProfile?.role === 'manager' && !managerItemAdded) {
       managerItemAdded = true;
-      AudacShell.addItem({ key: 'dash', href: '/dashboard', label: 'Manager dashboard', short: 'Dashboard', icon: 'grid' });
-      applyShellUser(); // addItem re-renders the sidebar
+      AudacShell.useNav('manager'); // managers get their own menu here
     }
   }
   function mountShell() {

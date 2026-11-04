@@ -2,10 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0c0e">
 <title>AUDAC Rep Portal — Data Admin</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/audac-ui.css">
 <style>
   :root {
     --audac-gold: #d9a653;
@@ -27,46 +29,46 @@
   header.audac-header img.logo { height: 30px; filter: invert(1); }
   header.audac-header .wordmark { font-weight: 700; font-size: 18px; letter-spacing: 3px; color: #fff; display: none; }
   header.audac-header h1 { font-size: 14px; font-weight: 400; margin: 0; color: var(--audac-gold); letter-spacing: 1px; text-transform: uppercase; }
-  .user-box { display: flex; align-items: center; gap: 14px; font-size: 13px; color: #ccc; }
-  .signout-btn, .nav-link { background: transparent; border: 1px solid #555; color: #fff; padding: 7px 14px; border-radius: 3px; cursor: pointer; font-family: inherit; font-size: 12px; text-decoration: none; display: inline-block; }
+  .user-box { display: flex; align-items: center; gap: 14px; font-size: 13px; color: var(--color-text-secondary); }
+  .signout-btn, .nav-link { background: transparent; border: 1px solid var(--color-border-strong); color: #fff; padding: 7px 14px; border-radius: 3px; cursor: pointer; font-family: inherit; font-size: 12px; text-decoration: none; display: inline-block; }
 
   main { max-width: 1200px; margin: 0 auto; padding: 28px 20px 100px; }
   .toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
   .toolbar label { font-size: 13px; font-weight: 500; color: var(--audac-black); margin-right: 8px; }
   input[type="month"] {
     font-family: 'Montserrat', sans-serif; font-size: 14px; padding: 9px 12px;
-    border: 1px solid #ddd; border-radius: 3px; background: #fff; color: var(--audac-black);
+    border: 1px solid var(--color-border-strong); border-radius: 3px; background-color: var(--color-surface); color: var(--audac-black);
   }
-  .admin-pointer { font-size: 13px; color: #999; margin-top: 18px; padding-top: 16px; border-top: 1px solid #eee; }
-  .import-month-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #eee; }
+  .admin-pointer { font-size: 13px; color: var(--color-text-muted); margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--color-border); }
+  .import-month-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--color-border); }
   .import-month-bar label { font-size: 13px; font-weight: 500; color: var(--audac-black); }
   .admin-pointer a { color: var(--audac-black); font-weight: 500; }
   h2.section-title { font-size: 15px; font-weight: 700; color: var(--audac-black); text-transform: uppercase; letter-spacing: .5px; margin: 32px 0 14px; }
 
-  .tab-bar { display: flex; gap: 8px; margin-bottom: 26px; border-bottom: 1px solid #eee; flex-wrap: wrap; }
+  .tab-bar { display: flex; gap: 8px; margin-bottom: 26px; border-bottom: 1px solid var(--color-border); flex-wrap: wrap; }
   .tab-btn {
     background: none; border: none; padding: 12px 4px; margin-right: 22px; font-family: 'Montserrat', sans-serif;
-    font-weight: 700; font-size: 12.5px; letter-spacing: .4px; text-transform: uppercase; color: #aaa;
+    font-weight: 700; font-size: 12.5px; letter-spacing: .4px; text-transform: uppercase; color: var(--color-text-muted);
     cursor: pointer; border-bottom: 2px solid transparent;
   }
   .tab-btn.active { color: var(--audac-black); border-bottom-color: var(--audac-gold); }
   .tab-panel { display: none; }
   .tab-panel.active { display: block; }
 
-  table.detail { width: 100%; border-collapse: collapse; background: #fff; font-size: 12.5px; }
-  table.detail th, table.detail td { padding: 8px 10px; border-bottom: 1px solid #eee; text-align: left; }
-  table.detail th { background: #f1f1f1; }
-  .empty-note { font-size: 12.5px; color: #aaa; padding: 10px 2px; }
-  .result-count { font-size: 12.5px; color: #999; margin-bottom: 10px; }
+  table.detail { width: 100%; border-collapse: collapse; background-color: var(--color-surface); font-size: 12.5px; }
+  table.detail th, table.detail td { padding: 8px 10px; border-bottom: 1px solid var(--color-border); text-align: left; }
+  table.detail th { background-color: var(--color-surface); }
+  .empty-note { font-size: 12.5px; color: var(--color-text-muted); padding: 10px 2px; }
+  .result-count { font-size: 12.5px; color: var(--color-text-muted); margin-bottom: 10px; }
 
   .link-btn { background: none; border: none; padding: 0; font: inherit; font-size: 12px; cursor: pointer; text-decoration: underline; color: var(--audac-black); margin-right: 10px; }
   .link-btn.danger { color: var(--red); }
-  tr.activity-edit-row td { background: #fff; padding: 16px; border-bottom: 2px solid var(--audac-gold); }
+  tr.activity-edit-row td { background-color: var(--color-surface); padding: 16px; border-bottom: 2px solid var(--audac-gold); }
   .edit-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 14px; margin-bottom: 10px; }
   .edit-grid label, tr.activity-edit-row > td > label { display: block; font-size: 11.5px; font-weight: 500; color: var(--audac-black); margin-bottom: 10px; }
   .edit-grid input, .edit-grid select, tr.activity-edit-row textarea {
     display: block; width: 100%; font-family: 'Montserrat', sans-serif; font-size: 12.5px; padding: 6px 8px; margin-top: 3px;
-    border: 1px solid #ddd; border-radius: 3px;
+    border: 1px solid var(--color-border-strong); border-radius: 3px;
   }
   tr.activity-edit-row textarea { min-height: 44px; resize: vertical; }
   /* Sticks to the bottom of the viewport while scrolling through this row's
@@ -75,20 +77,20 @@
      the confirm-before-discard above already catches, but shouldn't need to). */
   tr.activity-edit-row .action-row {
     position: sticky; bottom: 0;
-    background: #fff; margin: 14px -16px -16px; padding: 12px 16px;
+    background-color: var(--color-surface); margin: 14px -16px -16px; padding: 12px 16px;
     border-top: 2px solid var(--audac-gold); box-shadow: 0 -4px 10px rgba(0,0,0,.06);
   }
   .ae-checkbox { display: flex !important; align-items: center; gap: 6px; margin-top: 12px; }
   .ae-checkbox input { width: auto !important; margin: 0; }
   .ae-status { font-size: 12px; margin-left: 8px; color: var(--red); }
-  .muted { color: #bbb; }
-  tr.attachments-row td, tr.audit-diff-row td { background: #fbf7ee; padding: 14px 20px; }
+  .muted { color: var(--color-text-muted); }
+  tr.attachments-row td, tr.audit-diff-row td { background-color: rgba(255,255,255,0.03); padding: 14px 20px; }
 
   .bulk-bar {
     display: none; align-items: center; gap: 10px; flex-wrap: wrap;
     background: var(--audac-section-bg); border-radius: 4px; padding: 10px 14px; margin-bottom: 12px; font-size: 13px;
   }
-  .bulk-bar select { font-family: 'Montserrat', sans-serif; font-size: 12.5px; padding: 7px 10px; border: 1px solid #ddd; border-radius: 3px; }
+  .bulk-bar select { font-family: 'Montserrat', sans-serif; font-size: 12.5px; padding: 7px 10px; border: 1px solid var(--color-border-strong); border-radius: 3px; }
   button.audac-btn-outline.danger-outline { color: var(--red); border-color: var(--red); }
   table.detail th.check-col, table.detail td.check-col { width: 24px; text-align: center; }
 
@@ -104,10 +106,10 @@
     letter-spacing: .4px; text-transform: uppercase; cursor: pointer; border-radius: 3px;
   }
 
-  .upload-hint { font-size: 12px; color: #999; margin: 0 0 14px; max-width: 720px; }
+  .upload-hint { font-size: 12px; color: var(--color-text-muted); margin: 0 0 14px; max-width: 720px; }
   .mapping-grid { display: grid; grid-template-columns: 160px 1fr; gap: 10px 14px; align-items: center; margin: 14px 0; max-width: 520px; }
   .mapping-grid label { font-size: 12.5px; font-weight: 500; color: var(--audac-black); }
-  .mapping-grid select { font-family: 'Montserrat', sans-serif; font-size: 13px; padding: 7px 10px; border: 1px solid #ddd; border-radius: 3px; }
+  .mapping-grid select { font-family: 'Montserrat', sans-serif; font-size: 13px; padding: 7px 10px; border: 1px solid var(--color-border-strong); border-radius: 3px; }
   .upload-status { font-size: 12.5px; margin-top: 10px; padding: 10px 12px; border-radius: 3px; }
   .upload-status.ok { background: var(--green-bg); color: var(--green); }
   .upload-status.warn { background: var(--amber-bg); color: var(--amber); }
@@ -115,7 +117,7 @@
   input[type="file"] { font-family: 'Montserrat', sans-serif; font-size: 13px; }
   .action-row { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
   .dd-sub-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--audac-black); margin: 18px 0 8px; }
-  #loading-note { font-size: 13px; color: #aaa; padding: 20px 0; }
+  #loading-note { font-size: 13px; color: var(--color-text-muted); padding: 20px 0; }
   .status-badge { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; padding: 2px 8px; border-radius: 10px; }
   .status-badge.open { background: var(--amber-bg); color: var(--amber); }
   .status-badge.won { background: var(--green-bg); color: var(--green); }
@@ -123,33 +125,26 @@
 
   .kpi-row { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 22px; }
   .kpi-tile { background: var(--audac-section-bg); border-radius: 4px; padding: 14px 20px; min-width: 140px; }
-  .kpi-tile .kpi-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #999; }
+  .kpi-tile .kpi-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--color-text-muted); }
   .kpi-tile .kpi-value { font-size: 22px; font-weight: 700; color: var(--audac-black); margin-top: 4px; }
-  select.mapping-firm-select { font-family: 'Montserrat', sans-serif; font-size: 12.5px; padding: 6px 8px; border: 1px solid #ddd; border-radius: 3px; max-width: 240px; }
+  select.mapping-firm-select { font-family: 'Montserrat', sans-serif; font-size: 12.5px; padding: 6px 8px; border: 1px solid var(--color-border-strong); border-radius: 3px; max-width: 240px; }
   .stale-note { font-size: 11.5px; color: var(--amber); margin-top: 6px; }
 </style>
+<link rel="stylesheet" href="/assets/audac-legacy.css">
 </head>
-<body>
+<body data-nav="manager" data-active="admin">
 
-<header class="audac-header">
-  <div class="brand">
-    <img class="logo" src="https://audac.eu/images/AUDAC-logo.webp" alt="AUDAC"
-         onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
-    <span class="wordmark">AUDAC</span>
-    <h1>Data Admin</h1>
-  </div>
-  <div class="user-box">
-    <a class="nav-link" href="/territories">Territories</a>
-    <a class="nav-link" href="/crm">Accounts & Contacts</a>
-    <a class="nav-link" href="/reps">Reps</a>
-    <a class="nav-link" href="/import">Activity Import</a>
-    <a class="nav-link" href="/dashboard">← Dashboard</a>
-    <span id="user-email"></span>
-    <button class="signout-btn" id="signout-btn">Sign Out</button>
-  </div>
+<div class="app-shell">
+<aside class="sidebar glass-floating" id="app-sidebar" aria-label="Main menu"></aside>
+<div class="app-content">
+<header class="topbar">
+  <h1>Data Admin</h1>
+  <span class="spacer"></span>
+  <span id="user-email"></span>
+  <button type="button" class="icon-btn mobile-only" id="signout-btn" aria-label="Sign out" title="Sign out"></button>
 </header>
 
-<main>
+<main class="page">
   <div class="tab-bar">
     <button type="button" class="tab-btn" data-tab="activities">Activities</button>
     <button type="button" class="tab-btn" data-tab="education">Education</button>
@@ -406,9 +401,13 @@
   </div>
 
 </main>
+</div>
+</div>
+<nav class="bottom-nav glass-floating" id="app-bottom-nav" aria-label="Main menu"></nav>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="/assets/audac-shell.js"></script>
 <script>
   const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';

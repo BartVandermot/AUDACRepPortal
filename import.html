@@ -246,8 +246,8 @@
     const ownFirm = state.firms.find(x => x.id === profile?.rep_firm_id);
     AudacShell.setUser({ name: profile?.full_name || session.user.email, sub: ownFirm ? ownFirm.name : session.user.email });
     if (isManager) {
-      AudacShell.addItem({ key: 'admin', href: '/admin', label: 'Data Admin', short: 'Admin', icon: 'grid' });
-      AudacShell.setUser({ name: profile?.full_name || session.user.email, sub: 'AUDAC manager' }); // addItem re-renders the sidebar
+      AudacShell.useNav('manager');
+      AudacShell.setUser({ name: profile?.full_name || session.user.email, sub: 'AUDAC manager' });
       $('firm-pick').hidden = false;
       $('firm-select').innerHTML = '<option value="" disabled selected>Select a firm</option>' +
         state.firms.map(f => `<option value="${f.id}">${escapeHtml(f.name)} — ${escapeHtml(f.territory || '')}</option>`).join('');

@@ -2,10 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0c0e">
 <title>AUDAC Rep Portal — Reps</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/audac-ui.css">
 <style>
   :root {
     --audac-gold: #d9a653;
@@ -27,49 +29,49 @@
   header.audac-header img.logo { height: 30px; filter: invert(1); }
   header.audac-header .wordmark { font-weight: 700; font-size: 18px; letter-spacing: 3px; color: #fff; display: none; }
   header.audac-header h1 { font-size: 14px; font-weight: 400; margin: 0; color: var(--audac-gold); letter-spacing: 1px; text-transform: uppercase; }
-  .user-box { display: flex; align-items: center; gap: 14px; font-size: 13px; color: #ccc; }
-  .signout-btn, .nav-link { background: transparent; border: 1px solid #555; color: #fff; padding: 7px 14px; border-radius: 3px; cursor: pointer; font-family: inherit; font-size: 12px; text-decoration: none; display: inline-block; }
+  .user-box { display: flex; align-items: center; gap: 14px; font-size: 13px; color: var(--color-text-secondary); }
+  .signout-btn, .nav-link { background: transparent; border: 1px solid var(--color-border-strong); color: #fff; padding: 7px 14px; border-radius: 3px; cursor: pointer; font-family: inherit; font-size: 12px; text-decoration: none; display: inline-block; }
 
   main { max-width: 1100px; margin: 0 auto; padding: 28px 20px 100px; }
 
   .kpi-row { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 22px; }
   .kpi-tile { background: var(--audac-section-bg); border-radius: 4px; padding: 14px 20px; min-width: 140px; }
-  .kpi-tile .kpi-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #999; }
+  .kpi-tile .kpi-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--color-text-muted); }
   .kpi-tile .kpi-value { font-size: 22px; font-weight: 700; color: var(--audac-black); margin-top: 4px; }
 
-  .upload-hint { font-size: 12.5px; color: #999; margin: 0 0 20px; max-width: 720px; }
+  .upload-hint { font-size: 12.5px; color: var(--color-text-muted); margin: 0 0 20px; max-width: 720px; }
 
   .toolbar { display: flex; align-items: flex-end; gap: 16px; margin-bottom: 18px; flex-wrap: wrap; }
   .toolbar .field { display: flex; flex-direction: column; gap: 6px; }
   .toolbar label { font-size: 12px; font-weight: 500; color: var(--audac-black); }
   .toolbar input[type="text"], .toolbar select {
     font-family: 'Montserrat', sans-serif; font-size: 13.5px; padding: 9px 12px;
-    border: 1px solid #ddd; border-radius: 3px; background: #fff; color: var(--audac-black); min-width: 220px;
+    border: 1px solid var(--color-border-strong); border-radius: 3px; background-color: var(--color-surface); color: var(--audac-black); min-width: 220px;
   }
-  .result-count { font-size: 12.5px; color: #999; margin-bottom: 10px; }
+  .result-count { font-size: 12.5px; color: var(--color-text-muted); margin-bottom: 10px; }
 
-  table.rep-table { width: 100%; border-collapse: collapse; background: #fff; font-size: 13px; }
-  table.rep-table th, table.rep-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #eee; vertical-align: middle; }
+  table.rep-table { width: 100%; border-collapse: collapse; background-color: var(--color-surface); font-size: 13px; }
+  table.rep-table th, table.rep-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--color-border); vertical-align: middle; }
   table.rep-table th { background: var(--audac-section-bg); color: var(--audac-black); font-weight: 700; text-transform: uppercase; font-size: 10.5px; letter-spacing: .5px; }
-  select.firm-assign { font-family: 'Montserrat', sans-serif; font-size: 12.5px; padding: 6px 8px; border: 1px solid #ddd; border-radius: 3px; max-width: 240px; }
-  input.territory-input { font-family: 'Montserrat', sans-serif; font-size: 12.5px; padding: 6px 8px; border: 1px solid #ddd; border-radius: 3px; width: 100%; min-width: 150px; max-width: 220px; color: var(--audac-black); }
-  .row-name-btn { background: none; border: none; padding: 0; font: inherit; color: var(--audac-black); font-weight: 500; cursor: pointer; text-align: left; text-decoration: underline; text-decoration-color: #ddd; }
+  select.firm-assign { font-family: 'Montserrat', sans-serif; font-size: 12.5px; padding: 6px 8px; border: 1px solid var(--color-border-strong); border-radius: 3px; max-width: 240px; }
+  input.territory-input { font-family: 'Montserrat', sans-serif; font-size: 12.5px; padding: 6px 8px; border: 1px solid var(--color-border-strong); border-radius: 3px; width: 100%; min-width: 150px; max-width: 220px; color: var(--audac-black); }
+  .row-name-btn { background: none; border: none; padding: 0; font: inherit; color: var(--audac-black); font-weight: 500; cursor: pointer; text-align: left; text-decoration: underline; text-decoration-color: var(--color-border-strong); }
   .row-name-btn:hover { text-decoration-color: var(--audac-gold); }
   .expand-caret { display: inline-block; width: 14px; color: var(--audac-gold); }
   tr.contacts-row td { background: var(--audac-section-bg); padding: 14px 20px; }
-  select.crm-contact-login-assign { font-family: 'Montserrat', sans-serif; font-size: 12.5px; padding: 6px 8px; border: 1px solid #ddd; border-radius: 3px; max-width: 240px; }
-  input.link-account-input { font-family: 'Montserrat', sans-serif; font-size: 12.5px; padding: 6px 8px; border: 1px dashed #ccc; border-radius: 3px; width: 100%; max-width: 260px; color: var(--audac-black); }
+  select.crm-contact-login-assign { font-family: 'Montserrat', sans-serif; font-size: 12.5px; padding: 6px 8px; border: 1px solid var(--color-border-strong); border-radius: 3px; max-width: 240px; }
+  input.link-account-input { font-family: 'Montserrat', sans-serif; font-size: 12.5px; padding: 6px 8px; border: 1px dashed var(--color-border-strong); border-radius: 3px; width: 100%; max-width: 260px; color: var(--audac-black); }
   .admin-badge { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; padding: 2px 8px; border-radius: 10px; background: var(--green-bg); color: var(--green); margin-left: 8px; }
   .mismatch-flag { color: var(--amber); cursor: help; }
   .save-note { font-size: 11px; margin-left: 8px; }
-  .muted { color: #bbb; }
-  #loading-note { font-size: 13px; color: #aaa; padding: 20px 0; }
+  .muted { color: var(--color-text-muted); }
+  #loading-note { font-size: 13px; color: var(--color-text-muted); padding: 20px 0; }
 
-  h2.section-title { font-size: 15px; font-weight: 700; color: var(--audac-black); text-transform: uppercase; letter-spacing: .5px; margin: 40px 0 14px; padding-top: 20px; border-top: 1px solid #eee; }
-  table.detail { width: 100%; border-collapse: collapse; background: #fff; font-size: 12.5px; }
-  table.detail th, table.detail td { padding: 8px 10px; border-bottom: 1px solid #eee; text-align: left; }
-  table.detail th { background: #f1f1f1; }
-  .empty-note { font-size: 12.5px; color: #aaa; padding: 10px 2px; }
+  h2.section-title { font-size: 15px; font-weight: 700; color: var(--audac-black); text-transform: uppercase; letter-spacing: .5px; margin: 40px 0 14px; padding-top: 20px; border-top: 1px solid var(--color-border); }
+  table.detail { width: 100%; border-collapse: collapse; background-color: var(--color-surface); font-size: 12.5px; }
+  table.detail th, table.detail td { padding: 8px 10px; border-bottom: 1px solid var(--color-border); text-align: left; }
+  table.detail th { background-color: var(--color-surface); }
+  .empty-note { font-size: 12.5px; color: var(--color-text-muted); padding: 10px 2px; }
   .action-row { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
   button.audac-btn-outline {
     background: transparent; color: var(--audac-black); border: 1.5px solid var(--audac-black);
@@ -77,27 +79,21 @@
     letter-spacing: .4px; text-transform: uppercase; cursor: pointer; border-radius: 3px;
   }
 </style>
+<link rel="stylesheet" href="/assets/audac-legacy.css">
 </head>
-<body>
+<body data-nav="manager" data-active="reps">
 
-<header class="audac-header">
-  <div class="brand">
-    <img class="logo" src="https://audac.eu/images/AUDAC-logo.webp" alt="AUDAC"
-         onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
-    <span class="wordmark">AUDAC</span>
-    <h1>Reps</h1>
-  </div>
-  <div class="user-box">
-    <a class="nav-link" href="/territories">Territories</a>
-    <a class="nav-link" href="/crm">Accounts & Contacts</a>
-    <a class="nav-link" href="/admin">Data Admin</a>
-    <a class="nav-link" href="/dashboard">← Dashboard</a>
-    <span id="user-email"></span>
-    <button class="signout-btn" id="signout-btn">Sign Out</button>
-  </div>
+<div class="app-shell">
+<aside class="sidebar glass-floating" id="app-sidebar" aria-label="Main menu"></aside>
+<div class="app-content">
+<header class="topbar">
+  <h1>Reps</h1>
+  <span class="spacer"></span>
+  <span id="user-email"></span>
+  <button type="button" class="icon-btn mobile-only" id="signout-btn" aria-label="Sign out" title="Sign out"></button>
 </header>
 
-<main>
+<main class="page">
   <div id="loading-note">Loading reps…</div>
 
   <div id="content" style="display:none;">
@@ -153,8 +149,12 @@
 
   </div>
 </main>
+</div>
+</div>
+<nav class="bottom-nav glass-floating" id="app-bottom-nav" aria-label="Main menu"></nav>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/assets/audac-shell.js"></script>
 <script>
   const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';

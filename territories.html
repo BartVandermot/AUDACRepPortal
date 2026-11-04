@@ -2,10 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0c0e">
 <title>AUDAC Rep Portal — Rep Firm Territories</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/audac-ui.css">
 <style>
   :root {
     --audac-gold: #d9a653;
@@ -27,27 +29,27 @@
   header.audac-header img.logo { height: 30px; filter: invert(1); }
   header.audac-header .wordmark { font-weight: 700; font-size: 18px; letter-spacing: 3px; color: #fff; display: none; }
   header.audac-header h1 { font-size: 14px; font-weight: 400; margin: 0; color: var(--audac-gold); letter-spacing: 1px; text-transform: uppercase; }
-  .user-box { display: flex; align-items: center; gap: 14px; font-size: 13px; color: #ccc; }
-  .signout-btn, .nav-link { background: transparent; border: 1px solid #555; color: #fff; padding: 7px 14px; border-radius: 3px; cursor: pointer; font-family: inherit; font-size: 12px; text-decoration: none; display: inline-block; }
+  .user-box { display: flex; align-items: center; gap: 14px; font-size: 13px; color: var(--color-text-secondary); }
+  .signout-btn, .nav-link { background: transparent; border: 1px solid var(--color-border-strong); color: #fff; padding: 7px 14px; border-radius: 3px; cursor: pointer; font-family: inherit; font-size: 12px; text-decoration: none; display: inline-block; }
 
   main { max-width: 1100px; margin: 0 auto; padding: 28px 20px 100px; }
 
-  .upload-hint { font-size: 12.5px; color: #999; margin: 0 0 20px; max-width: 720px; }
+  .upload-hint { font-size: 12.5px; color: var(--color-text-muted); margin: 0 0 20px; max-width: 720px; }
 
-  table.territory-table { width: 100%; border-collapse: collapse; background: #fff; font-size: 13px; }
-  table.territory-table th, table.territory-table td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; vertical-align: middle; }
+  table.territory-table { width: 100%; border-collapse: collapse; background-color: var(--color-surface); font-size: 13px; }
+  table.territory-table th, table.territory-table td { padding: 12px; text-align: left; border-bottom: 1px solid var(--color-border); vertical-align: middle; }
   table.territory-table th { background: var(--audac-section-bg); color: var(--audac-black); font-weight: 700; text-transform: uppercase; font-size: 10.5px; letter-spacing: .5px; }
   table.territory-table input[type="text"] {
-    font-family: 'Montserrat', sans-serif; font-size: 13px; padding: 8px 10px; border: 1px solid #ddd; border-radius: 3px;
+    font-family: 'Montserrat', sans-serif; font-size: 13px; padding: 8px 10px; border: 1px solid var(--color-border-strong); border-radius: 3px;
     width: 100%; color: var(--audac-black);
   }
   .states-list { font-size: 12.5px; }
-  .states-list .muted { color: #bbb; }
+  .states-list .muted { color: var(--color-text-muted); }
   .states-list .split-note { color: var(--audac-text); }
   .save-note { font-size: 11px; color: var(--green); margin-left: 8px; }
 
-  table.split-table { width: 100%; border-collapse: collapse; background: #fff; font-size: 13px; margin: 4px 0 32px; }
-  table.split-table th, table.split-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #eee; }
+  table.split-table { width: 100%; border-collapse: collapse; background-color: var(--color-surface); font-size: 13px; margin: 4px 0 32px; }
+  table.split-table th, table.split-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--color-border); }
   table.split-table th { background: var(--audac-section-bg); color: var(--audac-black); font-weight: 700; text-transform: uppercase; font-size: 10.5px; letter-spacing: .5px; }
   table.split-table td.zip-range { font-variant-numeric: tabular-nums; color: var(--audac-text); }
 
@@ -56,7 +58,7 @@
   .split-form label { display: block; font-size: 12px; font-weight: 500; color: var(--audac-black); }
   .split-form input, .split-form select {
     display: block; margin-top: 6px; font-family: 'Montserrat', sans-serif; font-size: 13px;
-    padding: 8px 10px; border: 1px solid #ddd; border-radius: 3px; min-width: 150px; color: var(--audac-black);
+    padding: 8px 10px; border: 1px solid var(--color-border-strong); border-radius: 3px; min-width: 150px; color: var(--audac-black);
   }
   .split-form input[type="number"] { min-width: 110px; }
 
@@ -66,13 +68,13 @@
   .usa-map-wrap { display: flex; gap: 30px; flex-wrap: wrap; align-items: flex-start; margin: 4px 0 32px; }
   #usa-map-svg { width: 100%; max-width: 640px; height: auto; flex: 1 1 480px; min-width: 320px; }
   #usa-map-svg g { cursor: pointer; }
-  #usa-map-svg g path { stroke: #fff; stroke-width: 1; transition: filter .1s ease; }
+  #usa-map-svg g path { stroke: var(--color-bg); stroke-width: 1; transition: filter .1s ease; }
   #usa-map-svg g:hover path { filter: brightness(1.12); }
   #usa-map-svg g.state-conflict path { stroke: var(--red); stroke-width: 1.5; }
   .map-legend { display: flex; flex-direction: column; gap: 7px; font-size: 12.5px; min-width: 210px; max-height: 380px; overflow-y: auto; padding-right: 4px; }
-  .map-legend .legend-note { display: flex; align-items: center; gap: 8px; color: var(--audac-text); padding-top: 6px; margin-top: 6px; border-top: 1px solid #eee; }
+  .map-legend .legend-note { display: flex; align-items: center; gap: 8px; color: var(--audac-text); padding-top: 6px; margin-top: 6px; border-top: 1px solid var(--color-border); }
   .map-legend .legend-swatch.split-demo { background: linear-gradient(to right, #999 50%, #ccc 50%); }
-  .map-legend .legend-swatch.conflict-demo { background: repeating-linear-gradient(45deg, var(--red), var(--red) 4px, #fff 4px, #fff 8px); }
+  .map-legend .legend-swatch.conflict-demo { background: repeating-linear-gradient(45deg, var(--red), var(--red) 4px, var(--color-surface) 4px, var(--color-surface) 8px); }
   .legend-item { display: flex; align-items: center; gap: 8px; cursor: pointer; }
   .legend-item:hover { color: var(--audac-black); }
   .legend-swatch { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; }
@@ -84,33 +86,27 @@
   .state-check { display: flex; align-items: center; gap: 7px; font-size: 13px; padding: 4px 6px; border-radius: 3px; }
   .state-check.conflict { background: var(--red-bg); }
   .state-check .conflict-note { font-size: 10.5px; color: var(--red); }
-  #loading-note { font-size: 13px; color: #aaa; padding: 20px 0; }
+  #loading-note { font-size: 13px; color: var(--color-text-muted); padding: 20px 0; }
 
   .uncovered-box { background: var(--red-bg); border-radius: 4px; padding: 14px 18px; margin: 0 0 24px; font-size: 13px; color: var(--audac-black); }
   .uncovered-box a { color: var(--audac-black); }
   .uncovered-box ul { margin: 8px 0 0 18px; padding: 0; }
 </style>
+<link rel="stylesheet" href="/assets/audac-legacy.css">
 </head>
-<body>
+<body data-nav="manager" data-active="territories">
 
-<header class="audac-header">
-  <div class="brand">
-    <img class="logo" src="https://audac.eu/images/AUDAC-logo.webp" alt="AUDAC"
-         onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
-    <span class="wordmark">AUDAC</span>
-    <h1>Rep Firm Territories</h1>
-  </div>
-  <div class="user-box">
-    <a class="nav-link" href="/crm">Accounts & Contacts</a>
-    <a class="nav-link" href="/reps">Reps</a>
-    <a class="nav-link" href="/admin">Data Admin</a>
-    <a class="nav-link" href="/dashboard">← Dashboard</a>
-    <span id="user-email"></span>
-    <button class="signout-btn" id="signout-btn">Sign Out</button>
-  </div>
+<div class="app-shell">
+<aside class="sidebar glass-floating" id="app-sidebar" aria-label="Main menu"></aside>
+<div class="app-content">
+<header class="topbar">
+  <h1>Territories</h1>
+  <span class="spacer"></span>
+  <span id="user-email"></span>
+  <button type="button" class="icon-btn mobile-only" id="signout-btn" aria-label="Sign out" title="Sign out"></button>
 </header>
 
-<main>
+<main class="page">
   <div id="loading-note">Loading rep firms…</div>
 
   <div id="content" style="display:none;">
@@ -223,8 +219,12 @@
     </div>
   </div>
 </main>
+</div>
+</div>
+<nav class="bottom-nav glass-floating" id="app-bottom-nav" aria-label="Main menu"></nav>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/assets/audac-shell.js"></script>
 <script>
   const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
@@ -310,7 +310,7 @@
       g.replaceChildren(...paths); // drop any <title> from a prior render
 
       if (owners.length === 0) {
-        paths.forEach(p => p.setAttribute('fill', '#eee'));
+        paths.forEach(p => p.setAttribute('fill', '#2c2d31')); // unassigned: quiet on the dark canvas
         g.prepend(titleEl(`${stateName} — unassigned`));
         return;
       }
@@ -385,7 +385,7 @@
         ${escapeHtml(f.name)} (${(f.states || []).length})
       </div>
     `).join('') + `
-      <div class="legend-item"><span class="legend-swatch" style="background:#eee; border:1px solid #ddd;"></span>Unassigned</div>
+      <div class="legend-item"><span class="legend-swatch" style="background:#2c2d31; border:1px solid rgba(255,255,255,0.16);"></span>Unassigned</div>
       <div class="legend-note"><span class="legend-swatch split-demo"></span>Split by postcode — click either side</div>
       <div class="legend-note"><span class="legend-swatch conflict-demo"></span>Unresolved conflict — needs a postcode range</div>
     `;
@@ -558,7 +558,7 @@
         </td>
       </tr>
     `).join('');
-    table.style.display = 'table';
+    table.style.display = ''; // CSS decides: table on desktop, scrollable block on phones
 
     document.querySelectorAll('[data-edit-split]').forEach(btn => {
       btn.addEventListener('click', () => openSplitPanel(zipRangesCache.find(z => z.id === btn.dataset.editSplit)));
