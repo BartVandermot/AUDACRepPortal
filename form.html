@@ -253,7 +253,11 @@
       </div>
     </div>
 
-    <h2 style="padding-left:4px;">Activity Entries</h2>
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
+      <h2 style="padding-left:4px; margin:0;">Activity Entries</h2>
+      <a href="/import" id="import-link" hidden class="audac-btn-outline" style="text-decoration:none; padding:8px 14px; font-size:12px;">Upload from CRM export</a>
+    </div>
+    <div class="hint" id="import-link-signed-out" style="margin:-8px 0 16px 4px;">Logging lots of activities? <a href="#" id="import-signin-link">Sign in</a> to upload them from your own CRM export instead.</div>
     <div id="entries-container"></div>
 
     <button type="button" class="audac-btn-outline" id="add-entry-btn">+ Add Another Activity</button>
@@ -655,6 +659,8 @@
   function renderAuthState() {
     document.getElementById('auth-signed-out').hidden = !!currentSession;
     document.getElementById('auth-signed-in').hidden = !currentSession;
+    document.getElementById('import-link').hidden = !currentSession;
+    document.getElementById('import-link-signed-out').hidden = !!currentSession;
     if (currentSession) document.getElementById('signed-in-email').textContent = currentSession.user.email;
     else document.getElementById('name-prompt-bar').hidden = true;
   }
@@ -667,6 +673,11 @@
   document.getElementById('show-signin-btn').addEventListener('click', () => {
     const qs = firmSelect.value ? ('?firm=' + encodeURIComponent(firmSelect.value)) : '';
     window.location.href = '/login' + qs;
+  });
+
+  document.getElementById('import-signin-link').addEventListener('click', (e) => {
+    e.preventDefault();
+    document.getElementById('show-signin-btn').click();
   });
 
   document.getElementById('sign-out-btn').addEventListener('click', async () => {

@@ -1,0 +1,850 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AUDAC Rep Portal — Import from CRM Export</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --audac-gold: #d9a653;
+    --audac-black: #000000;
+    --audac-white: #ffffff;
+    --audac-section-bg: #f8f8f8;
+    --audac-text: #737373;
+    --ok: #2e7d32;
+    --warn: #a86b00;
+    --err: #b3261e;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; font-family: 'Montserrat', sans-serif; background: var(--audac-white); color: var(--audac-text); }
+  header.audac-header {
+    background: var(--audac-black); color: #fff; padding: 18px 32px;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  }
+  header.audac-header img.logo { height: 32px; filter: invert(1); }
+  header.audac-header .wordmark { font-weight: 700; font-size: 20px; letter-spacing: 3px; color: #fff; display: none; }
+  header.audac-header h1 { font-size: 15px; font-weight: 400; margin: 0; color: var(--audac-gold); letter-spacing: 1px; text-transform: uppercase; }
+  .nav-link { background: transparent; border: 1px solid #555; color: #fff; padding: 7px 14px; border-radius: 3px; font-size: 12px; text-decoration: none; }
+  main { max-width: 1000px; margin: 0 auto; padding: 32px 20px 80px; }
+  .card { background: var(--audac-section-bg); border-radius: 4px; padding: 24px; margin-bottom: 20px; }
+  h2 { font-size: 16px; font-weight: 700; color: var(--audac-black); margin: 0 0 6px; text-transform: uppercase; letter-spacing: .5px; }
+  h3 { font-size: 13px; font-weight: 700; color: var(--audac-black); margin: 18px 0 8px; text-transform: uppercase; letter-spacing: .5px; }
+  .step-intro { font-size: 13px; margin: 0 0 16px; line-height: 1.5; max-width: 70ch; }
+  label { display: block; font-size: 13px; font-weight: 500; color: var(--audac-black); margin-bottom: 6px; }
+  input, select {
+    font-family: 'Montserrat', sans-serif; font-size: 14px; padding: 8px 10px;
+    border: 1px solid #ddd; border-radius: 3px; background: #fff; color: var(--audac-black); max-width: 100%;
+  }
+  input[type="file"] { border: none; background: none; padding: 6px 0; }
+  .hint { font-size: 12px; color: #999; margin-top: 4px; }
+  .row { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-end; }
+  button.audac-btn {
+    background: var(--audac-gold); color: #000; border: none; padding: 13px 28px;
+    font-family: 'Montserrat', sans-serif; font-weight: 700; font-size: 13px; letter-spacing: .5px;
+    text-transform: uppercase; cursor: pointer; border-radius: 3px;
+  }
+  button.audac-btn:disabled, button.audac-btn-outline:disabled { opacity: .5; cursor: not-allowed; }
+  button.audac-btn-outline {
+    background: transparent; color: var(--audac-black); border: 1.5px solid var(--audac-black);
+    padding: 9px 18px; font-family: 'Montserrat', sans-serif; font-weight: 500; font-size: 12px;
+    letter-spacing: .5px; text-transform: uppercase; cursor: pointer; border-radius: 3px;
+  }
+  button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--audac-gold); outline-offset: 2px; }
+  .notice { padding: 12px 16px; border-radius: 3px; font-size: 13px; margin-bottom: 16px; line-height: 1.5; }
+  .notice.error { background: #fdeaea; color: #a33; border: 1px solid #e0b4b4; }
+  .notice.info { background: #fff8e6; color: #6b5200; border: 1px solid #eddca0; }
+  .notice.success { background: #eaf5ea; color: #1f5e22; border: 1px solid #b9dcb9; }
+
+  .map-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px 20px; }
+  .map-field label .req { color: var(--err); }
+  .map-field select { width: 100%; }
+  .map-field .sample { font-size: 11.5px; color: #999; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .table-wrap { overflow-x: auto; background: #fff; border: 1px solid #eee; border-radius: 3px; }
+  .table-wrap.tall { max-height: 520px; overflow-y: auto; }
+  table.detail { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.detail th, table.detail td { padding: 7px 10px; border-bottom: 1px solid #eee; text-align: left; vertical-align: top; }
+  table.detail th { background: #f1f1f1; color: var(--audac-black); position: sticky; top: 0; z-index: 1; white-space: nowrap; }
+  table.detail td.num, table.detail th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  table.detail select { font-size: 12.5px; padding: 5px 6px; }
+  .val-tables { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  .clip { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .pill { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+  .pill.ok { background: #e3f1e3; color: var(--ok); }
+  .pill.dup { background: #fdf0d9; color: var(--warn); }
+  .pill.err { background: #fbe3e1; color: var(--err); }
+  .crm-link { color: var(--ok); font-weight: 700; }
+  .crm-none { color: #aaa; }
+  .why { font-size: 11.5px; color: var(--err); }
+  .why.dup { color: var(--warn); }
+
+  .summary { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .summary .stat { background: #fff; border: 1px solid #eee; border-radius: 3px; padding: 10px 14px; min-width: 120px; }
+  .summary .stat b { display: block; font-size: 20px; color: var(--audac-black); font-variant-numeric: tabular-nums; }
+  .summary .stat span { font-size: 11.5px; text-transform: uppercase; letter-spacing: .4px; }
+  .actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 18px; }
+  .checkbox { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--audac-black); }
+  .checkbox input { width: auto; }
+  .filter-bar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .filter-bar button { font-size: 11.5px; padding: 6px 12px; }
+  .filter-bar button.active { background: var(--audac-black); color: #fff; }
+  .link-btn { background: none; border: none; padding: 6px 4px; font: inherit; font-size: 12.5px; cursor: pointer; text-decoration: underline; color: var(--audac-black); }
+  .link-btn.danger { color: var(--err); }
+  @media (max-width: 600px) {
+    header.audac-header { padding: 14px 16px; }
+    main { padding: 20px 16px 60px; }
+    .card { padding: 18px 16px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="audac-header">
+  <div style="display:flex; align-items:center; gap:12px;">
+    <img class="logo" src="https://audac.eu/images/AUDAC-logo.webp" alt="AUDAC"
+         onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
+    <span class="wordmark">AUDAC</span>
+  </div>
+  <h1>Import from CRM Export</h1>
+  <a class="nav-link" id="back-link" href="/form">← Activity Form</a>
+</header>
+
+<main>
+  <div id="gate" class="notice info">Loading…</div>
+
+  <div id="app" hidden>
+    <div id="error-banner" class="notice error" hidden></div>
+
+    <!-- Firm -->
+    <div class="card">
+      <h2>Rep Firm</h2>
+      <p class="step-intro">Upload the activities your firm logged in its own CRM (Salesforce, HubSpot, Dynamics, Excel…) instead of typing them in one by one. Each activity is filed under the reporting month of its own date.</p>
+      <div id="firm-fixed" style="font-weight:700; color:var(--audac-black);"></div>
+      <div id="firm-pick" hidden>
+        <label for="firm-select">Import for firm</label>
+        <select id="firm-select"></select>
+      </div>
+    </div>
+
+    <!-- Step 1 -->
+    <div class="card" id="step-file">
+      <h2>1. Upload your export</h2>
+      <p class="step-intro">An Excel (.xlsx) or CSV file with one activity per row and column names in the first row. Max 2,000 activities per file.</p>
+      <div class="row">
+        <div>
+          <label for="file-input">File</label>
+          <input type="file" id="file-input" accept=".csv,.xlsx,.xls">
+        </div>
+        <div id="sheet-pick" hidden>
+          <label for="sheet-select">Sheet</label>
+          <select id="sheet-select"></select>
+        </div>
+      </div>
+      <div class="hint" id="file-status"></div>
+    </div>
+
+    <!-- Step 2 -->
+    <div class="card" id="step-columns" hidden>
+      <h2>2. Match your columns</h2>
+      <p class="step-intro" id="columns-intro">Tell us which column in your file holds each piece of information. We pre-filled what we could recognise; this is saved for your firm, so next time it's already done.</p>
+      <div class="map-grid" id="map-grid"></div>
+      <div class="row" style="margin-top:16px;">
+        <div>
+          <label for="date-format">Date format in your file</label>
+          <select id="date-format">
+            <option value="auto">Auto-detect</option>
+            <option value="mdy">MM/DD/YYYY (US)</option>
+            <option value="dmy">DD/MM/YYYY</option>
+            <option value="ymd">YYYY-MM-DD</option>
+          </select>
+          <div class="hint" id="date-format-hint"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 3 -->
+    <div class="card" id="step-values" hidden>
+      <h2>3. Match your values</h2>
+      <p class="step-intro">Your CRM uses its own words for activity and contact types. Choose the AUDAC equivalent for each one.</p>
+      <div class="val-tables" id="val-tables"></div>
+    </div>
+
+    <!-- Step 4 -->
+    <div class="card" id="step-preview" hidden>
+      <h2>4. Check &amp; import</h2>
+      <p class="step-intro">We check every row before anything is saved: missing or unreadable fields, months that have already been finalized, activities that are already in the portal, and which accounts we recognise from the AUDAC CRM.</p>
+      <button type="button" class="audac-btn-outline" id="preview-btn">Check rows</button>
+      <div id="preview-out" style="margin-top:18px;"></div>
+    </div>
+
+    <div id="result" hidden></div>
+
+    <!-- History -->
+    <div class="card" id="history-card" hidden>
+      <h2>Recent imports</h2>
+      <p class="step-intro">Imported the wrong file? Undo removes every activity from that import at once (not possible once the month has been finalized).</p>
+      <div id="history"></div>
+    </div>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script>
+  const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
+  const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  // Must match the CHECK constraints on activity_entries (and form.html).
+  const CONTACT_TYPES = ['Dealer', 'Consultant', 'End User'];
+  const ACTIVITY_TYPES = ['Brand Introduction', 'Demo', 'Follow Up', 'Lunch & Learn', 'Online Demo', 'Dealer Training', 'Other'];
+  const MAX_ROWS = 2000;
+  const ME = '__me__';
+
+  // `guess` = header names we recognise, most specific first.
+  const FIELDS = [
+    { key: 'entry_date', label: 'Date', required: true,
+      guess: ['activity date', 'date', 'start date', 'start time', 'actual start', 'actual end', 'date completed', 'completed date', 'due date', 'scheduled start', 'meeting date', 'created on', 'created date', 'start'] },
+    { key: 'account_name', label: 'Account / Company', required: true,
+      guess: ['account name', 'company name', 'account', 'company', 'organization', 'organisation', 'customer', 'client', 'regarding', 'related to'] },
+    { key: 'contact_name', label: 'Contact person',
+      guess: ['contact name', 'contact', 'attendee', 'attendees', 'person', 'name'] },
+    { key: 'activity_type', label: 'Activity Type',
+      guess: ['activity type', 'type', 'activity', 'task type', 'meeting type', 'call type', 'category', 'subtype'] },
+    { key: 'contact_type', label: 'Contact Type',
+      guess: ['contact type', 'account type', 'customer type', 'relationship type', 'company type', 'segment', 'relationship'] },
+    { key: 'topic_opportunity', label: 'Topic / Opportunity',
+      guess: ['subject', 'topic', 'title', 'opportunity', 'project', 'summary'] },
+    { key: 'solution_feedback', label: 'Solution Feedback',
+      guess: ['solution feedback', 'product feedback', 'audac feedback', 'feedback'] },
+    { key: 'competitive_feedback', label: 'Competitive Feedback',
+      guess: ['competitive feedback', 'competition', 'competitors', 'competitor'] },
+    { key: 'additional_comments', label: 'Additional Comments',
+      guess: ['description', 'notes', 'note', 'comments', 'comment', 'details', 'body', 'outcome', 'result', 'full comments'] },
+    { key: 'demo_gear_used', label: 'Demo Gear Used (yes/no)',
+      guess: ['demo gear used', 'demo gear', 'demo equipment'] },
+    { key: 'owner', label: 'Sales Person', attributeOnly: true,
+      guess: ['activity owner', 'assigned to', 'sales person', 'salesperson', 'sales rep', 'owner', 'rep', 'user', 'created by'] },
+  ];
+
+  const state = {
+    session: null, profile: null, firms: [], firmId: null, ctx: null,
+    finalized: new Set(), workbook: null, fileName: '',
+    headers: [], rows: [],
+    colMap: {}, dateFormat: 'auto',
+    valMap: { activity_type: {}, contact_type: {}, owner: {} },
+    defaults: { activity_type: 'Other', contact_type: 'Dealer' },
+    preview: null, filter: 'all',
+  };
+
+  const $ = (id) => document.getElementById(id);
+  function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+  function norm(s) { return String(s ?? '').toLowerCase().replace(/[^a-z0-9&]+/g, ' ').trim(); }
+  function cellText(v) {
+    if (v === null || v === undefined) return '';
+    if (v instanceof Date) return v.toISOString().slice(0, 10);
+    return String(v).trim();
+  }
+  function showError(msg) { const b = $('error-banner'); b.textContent = msg; b.hidden = false; window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  function clearError() { $('error-banner').hidden = true; }
+  function todayISO() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+  function firmName(id) { return state.firms.find(f => f.id === id)?.name || ''; }
+
+  // ---------- Access ----------
+  async function init() {
+    const { data: { session } } = await client.auth.getSession();
+    state.session = session;
+    if (!session) {
+      $('gate').innerHTML = 'Sign in to import activities. <a href="/login">Sign in</a>, then choose <b>Upload from CRM export</b> on the activity form.';
+      return;
+    }
+    const [{ data: profile }, { data: firms }, { data: fin }] = await Promise.all([
+      client.from('profiles').select('*').eq('id', session.user.id).maybeSingle(),
+      client.from('rep_firms').select('id, name, territory').eq('status', 'active').order('name'),
+      client.rpc('get_finalized_periods'),
+    ]);
+    state.profile = profile;
+    state.firms = firms || [];
+    state.finalized = new Set((fin || []).map(r => `${r.rep_firm_id}|${r.reporting_month}`));
+
+    const isManager = profile?.role === 'manager';
+    if (isManager) {
+      $('back-link').href = '/admin';
+      $('back-link').textContent = '← Data Admin';
+      $('firm-pick').hidden = false;
+      $('firm-select').innerHTML = '<option value="" disabled selected>Select a firm</option>' +
+        state.firms.map(f => `<option value="${f.id}">${escapeHtml(f.name)} — ${escapeHtml(f.territory || '')}</option>`).join('');
+      $('firm-select').addEventListener('change', () => selectFirm($('firm-select').value));
+    } else if (profile?.role === 'rep' && profile.rep_firm_id) {
+      const f = state.firms.find(x => x.id === profile.rep_firm_id);
+      $('firm-fixed').textContent = f ? `${f.name} — ${f.territory || ''}` : 'Your firm';
+    } else if (profile?.role === 'rep') {
+      $('gate').innerHTML = "Your account isn't linked to a rep firm yet. Open the signup link your firm received (or ask AUDAC to link your account), then come back here.";
+      return;
+    } else {
+      $('gate').textContent = 'Activity import is available to rep firm accounts and AUDAC managers.';
+      return;
+    }
+    $('gate').hidden = true;
+    $('app').hidden = false;
+    if (!isManager) await selectFirm(profile.rep_firm_id);
+    else $('step-file').hidden = true;
+  }
+
+  async function selectFirm(firmId) {
+    clearError();
+    state.firmId = firmId;
+    const { data, error } = await client.rpc('get_activity_import_context', { p_firm_id: firmId });
+    if (error) { showError('Could not load import settings: ' + error.message); return; }
+    state.ctx = data;
+    $('step-file').hidden = false;
+    loadHistory();
+    if (state.rows.length) { applySavedOrGuessedMapping(); renderAll(); }
+  }
+
+  // ---------- File ----------
+  $('file-input').addEventListener('change', async (e) => {
+    clearError();
+    const file = e.target.files[0];
+    if (!file) return;
+    state.fileName = file.name;
+    try {
+      const buf = await file.arrayBuffer();
+      if (/\.csv$/i.test(file.name)) {
+        // Decode as UTF-8 ourselves (accents in names survive), and raw:true keeps
+        // cells as the exact text -- we parse dates ourselves so DD/MM vs MM/DD
+        // is never silently guessed by the library.
+        const text = new TextDecoder('utf-8').decode(buf);
+        state.workbook = XLSX.read(text, { type: 'string', raw: true });
+      } else {
+        state.workbook = XLSX.read(buf, { type: 'array' });
+      }
+    } catch (err) {
+      showError("Couldn't read that file. Save it as .xlsx or .csv and try again. (" + err.message + ')');
+      return;
+    }
+    const names = state.workbook.SheetNames;
+    $('sheet-pick').hidden = names.length < 2;
+    $('sheet-select').innerHTML = names.map(n => `<option>${escapeHtml(n)}</option>`).join('');
+    loadSheet(names[0]);
+  });
+  $('sheet-select').addEventListener('change', () => loadSheet($('sheet-select').value));
+
+  function loadSheet(name) {
+    const ws = state.workbook.Sheets[name];
+    const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '', blankrows: false });
+    const headerIdx = aoa.findIndex(r => r.filter(c => cellText(c) !== '').length >= 2);
+    if (headerIdx < 0) { showError('No header row found — the first row should contain column names.'); return; }
+    const seen = {};
+    state.headers = aoa[headerIdx].map((h, i) => {
+      let label = cellText(h) || `Column ${i + 1}`;
+      if (seen[label]) label = `${label} (${++seen[label]})`; else seen[label] = 1;
+      return label;
+    });
+    state.rows = aoa.slice(headerIdx + 1)
+      .map((r, i) => ({ line: headerIdx + i + 2, cells: Object.fromEntries(state.headers.map((h, j) => [h, r[j] ?? ''])) }))
+      .filter(r => Object.values(r.cells).some(v => cellText(v) !== ''));
+    const tooMany = state.rows.length > MAX_ROWS;
+    $('file-status').innerHTML = tooMany
+      ? `<span style="color:var(--err)">${state.rows.length} rows found — the limit is ${MAX_ROWS} per import. Split the file (e.g. per month) and upload each part.</span>`
+      : `${state.rows.length} activit${state.rows.length === 1 ? 'y' : 'ies'} found in “${escapeHtml(state.fileName)}”${state.workbook.SheetNames.length > 1 ? ` (sheet “${escapeHtml(name)}”)` : ''}.`;
+    if (tooMany || !state.rows.length) { hideSteps(); return; }
+    applySavedOrGuessedMapping();
+    renderAll();
+  }
+
+  function hideSteps() { ['step-columns', 'step-values', 'step-preview'].forEach(id => $(id).hidden = true); }
+
+  // ---------- Mapping ----------
+  function applySavedOrGuessedMapping() {
+    const saved = state.ctx?.mapping || null;
+    const headerSet = new Set(state.headers);
+    state.colMap = {};
+    let fromSaved = 0;
+    if (saved?.colMap) {
+      for (const [k, h] of Object.entries(saved.colMap)) if (h && headerSet.has(h)) { state.colMap[k] = h; fromSaved++; }
+    }
+    // Pass 1 exact header name, pass 2 "contains" -- never reuse a column.
+    const used = new Set(Object.values(state.colMap));
+    const normHeaders = state.headers.map(h => [h, norm(h)]);
+    for (const pass of [1, 2]) {
+      for (const f of FIELDS) {
+        if (state.colMap[f.key]) continue;
+        for (const g of f.guess) {
+          const hit = normHeaders.find(([h, n]) => !used.has(h) && (pass === 1 ? n === g : (` ${n} `).includes(` ${g} `)));
+          if (hit) { state.colMap[f.key] = hit[0]; used.add(hit[0]); break; }
+        }
+      }
+    }
+    state.dateFormat = saved?.dateFormat || 'auto';
+    state.valMap = {
+      activity_type: { ...(saved?.valMap?.activity_type || {}) },
+      contact_type: { ...(saved?.valMap?.contact_type || {}) },
+      owner: { ...(saved?.valMap?.owner || {}) },
+    };
+    state.defaults = { activity_type: 'Other', contact_type: 'Dealer', ...(saved?.defaults || {}) };
+    $('columns-intro').textContent = fromSaved
+      ? 'We reused the column matching your firm saved last time. Check it and adjust if your export changed.'
+      : "Tell us which column in your file holds each piece of information. We pre-filled what we could recognise; this is saved for your firm, so next time it's already done.";
+  }
+
+  function sampleFor(header) {
+    if (!header) return '';
+    const vals = state.rows.map(r => cellText(r.cells[header])).filter(Boolean).slice(0, 3);
+    return vals.length ? 'e.g. ' + vals.map(v => v.length > 30 ? v.slice(0, 30) + '…' : v).join(' · ') : 'empty in this file';
+  }
+
+  function renderColumns() {
+    const opts = (sel) => `<option value="">— not in my file —</option>` +
+      state.headers.map(h => `<option value="${escapeHtml(h)}"${h === sel ? ' selected' : ''}>${escapeHtml(h)}</option>`).join('');
+    $('map-grid').innerHTML = FIELDS
+      .filter(f => !f.attributeOnly || state.ctx?.can_attribute)
+      .map(f => `
+        <div class="map-field">
+          <label for="map-${f.key}">${escapeHtml(f.label)}${f.required ? ' <span class="req">*</span>' : ''}</label>
+          <select id="map-${f.key}" data-field="${f.key}">${opts(state.colMap[f.key])}</select>
+          <div class="sample">${escapeHtml(sampleFor(state.colMap[f.key]))}</div>
+        </div>`).join('');
+    $('date-format').value = state.dateFormat;
+    updateDateHint();
+    $('step-columns').hidden = false;
+  }
+
+  $('map-grid').addEventListener('change', (e) => {
+    const sel = e.target.closest('select[data-field]');
+    if (!sel) return;
+    state.colMap[sel.dataset.field] = sel.value || undefined;
+    sel.nextElementSibling.textContent = sampleFor(sel.value);
+    if (sel.dataset.field === 'entry_date') updateDateHint();
+    renderValues();
+    invalidatePreview();
+  });
+  $('date-format').addEventListener('change', () => { state.dateFormat = $('date-format').value; updateDateHint(); invalidatePreview(); });
+
+  // ---------- Dates ----------
+  function detectDateFormat() {
+    const h = state.colMap.entry_date;
+    if (!h) return 'mdy';
+    let mdy = 0, dmy = 0;
+    for (const r of state.rows) {
+      const m = cellText(r.cells[h]).match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})/);
+      if (!m) continue;
+      if (+m[1] > 12) dmy++;
+      if (+m[2] > 12) mdy++;
+    }
+    return dmy > mdy ? 'dmy' : 'mdy';
+  }
+  function updateDateHint() {
+    const label = { mdy: 'MM/DD/YYYY', dmy: 'DD/MM/YYYY', ymd: 'YYYY-MM-DD' };
+    $('date-format-hint').textContent = state.dateFormat === 'auto'
+      ? `Looks like ${label[detectDateFormat()]} — only matters for text dates like 03/04/2026.` : '';
+  }
+  function ymd(y, m, d) {
+    if (y < 100) y += 2000;
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return null;
+    return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  }
+  function parseDate(v, fmt) {
+    if (v === '' || v === null || v === undefined) return null;
+    if (typeof v === 'number') {
+      if (v < 20000 || v > 80000) return null; // not an Excel date serial
+      const p = XLSX.SSF.parse_date_code(v);
+      return p ? ymd(p.y, p.m, p.d) : null;
+    }
+    if (v instanceof Date) return ymd(v.getFullYear(), v.getMonth() + 1, v.getDate());
+    const s = String(v).trim();
+    let m = s.match(/^(\d{4})[\/.-](\d{1,2})[\/.-](\d{1,2})/);
+    if (m) return ymd(+m[1], +m[2], +m[3]);
+    m = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})\b/);
+    if (m) {
+      const a = +m[1], b = +m[2], y = +m[3];
+      let order = fmt === 'auto' ? detectDateFormat() : fmt;
+      if (a > 12) order = 'dmy'; else if (b > 12) order = 'mdy';
+      return order === 'dmy' ? ymd(y, b, a) : ymd(y, a, b);
+    }
+    if (/^\d+(\.\d+)?$/.test(s)) return parseDate(Number(s), fmt); // serial stored as text
+    const t = Date.parse(s); // "Mar 5, 2026", "5 March 2026 14:00"
+    if (!isNaN(t)) { const d = new Date(t); return ymd(d.getFullYear(), d.getMonth() + 1, d.getDate()); }
+    return null;
+  }
+
+  // ---------- Value matching ----------
+  function guessActivity(raw) {
+    const s = raw.toLowerCase();
+    const exact = ACTIVITY_TYPES.find(t => t.toLowerCase() === s);
+    if (exact) return exact;
+    if (/lunch|learn|\bl&l\b|\blnl\b|breakfast/.test(s)) return 'Lunch & Learn';
+    if (/train|certif|academy/.test(s)) return 'Dealer Training';
+    if (/webinar|((online|virtual|teams|zoom|remote|video|web).*(demo|present))|((demo|present).*(online|virtual|teams|zoom|remote|video))/.test(s)) return 'Online Demo';
+    if (/demo|present|showroom/.test(s)) return 'Demo';
+    if (/intro|prospect|cold|first|new account|kick.?off/.test(s)) return 'Brand Introduction';
+    if (/follow|call|phone|e-?mail|check.?in|visit|meeting|appointment|quote/.test(s)) return 'Follow Up';
+    return 'Other';
+  }
+  function guessContactType(raw) {
+    const s = raw.toLowerCase();
+    const exact = CONTACT_TYPES.find(t => t.toLowerCase() === s);
+    if (exact) return exact;
+    if (/dealer|integrat|install|resell|distrib|contractor|partner|\bvar\b|\bav\b/.test(s)) return 'Dealer';
+    if (/consult|engineer|architect|design|specif|a\s*&\s*e|a\/e/.test(s)) return 'Consultant';
+    if (/end|user|customer|client|owner|venue|school|church|hotel|restaurant|retail|facility/.test(s)) return 'End User';
+    return '';
+  }
+  function guessOwner(raw) {
+    const s = norm(raw);
+    if (!s) return ME;
+    const reps = state.ctx?.reps || [];
+    const hit = reps.find(r => norm(r.full_name) === s)
+      || reps.find(r => (r.email || '').toLowerCase() === raw.trim().toLowerCase())
+      || reps.find(r => norm((r.email || '').split('@')[0]) === s)
+      || reps.find(r => r.full_name && (norm(r.full_name).includes(s) || s.includes(norm(r.full_name))));
+    return hit && hit.id !== state.session.user.id ? hit.id : ME;
+  }
+
+  function distinctValues(field) {
+    const h = state.colMap[field];
+    if (!h) return [];
+    const counts = new Map();
+    for (const r of state.rows) {
+      const v = cellText(r.cells[h]);
+      if (!v) continue;
+      counts.set(v, (counts.get(v) || 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  }
+
+  function valueTableHtml(field, title, options, guess, extraNote) {
+    const vals = distinctValues(field);
+    const defaultSel = field === 'owner' ? '' : `
+      <div class="row" style="margin:0 0 10px;">
+        <div>
+          <label for="default-${field}">${vals.length ? 'When a row has no value' : 'Use for every row'}</label>
+          <select id="default-${field}" data-default="${field}">${options.map(o => `<option value="${escapeHtml(o.value)}"${o.value === state.defaults[field] ? ' selected' : ''}>${escapeHtml(o.label)}</option>`).join('')}</select>
+        </div>
+      </div>`;
+    if (!vals.length) {
+      if (field === 'owner') return '';
+      return `<div><h3>${escapeHtml(title)}</h3>${defaultSel}<div class="hint">No column matched in step 2, so every row gets this ${field === 'activity_type' ? 'activity' : 'contact'} type.</div></div>`;
+    }
+    const map = state.valMap[field];
+    for (const [v] of vals) if (!(v in map)) map[v] = guess(v);
+    const rowsHtml = vals.map(([v, n]) => `
+      <tr>
+        <td class="clip" title="${escapeHtml(v)}">${escapeHtml(v)}</td>
+        <td class="num">${n}</td>
+        <td><select data-valmap="${field}" data-raw="${escapeHtml(v)}" aria-label="AUDAC value for ${escapeHtml(v)}">
+          ${field === 'contact_type' ? `<option value=""${map[v] === '' ? ' selected' : ''}>Use default (${escapeHtml(state.defaults.contact_type)})</option>` : ''}
+          ${options.map(o => `<option value="${escapeHtml(o.value)}"${o.value === map[v] ? ' selected' : ''}>${escapeHtml(o.label)}</option>`).join('')}
+        </select></td>
+      </tr>`).join('');
+    return `<div>
+      <h3>${escapeHtml(title)}</h3>
+      ${defaultSel}
+      ${extraNote ? `<div class="hint" style="margin:-4px 0 8px;">${extraNote}</div>` : ''}
+      <div class="table-wrap"><table class="detail">
+        <thead><tr><th>In your file</th><th class="num">Rows</th><th>AUDAC</th></tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table></div>
+    </div>`;
+  }
+
+  function renderValues() {
+    const at = ACTIVITY_TYPES.map(t => ({ value: t, label: t }));
+    const ct = CONTACT_TYPES.map(t => ({ value: t, label: t }));
+    const meLabel = `Me (${state.profile?.full_name || state.session.user.email})`;
+    const reps = [{ value: ME, label: meLabel }, ...(state.ctx?.reps || [])
+      .filter(r => r.id !== state.session.user.id)
+      .map(r => ({ value: r.id, label: r.full_name || r.email }))];
+    $('val-tables').innerHTML =
+      valueTableHtml('activity_type', 'Activity types', at, guessActivity) +
+      valueTableHtml('contact_type', 'Contact types', ct, guessContactType) +
+      (state.ctx?.can_attribute ? valueTableHtml('owner', 'Sales persons', reps, guessOwner,
+        'Activities are credited to the matching rep. Reps who haven’t created a portal account yet aren’t listed — their rows go to you.') : '');
+    $('step-values').hidden = false;
+  }
+
+  $('val-tables').addEventListener('change', (e) => {
+    const t = e.target;
+    if (t.dataset.valmap) state.valMap[t.dataset.valmap][t.dataset.raw] = t.value;
+    else if (t.dataset.default) { state.defaults[t.dataset.default] = t.value; renderValues(); }
+    invalidatePreview();
+  });
+
+  function renderAll() {
+    renderColumns();
+    renderValues();
+    $('step-preview').hidden = false;
+    invalidatePreview();
+  }
+
+  function invalidatePreview() {
+    state.preview = null;
+    $('preview-out').innerHTML = '';
+    $('preview-btn').textContent = 'Check rows';
+  }
+
+  // ---------- Preview ----------
+  function buildRow(r) {
+    const get = (k) => state.colMap[k] ? r.cells[state.colMap[k]] : '';
+    const txt = (k) => cellText(get(k));
+    const problems = [];
+    const rawDate = get('entry_date');
+    const entry_date = parseDate(rawDate, state.dateFormat);
+    if (!cellText(rawDate)) problems.push('No date');
+    else if (!entry_date) problems.push(`Can't read date “${cellText(rawDate)}”`);
+    else if (entry_date > todayISO()) problems.push('Date is in the future');
+    const account_name = txt('account_name');
+    if (!account_name) problems.push('No account');
+
+    const rawAct = txt('activity_type');
+    const activity_type = (rawAct && state.valMap.activity_type[rawAct]) || state.defaults.activity_type;
+    const rawCt = txt('contact_type');
+    const contact_type = (rawCt && state.valMap.contact_type[rawCt]) || state.defaults.contact_type;
+    const rawOwner = txt('owner');
+    let ownerChoice = state.ctx?.can_attribute && rawOwner ? (state.valMap.owner[rawOwner] || ME) : ME;
+    // A saved match can point at a rep who's since left the firm.
+    if (ownerChoice !== ME && !(state.ctx?.reps || []).some(x => x.id === ownerChoice)) ownerChoice = ME;
+
+    const month = entry_date ? entry_date.slice(0, 7) : null;
+    if (month && state.finalized.has(`${state.firmId}|${month}`)) problems.push(`${month} is finalized`);
+
+    return {
+      line: r.line, problems, dupReason: null, month,
+      data: {
+        entry_date, account_name,
+        contact_name: txt('contact_name') || null,
+        contact_type, activity_type,
+        demo_gear_used: /^(y|yes|true|1|x|ja|✓|✔)$/i.test(txt('demo_gear_used')),
+        topic_opportunity: txt('topic_opportunity') || null,
+        solution_feedback: txt('solution_feedback') || null,
+        competitive_feedback: txt('competitive_feedback') || null,
+        additional_comments: txt('additional_comments') || null,
+        created_by: ownerChoice === ME ? null : ownerChoice,
+        account_external_id: null, contact_external_id: null,
+      },
+      crmName: null,
+    };
+  }
+
+  $('preview-btn').addEventListener('click', async () => {
+    clearError();
+    if (!state.colMap.entry_date || !state.colMap.account_name) {
+      showError('Match the Date and Account / Company columns in step 2 first.');
+      return;
+    }
+    const btn = $('preview-btn');
+    btn.disabled = true; btn.textContent = 'Checking…';
+    try {
+      const rows = state.rows.map(buildRow);
+      const valid = rows.filter(r => !r.problems.length);
+
+      // Within-file duplicates
+      const seen = new Map();
+      for (const r of valid) {
+        const k = `${r.data.account_name.toLowerCase()}|${r.data.entry_date}|${r.data.activity_type}`;
+        if (seen.has(k)) r.dupReason = `Same as row ${seen.get(k)} in this file`;
+        else seen.set(k, r.line);
+      }
+
+      const [matchRes, dupRes] = await Promise.all([
+        client.rpc('match_crm_for_import', {
+          p_firm_id: state.firmId,
+          p_pairs: valid.map(r => ({ a: r.data.account_name, c: r.data.contact_name || '' })),
+        }),
+        client.rpc('find_duplicate_activities', {
+          p_firm_id: state.firmId,
+          p_rows: valid.map((r, i) => ({ i, account_name: r.data.account_name, entry_date: r.data.entry_date, activity_type: r.data.activity_type })),
+        }),
+      ]);
+      if (matchRes.error) throw matchRes.error;
+      if (dupRes.error) throw dupRes.error;
+
+      const matchByKey = new Map(matchRes.data.map(m => [`${m.input_account}|${m.input_contact || ''}`, m]));
+      for (const r of valid) {
+        const m = matchByKey.get(`${r.data.account_name}|${r.data.contact_name || ''}`);
+        if (m?.account_external_id) {
+          r.data.account_external_id = m.account_external_id;
+          r.crmName = m.account_name;
+          if (m.contact_external_id) r.data.contact_external_id = m.contact_external_id;
+        }
+      }
+      const dupIdx = new Set(dupRes.data);
+      valid.forEach((r, i) => { if (dupIdx.has(i)) r.dupReason = 'Already in the portal'; });
+
+      state.preview = rows;
+      state.filter = 'all';
+      renderPreview();
+    } catch (err) {
+      showError('Check failed: ' + (err.message || err));
+    } finally {
+      btn.disabled = false; btn.textContent = 'Check again';
+    }
+  });
+
+  function ownerLabel(id) {
+    if (!id) return state.profile?.full_name || state.session.user.email;
+    const r = (state.ctx?.reps || []).find(x => x.id === id);
+    return r ? (r.full_name || r.email) : '—';
+  }
+
+  function renderPreview() {
+    const rows = state.preview;
+    const errors = rows.filter(r => r.problems.length);
+    const dups = rows.filter(r => !r.problems.length && r.dupReason);
+    const ok = rows.filter(r => !r.problems.length && !r.dupReason);
+    const linked = rows.filter(r => !r.problems.length && r.data.account_external_id).length;
+    const skipDups = $('skip-dups') ? $('skip-dups').checked : true;
+    const toImport = ok.length + (skipDups ? 0 : dups.length);
+    const months = [...new Set(rows.filter(r => !r.problems.length).map(r => r.month))].sort();
+    const noFeedback = ok.filter(r => !r.data.solution_feedback && !r.data.competitive_feedback).length;
+
+    const visible = rows.filter(r =>
+      state.filter === 'all' ? true :
+      state.filter === 'err' ? r.problems.length :
+      state.filter === 'dup' ? (!r.problems.length && r.dupReason) :
+      state.filter === 'nocrm' ? (!r.problems.length && !r.data.account_external_id) :
+      (!r.problems.length && !r.dupReason));
+    const showOwner = state.ctx?.can_attribute && state.colMap.owner;
+
+    $('preview-out').innerHTML = `
+      <div class="summary">
+        <div class="stat"><b>${ok.length}</b><span>Ready</span></div>
+        <div class="stat"><b>${dups.length}</b><span>Duplicates</span></div>
+        <div class="stat"><b>${errors.length}</b><span>Can't import</span></div>
+        <div class="stat"><b>${linked}</b><span>Matched to CRM</span></div>
+      </div>
+      ${months.length ? `<div class="hint" style="margin-bottom:10px;">Filed under reporting month${months.length > 1 ? 's' : ''}: ${months.join(', ')}</div>` : ''}
+      ${noFeedback && ok.length ? `<div class="notice info">${noFeedback} of ${ok.length} activities have no solution or competitive feedback. That feedback is what AUDAC values most — consider adding it afterwards in <b>My Submissions</b> on the activity form for the important visits.</div>` : ''}
+      <div class="filter-bar" role="group" aria-label="Filter rows">
+        ${[['all', `All (${rows.length})`], ['ok', `Ready (${ok.length})`], ['dup', `Duplicates (${dups.length})`], ['err', `Can't import (${errors.length})`], ['nocrm', 'Not in CRM']]
+          .map(([k, l]) => `<button type="button" class="audac-btn-outline${state.filter === k ? ' active' : ''}" data-filter="${k}">${l}</button>`).join('')}
+      </div>
+      <div class="table-wrap tall"><table class="detail">
+        <thead><tr>
+          <th>Row</th><th>Status</th><th>Date</th><th>Account</th><th>CRM</th><th>Contact</th><th>Contact Type</th><th>Activity Type</th>
+          ${showOwner ? '<th>Sales Person</th>' : ''}<th>Topic</th>
+        </tr></thead>
+        <tbody>${visible.slice(0, 500).map(r => {
+          const st = r.problems.length ? `<span class="pill err">Skipped</span><div class="why">${escapeHtml(r.problems.join('; '))}</div>`
+            : r.dupReason ? `<span class="pill dup">Duplicate</span><div class="why dup">${escapeHtml(r.dupReason)}</div>`
+            : '<span class="pill ok">Ready</span>';
+          const crm = r.problems.length ? '' : r.data.account_external_id
+            ? `<span class="crm-link" title="Linked to ${escapeHtml(r.crmName)}">✓</span>`
+            : '<span class="crm-none" title="No account with this exact name in the AUDAC CRM for your firm — imported as typed">—</span>';
+          return `<tr>
+            <td class="num">${r.line}</td><td>${st}</td>
+            <td style="white-space:nowrap;">${escapeHtml(r.data.entry_date || '')}</td>
+            <td class="clip" title="${escapeHtml(r.data.account_name)}">${escapeHtml(r.data.account_name)}</td>
+            <td>${crm}</td>
+            <td class="clip">${escapeHtml(r.data.contact_name || '')}</td>
+            <td>${escapeHtml(r.data.contact_type)}</td>
+            <td>${escapeHtml(r.data.activity_type)}</td>
+            ${showOwner ? `<td>${escapeHtml(ownerLabel(r.data.created_by))}</td>` : ''}
+            <td class="clip" title="${escapeHtml(r.data.topic_opportunity || '')}">${escapeHtml(r.data.topic_opportunity || '')}</td>
+          </tr>`;
+        }).join('') || '<tr><td colspan="10" class="hint">No rows in this view.</td></tr>'}</tbody>
+      </table></div>
+      ${visible.length > 500 ? `<div class="hint">Showing the first 500 of ${visible.length} rows.</div>` : ''}
+      <div class="actions">
+        <label class="checkbox"><input type="checkbox" id="skip-dups" ${skipDups ? 'checked' : ''}> Skip duplicates (${dups.length})</label>
+        <button type="button" class="audac-btn" id="import-btn" ${toImport ? '' : 'disabled'}>Import ${toImport} activit${toImport === 1 ? 'y' : 'ies'}</button>
+      </div>`;
+  }
+
+  $('preview-out').addEventListener('click', (e) => {
+    const f = e.target.closest('[data-filter]');
+    if (f) { state.filter = f.dataset.filter; renderPreview(); return; }
+    if (e.target.id === 'import-btn') runImport();
+  });
+  $('preview-out').addEventListener('change', (e) => { if (e.target.id === 'skip-dups') renderPreview(); });
+
+  // ---------- Import ----------
+  function currentMapping() {
+    const colMap = Object.fromEntries(Object.entries(state.colMap).filter(([, v]) => v));
+    return { colMap, dateFormat: state.dateFormat, valMap: state.valMap, defaults: state.defaults };
+  }
+
+  async function runImport() {
+    clearError();
+    const skipDups = $('skip-dups').checked;
+    const rows = state.preview.filter(r => !r.problems.length && (!r.dupReason || !skipDups));
+    if (!rows.length) return;
+    const firm = firmName(state.firmId);
+    if (!confirm(`Import ${rows.length} activit${rows.length === 1 ? 'y' : 'ies'} for ${firm}?\n\nYou can undo the whole import afterwards under “Recent imports”.`)) return;
+
+    const btn = $('import-btn');
+    btn.disabled = true; btn.textContent = 'Importing…';
+    const { data, error } = await client.rpc('import_activity_entries', {
+      p_firm_id: state.firmId, p_file_name: state.fileName, p_rows: rows.map(r => r.data),
+    });
+    if (error) {
+      btn.disabled = false; btn.textContent = `Import ${rows.length} activities`;
+      showError('Import failed — nothing was saved. ' + error.message);
+      return;
+    }
+    // Saving the mapping is a convenience; an import that succeeded shouldn't look failed if this doesn't.
+    const mapping = currentMapping();
+    const { error: mapErr } = await client.rpc('save_activity_import_mapping', { p_firm_id: state.firmId, p_mapping: mapping });
+    if (!mapErr && state.ctx) state.ctx.mapping = mapping;
+
+    const skipped = state.preview.length - rows.length;
+    $('result').hidden = false;
+    $('result').innerHTML = `<div class="notice success">
+      <b>${data.inserted} activit${data.inserted === 1 ? 'y' : 'ies'} imported</b> for ${escapeHtml(firm)}${skipped ? ` (${skipped} row${skipped === 1 ? '' : 's'} skipped)` : ''}.
+      ${state.profile?.role === 'manager' ? '' : 'They now show under My Submissions on the <a href="/form">activity form</a>, where you can still edit each one.'}
+      Your column matching is saved for next time.
+    </div>`;
+    $('file-input').value = '';
+    state.rows = []; state.preview = null;
+    hideSteps();
+    $('file-status').textContent = '';
+    loadHistory();
+    $('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // ---------- History / undo ----------
+  async function loadHistory() {
+    const { data, error } = await client.from('activity_import_batches')
+      .select('*').eq('rep_firm_id', state.firmId).order('created_at', { ascending: false }).limit(10);
+    if (error || !data?.length) { $('history-card').hidden = true; return; }
+    const isManager = state.profile?.role === 'manager';
+    $('history-card').hidden = false;
+    $('history').innerHTML = `<div class="table-wrap"><table class="detail">
+      <thead><tr><th>When</th><th>File</th><th class="num">Activities</th><th>By</th><th></th></tr></thead>
+      <tbody>${data.map(b => `<tr>
+        <td style="white-space:nowrap;">${new Date(b.created_at).toLocaleString()}</td>
+        <td class="clip" title="${escapeHtml(b.file_name || '')}">${escapeHtml(b.file_name || '—')}</td>
+        <td class="num">${b.row_count}</td>
+        <td>${escapeHtml(b.imported_by_email || '')}</td>
+        <td>${b.undone_at ? `<span class="hint">Undone ${new Date(b.undone_at).toLocaleDateString()}</span>`
+          : (b.imported_by === state.session.user.id || isManager)
+            ? `<button type="button" class="link-btn danger" data-undo="${b.id}" data-n="${b.row_count}">Undo import</button>` : ''}</td>
+      </tr>`).join('')}</tbody></table></div>`;
+  }
+
+  $('history').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-undo]');
+    if (!b) return;
+    if (!confirm(`Remove all ${b.dataset.n} activities from this import? This can't be reversed (you can import the file again).`)) return;
+    b.disabled = true;
+    const { data, error } = await client.rpc('undo_activity_import', { p_batch_id: b.dataset.undo });
+    if (error) { b.disabled = false; showError('Undo failed: ' + error.message); return; }
+    $('result').hidden = false;
+    $('result').innerHTML = `<div class="notice success">Import undone — ${data} activit${data === 1 ? 'y' : 'ies'} removed.</div>`;
+    loadHistory();
+  });
+
+  init();
+</script>
+</body>
+</html>
