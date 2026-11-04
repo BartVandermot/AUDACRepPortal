@@ -2284,6 +2284,13 @@
     await fetchAllAttachmentCounts();
     await Promise.all([loadActivitySearchRange(), loadAuditLog(), loadPipelineEntries(), refreshImportKpis(), loadCompanyMappings(), loadEducationRecords(), loadPipelineCsvEntries()]);
     switchTab((window.location.hash || '').replace('#', ''));
+    // Deep link from the dashboard work list: /admin?filter=skipped#mappings
+    const mapFilter = new URLSearchParams(location.search).get('filter');
+    if (mapFilter && (window.location.hash || '') === '#mappings') {
+      const sel = document.getElementById('mappings-filter');
+      sel.value = mapFilter;
+      sel.dispatchEvent(new Event('change'));
+    }
   })();
 </script>
 </body>

@@ -1101,7 +1101,25 @@
     currentUser = g.user;
     document.getElementById('user-email').textContent = g.profile.email;
     await loadAll();
+    applyDeepLink();
   })();
+
+  // Deep links from the dashboard work list: /crm?view=blocking|manual|unassigned
+  function applyDeepLink() {
+    const view = new URLSearchParams(location.search).get('view');
+    if (!view) return;
+    const set = (id, value) => { const el = document.getElementById(id); el.value = value; el.dispatchEvent(new Event('change')); };
+    if (view === 'blocking') {
+      set('contact-resolution-filter', 'blocking');
+      document.getElementById('contact-resolution-filter').scrollIntoView({ block: 'center' });
+    } else if (view === 'manual') {
+      set('source-filter', 'manual');
+      document.getElementById('source-filter').scrollIntoView({ block: 'center' });
+    } else if (view === 'unassigned') {
+      set('firm-filter', '__unassigned');
+      document.getElementById('firm-filter').scrollIntoView({ block: 'center' });
+    }
+  }
 </script>
 </body>
 </html>

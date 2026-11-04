@@ -133,7 +133,42 @@
   .dk-bar .a, .dk-sub b.a { background: var(--color-warning); color: var(--color-warning); }
   .dk-bar .r, .dk-sub b.r { background: var(--color-danger); color: var(--color-danger); }
   .dk-sub b { background: none !important; font-weight: 650; }
+  /* Operations row: month-close checklist + work list */
+  .ops-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: var(--space-4); margin-bottom: var(--space-4); align-items: start; }
+  .ops-card {
+    padding: var(--space-5); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-card);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), var(--shadow-card);
+  }
+  .ops-card.elevated { background: linear-gradient(160deg, #272625 0%, #1c1d20 70%); border-color: rgba(255,255,255,0.12); }
+  .ops-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); }
+  .ops-head h2 { margin: 0; font-size: 16px; line-height: 22px; font-weight: 650; color: var(--color-text-primary); }
+  .ops-list { list-style: none; margin: 0; padding: 0; }
+  .ops-list li { display: grid; grid-template-columns: 22px 1fr auto; gap: var(--space-3); align-items: start; padding: 9px 0; border-top: 1px solid var(--color-border); }
+  .ops-list li:first-child { border-top: 0; }
+  .ops-ico { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; margin-top: 1px; }
+  .ops-ico.ok { background: rgba(113,198,139,0.14); color: var(--color-success); }
+  .ops-ico.todo { background: rgba(232,182,91,0.14); color: var(--color-warning); }
+  .ops-ico.bad { background: var(--color-danger-tint); color: var(--color-danger); }
+  .ops-ico.off { background: rgba(255,255,255,0.06); color: var(--color-text-muted); }
+  .ops-main b { color: var(--color-text-primary); font-weight: 600; }
+  .ops-main .ops-sub { display: block; font-size: 12.5px; line-height: 18px; color: var(--color-text-muted); margin-top: 2px; }
+  .ops-main .ops-sub a { color: var(--color-gold-light); }
+  .ops-action { white-space: nowrap; font-size: 13px; font-weight: 600; color: var(--color-gold-light); text-decoration: none; padding: 2px 0; }
+  .ops-action:hover { text-decoration: underline; }
+  .ops-count { font-variant-numeric: tabular-nums; }
+  .mc-progress { height: 6px; border-radius: 999px; background: var(--color-bg-raised); border: 1px solid var(--color-border); overflow: hidden; margin-top: 6px; max-width: 260px; }
+  .mc-progress i { display: block; height: 100%; background: var(--color-success); }
+  .ops-allclear { color: var(--color-text-secondary); font-size: 14px; margin: 0; }
+  /* Review column + sortable scorecard */
+  table.scorecard th[data-sort] { cursor: pointer; user-select: none; }
+  table.scorecard th[data-sort]:hover { color: var(--color-text-primary); }
+  table.scorecard th[data-sort].sorted::after { content: attr(data-dir); margin-left: 4px; color: var(--color-gold); }
+  .rv-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 650; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--color-border); color: var(--color-text-muted); background: rgba(255,255,255,0.04); white-space: nowrap; }
+  .rv-chip.done { color: var(--color-success); border-color: rgba(113,198,139,0.25); background: rgba(113,198,139,0.08); }
+  .rv-chip.prog { color: var(--color-gold-light); border-color: rgba(217,166,83,0.3); background: var(--color-gold-tint); }
+  @media (max-width: 1100px) { .ops-grid { grid-template-columns: 1fr; } }
   @media (pointer: fine) and (min-width: 761px) {
+    .ops-card { padding: var(--space-4) var(--space-5); }
     .dash-kpis { gap: var(--space-3); margin-bottom: var(--space-4); }
     .dk-tile { padding: 12px 16px; gap: 2px; }
     .dk-tile.dk-rag { padding: 10px 16px; }
@@ -165,6 +200,17 @@
     <button type="button" class="audac-btn-outline" id="generate-exec-report-btn">Generate Executive Report</button>
   </div>
 
+  <div class="ops-grid">
+    <section class="ops-card elevated" id="month-close" aria-labelledby="mc-title">
+      <div class="ops-head"><h2 id="mc-title">Month close</h2><span class="chip" id="mc-chip"></span></div>
+      <ol class="ops-list" id="mc-steps"><li><span class="ops-ico off">…</span><span class="ops-main">Loading…</span><span></span></li></ol>
+    </section>
+    <section class="ops-card" id="worklist" aria-labelledby="wl-title">
+      <div class="ops-head"><h2 id="wl-title">Needs your attention</h2><span class="chip" id="wl-chip"></span></div>
+      <ul class="ops-list" id="wl-items"><li><span class="ops-ico off">…</span><span class="ops-main">Loading…</span><span></span></li></ul>
+    </section>
+  </div>
+
   <div class="dash-kpis" id="dash-kpis" hidden></div>
 
   <div id="alerts-panel"></div>
@@ -178,8 +224,8 @@
   <table class="scorecard" id="scorecard-table" style="display:none;">
     <thead>
       <tr>
-        <th>Firm</th><th>Activities</th><th>Demo Gear Used</th><th>Open Pipeline</th><th>New Pipeline (Month)</th>
-        <th>Education Certs</th><th>Sell-out MoM</th><th>RAG</th>
+        <th data-sort="firm_name">Firm</th><th data-sort="activity_count">Activities</th><th data-sort="demo_gear_count">Demo Gear Used</th><th data-sort="open_pipeline_value_usd">Open Pipeline</th><th data-sort="new_pipeline_value_usd">New Pipeline (Month)</th>
+        <th data-sort="education_count">Education Certs</th><th>Sell-out MoM</th><th data-sort="rag">RAG</th><th data-sort="review">Review</th>
       </tr>
     </thead>
     <tbody id="scorecard-body"></tbody>
@@ -326,15 +372,17 @@
       return;
     }
     scorecardCache = data || [];
+    await loadReviewState(month);
     renderScorecard();
     renderDashKpis();
     renderAlerts();
+    renderMonthClose();
     document.getElementById('loading-note').style.display = 'none';
     document.getElementById('scorecard-table').style.display = ''; // CSS decides: table on desktop, scrollable block on phones
     document.getElementById('rag-legend').style.display = 'flex';
     if (selectedFirmId) {
       const stillThere = scorecardCache.find(r => r.rep_firm_id === selectedFirmId);
-      if (stillThere) openDrilldown(selectedFirmId); else closeDrilldown();
+      if (stillThere) openDrilldown(selectedFirmId, { scroll: false }); else closeDrilldown();
     }
   }
 
@@ -368,7 +416,7 @@
     const dormantEntries = [...dormantByFirm.entries()].filter(([, accts]) => accts.length > 0);
     const totalDormant = dormantEntries.reduce((s, [, accts]) => s + accts.length, 0);
 
-    if (!redFirms.length && !dormantEntries.length && !unassignedReps.length) {
+    if (!redFirms.length && !dormantEntries.length) {
       panel.style.display = 'none';
       panel.innerHTML = '';
       return;
@@ -378,13 +426,11 @@
     panel.innerHTML =
       (zeroActivityFirms.length ? `<div class="alert-row alert-red"><strong>${zeroActivityFirms.length} firm${zeroActivityFirms.length === 1 ? '' : 's'} with NO activity logged this month:</strong> ${zeroActivityFirms.map(r => `<a href="#" data-open-firm="${r.rep_firm_id}">${escapeHtml(r.firm_name)}</a>`).join(', ')}</div>` : '') +
       (lowActivityRedFirms.length ? `<div class="alert-row alert-red"><strong>${lowActivityRedFirms.length} firm${lowActivityRedFirms.length === 1 ? '' : 's'} at Red RAG this month:</strong> ${lowActivityRedFirms.map(r => `<a href="#" data-open-firm="${r.rep_firm_id}">${escapeHtml(r.firm_name)}</a>`).join(', ')}</div>` : '') +
-      (dormantEntries.length ? `<div class="alert-row alert-amber"><strong>${totalDormant} account${totalDormant === 1 ? '' : 's'}</strong> with no linked activity in the last 3 months, across ${dormantEntries.length} firm${dormantEntries.length === 1 ? '' : 's'}: ${dormantEntries.map(([id, accts]) => `<a href="#" data-open-firm="${id}">${escapeHtml(firmName(id))} (${accts.length})</a>`).join(', ')}</div>` : '') +
-      (unassignedReps.length ? `<div class="alert-row alert-amber"><strong>${unassignedReps.length} rep${unassignedReps.length === 1 ? '' : 's'}</strong> signed up but not assigned to a firm yet${newRepsLast7Days ? ` (${newRepsLast7Days} new in the last 7 days)` : ''} — <a href="/reps">assign them on the Reps page</a>.</div>` : '');
+      (dormantEntries.length ? `<div class="alert-row alert-amber"><strong>${totalDormant} account${totalDormant === 1 ? '' : 's'}</strong> with no linked activity in the last 3 months, across ${dormantEntries.length} firm${dormantEntries.length === 1 ? '' : 's'}: ${dormantEntries.map(([id, accts]) => `<a href="#" data-open-firm="${id}">${escapeHtml(firmName(id))} (${accts.length})</a>`).join(', ')}</div>` : '');
     panel.querySelectorAll('[data-open-firm]').forEach(a => {
       a.addEventListener('click', (e) => {
         e.preventDefault();
         openDrilldown(a.dataset.openFirm);
-        document.getElementById('drilldown').scrollIntoView({ behavior: 'smooth' });
       });
     });
   }
@@ -400,9 +446,35 @@
     return `<span class="${cls}">${sign}${pct.toFixed(0)}%</span>`;
   }
 
+  let sortKey = null, sortDir = 1;
+  const RAG_ORDER = { Red: 0, Amber: 1, Green: 2 };
+  function reviewState(firmId) {
+    const r = reviewByFirm.get(firmId);
+    if (r?.is_finalized) return { rank: 2, html: '<span class="rv-chip done">🔒 Finalized</span>' };
+    if (r && (r.agenda_generated_at || (r.notes || '').trim())) return { rank: 1, html: `<span class="rv-chip prog">${(r.notes || '').trim() ? 'Notes added' : 'Agenda ready'}</span>` };
+    return { rank: 0, html: '<span class="rv-chip">Open</span>' };
+  }
+  function sortedScorecard() {
+    if (!sortKey) return scorecardCache;
+    const val = (row) => sortKey === 'rag' ? RAG_ORDER[row.rag_status] ?? 9
+      : sortKey === 'review' ? reviewState(row.rep_firm_id).rank
+      : sortKey === 'firm_name' ? String(row.firm_name || '').toLowerCase()
+      : Number(row[sortKey] || 0);
+    return [...scorecardCache].sort((a, b) => (val(a) > val(b) ? 1 : val(a) < val(b) ? -1 : 0) * sortDir);
+  }
+  document.querySelectorAll('#scorecard-table th[data-sort]').forEach(th => {
+    th.addEventListener('click', () => {
+      const k = th.dataset.sort;
+      sortDir = sortKey === k ? -sortDir : (['firm_name', 'rag', 'review'].includes(k) ? 1 : -1);
+      sortKey = k;
+      document.querySelectorAll('#scorecard-table th[data-sort]').forEach(h => { h.classList.toggle('sorted', h === th); h.dataset.dir = sortDir === 1 ? '↑' : '↓'; });
+      renderScorecard();
+    });
+  });
+
   function renderScorecard() {
     const tbody = document.getElementById('scorecard-body');
-    tbody.innerHTML = scorecardCache.map(row => `
+    tbody.innerHTML = sortedScorecard().map(row => `
       <tr data-firm="${row.rep_firm_id}" class="${row.rep_firm_id === selectedFirmId ? 'selected' : ''}">
         <td>${row.firm_name}</td>
         <td>${row.activity_count}</td>
@@ -412,6 +484,7 @@
         <td>${row.education_count}</td>
         <td>${momCell(row)}</td>
         <td><span class="rag-badge ${ragClass(row.rag_status)}">${row.rag_status}</span></td>
+        <td>${reviewState(row.rep_firm_id).html}</td>
       </tr>
     `).join('');
     tbody.querySelectorAll('tr').forEach(tr => {
@@ -420,9 +493,11 @@
   }
 
   // ---------- Drilldown ----------
-  async function openDrilldown(firmId) {
+  async function openDrilldown(firmId, { scroll = true } = {}) {
     selectedFirmId = firmId;
     renderScorecard();
+    syncUrl();
+    if (scroll) requestAnimationFrame(() => document.getElementById('drilldown').scrollIntoView({ behavior: 'smooth', block: 'start' }));
     const row = scorecardCache.find(r => r.rep_firm_id === firmId);
     if (!row) return;
     const month = monthInput.value;
@@ -472,6 +547,7 @@
     const locked = !!(currentReviewRow && currentReviewRow.is_finalized);
     const btn = document.getElementById('finalize-review-btn');
     if (!locked && !confirm('Finalize this firm\'s review for ' + month + '? Activity entries for this period will be locked against further edits/deletes until un-finalized.')) return;
+    if (locked && !confirm('Re-open this firm\'s review for ' + month + '? Its activity entries become editable again (by the firm too) until you finalize it again.')) return;
     btn.disabled = true;
     const patch = locked
       ? { is_finalized: false, finalized_at: null, finalized_by: null }
@@ -484,7 +560,8 @@
     }
     btn.disabled = false;
     if (error) { alert('Failed to update finalize status: ' + error.message); return; }
-    await openDrilldown(selectedFirmId);
+    await openDrilldown(selectedFirmId, { scroll: false });
+    await refreshReviewState();
   });
 
   // Accounts assigned to a firm (via crm_accounts.rep_firm_id) with no activity
@@ -538,6 +615,7 @@
     selectedFirmId = null;
     document.getElementById('drilldown').style.display = 'none';
     renderScorecard();
+    syncUrl();
   }
   document.getElementById('close-drilldown-btn').addEventListener('click', closeDrilldown);
 
@@ -915,6 +993,7 @@
 
     const repByCreator = await fetchRepsByCreator(acts.data || []);
     openAgendaWindow(row, month, acts.data || [], pipe.data || [], edu.data || [], existingReview ? existingReview.notes : '', repByCreator);
+    refreshReviewState();
 
     btn.disabled = false;
     btn.textContent = 'Generate Monthly Review Agenda';
@@ -1158,18 +1237,221 @@
     win.document.close();
   }
 
+  // ---------- Review state (per firm, for the selected month) ----------
+  let reviewByFirm = new Map();
+  async function loadReviewState(month) {
+    const { data } = await client.from('monthly_reviews').select('rep_firm_id, is_finalized, notes, agenda_generated_at').eq('reporting_month', month);
+    reviewByFirm = new Map((data || []).map(r => [r.rep_firm_id, r]));
+  }
+  async function refreshReviewState() {
+    await loadReviewState(monthInput.value);
+    renderScorecard();
+    renderMonthClose();
+  }
+  // Agenda notes are saved from the agenda tab -- pick them up when the
+  // manager comes back to this tab.
+  let lastFocusRefresh = 0;
+  window.addEventListener('focus', () => {
+    if (!scorecardCache.length || Date.now() - lastFocusRefresh < 5000) return;
+    lastFocusRefresh = Date.now();
+    refreshReviewState();
+  });
+
+  // ---------- URL state: ?month=YYYY-MM&firm=<id> survives reloads and can be shared ----------
+  function syncUrl() {
+    const p = new URLSearchParams();
+    if (monthInput.value) p.set('month', monthInput.value);
+    if (selectedFirmId) p.set('firm', selectedFirmId);
+    history.replaceState(null, '', `${location.pathname}?${p}`);
+  }
+
+  // ---------- Month helpers (local time) ----------
+  function localMonth() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
+  function prevMonthOf(m) { return trailingMonths(m, 2)[1]; }
+  function monthEnd(m) { const [y, mm] = m.split('-').map(Number); return new Date(y, mm, 1); } // first moment of the next month
+  function monthLabel(m) { const [y, mm] = m.split('-').map(Number); return new Date(y, mm - 1, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' }); }
+  function agoText(iso) {
+    if (!iso) return 'never';
+    const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+    return d <= 0 ? 'today' : d === 1 ? 'yesterday' : `${d} days ago`;
+  }
+  const doneAfter = (iso, m) => !!iso && new Date(iso) >= monthEnd(m);
+
+  // The review happens on the 1st for the month that just ended, so the
+  // dashboard opens on the previous month until every active firm's review
+  // for it is finalized -- then it moves on to the running month.
+  async function defaultMonth() {
+    const cur = localMonth();
+    const prev = prevMonthOf(cur);
+    const { data } = await client.from('monthly_reviews').select('rep_firm_id').eq('reporting_month', prev).eq('is_finalized', true);
+    const done = new Set((data || []).map(r => r.rep_firm_id));
+    return firmsCache.length && firmsCache.every(f => done.has(f.id)) ? cur : prev;
+  }
+
+  // ---------- Operations data (not month-scoped) ----------
+  let ops = null;
+  const NOT_ASSIGNABLE = new Set(['Independent Rep Firm', 'Competitor', 'Supplier']);
+  async function loadOpsData() {
+    const [accts, zips, blocking, manualContacts, reps, skipped, lastPipe, lastEdu, sellAny] = await Promise.all([
+      client.from('crm_accounts').select('name_key, source, rep_firm_id, relationship_type, state_code, is_active, last_synced_at'),
+      client.from('rep_firm_zip_ranges').select('state_code'),
+      client.from('crm_contacts').select('external_id', { count: 'exact', head: true }).eq('blocks_pipeline_sync', true),
+      client.from('crm_contacts').select('external_id', { count: 'exact', head: true }).eq('source', 'manual'),
+      client.from('profiles').select('id, rep_firm_id, crm_contact_external_id, full_name').eq('role', 'rep'),
+      client.from('rep_firm_aliases').select('id', { count: 'exact', head: true }).is('rep_firm_id', null),
+      client.from('pipeline_entries').select('uploaded_at').not('crm_id', 'is', null).order('uploaded_at', { ascending: false }).limit(1),
+      client.from('education_records').select('uploaded_at').order('uploaded_at', { ascending: false }).limit(1),
+      client.from('sellout_records').select('id', { count: 'exact', head: true }),
+    ]);
+    const accounts = accts.data || [];
+    const covered = new Set([...firmsCache.flatMap(f => f.states || []), ...(zips.data || []).map(z => z.state_code)]);
+    const synced = accounts.filter(a => a.source !== 'manual');
+    const syncedKeys = new Set(synced.map(a => a.name_key).filter(Boolean));
+    const manual = accounts.filter(a => a.source === 'manual');
+    const unassigned = accounts.filter(a => !a.rep_firm_id && a.is_active !== false && a.source !== 'manual' && !NOT_ASSIGNABLE.has(a.relationship_type));
+    const repRows = reps.data || [];
+    ops = {
+      lastCrmSync: synced.reduce((m, a) => (a.last_synced_at && (!m || a.last_synced_at > m) ? a.last_synced_at : m), null),
+      blocking: blocking.count || 0,
+      manualAccounts: manual.length,
+      manualContacts: manualContacts.count || 0,
+      mergeable: manual.filter(a => a.name_key && syncedKeys.has(a.name_key)).length,
+      unassignedCovered: unassigned.filter(a => covered.has(a.state_code)).length,
+      unassignedElsewhere: unassigned.filter(a => !covered.has(a.state_code)).length,
+      repsNoFirm: repRows.filter(r => !r.rep_firm_id).length,
+      repsNoLink: repRows.filter(r => r.rep_firm_id && !r.crm_contact_external_id).length,
+      repsNoName: repRows.filter(r => !r.full_name).length,
+      repsAttention: repRows.filter(r => !r.rep_firm_id || !r.crm_contact_external_id || !r.full_name).length,
+      skippedAliases: skipped.count || 0,
+      lastPipeSync: lastPipe.data?.[0]?.uploaded_at || null,
+      lastEduImport: lastEdu.data?.[0]?.uploaded_at || null,
+      selloutInUse: (sellAny.count || 0) > 0,
+    };
+  }
+
+  const ICO = { ok: '<span class="ops-ico ok" aria-label="Done">✓</span>', todo: '<span class="ops-ico todo" aria-label="To do">!</span>',
+    bad: '<span class="ops-ico bad" aria-label="Urgent">!</span>', off: '<span class="ops-ico off" aria-label="Not applicable">–</span>' };
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : (many || one + 's')}`;
+
+  // "Needs your attention": every open data-upkeep task, each linking straight
+  // into the filtered view where it gets fixed.
+  function renderWorklist() {
+    if (!ops) return;
+    const items = [];
+    const syncAge = ops.lastCrmSync ? (Date.now() - new Date(ops.lastCrmSync)) / 86400000 : Infinity;
+    items.push({
+      state: syncAge < 7 ? 'ok' : syncAge < 30 ? 'todo' : 'bad', always: true,
+      main: `CRM last synced <b>${agoText(ops.lastCrmSync)}</b>`,
+      sub: 'Accounts, contacts and their firm assignments come from Dynamics. Sync at least weekly and before the review.',
+      href: '/crm', action: 'Sync',
+    });
+    if (ops.blocking) items.push({
+      state: 'bad', main: `<b class="ops-count">${plural(ops.blocking, 'contact')}</b> ${ops.blocking === 1 ? 'blocks' : 'block'} the pipeline sync`,
+      sub: 'Their deals can’t be credited to a firm. Give each a firm, then run <a href="/admin#pipeline">Sync Opportunities</a> again.',
+      href: '/crm?view=blocking', action: 'Fix',
+    });
+    if (ops.manualAccounts || ops.manualContacts) items.push({
+      state: 'todo',
+      main: `<b class="ops-count">${plural(ops.manualAccounts, 'account')}</b>${ops.manualContacts ? ` and <b class="ops-count">${plural(ops.manualContacts, 'contact')}</b>` : ''} added by reps, not in Dynamics yet`,
+      sub: ops.mergeable && ops.mergeable === ops.manualAccounts ? `${ops.mergeable === 1 ? 'It already matches' : 'All of them already match'} a Dynamics account and can be merged now.`
+        : ops.mergeable ? `${ops.mergeable} already ${ops.mergeable === 1 ? 'matches' : 'match'} a Dynamics account and can be merged now. Key the rest into Dynamics, sync, then merge.`
+        : 'Key them into Dynamics, sync, then merge each into its Dynamics record.',
+      href: '/crm?view=manual', action: 'Review',
+    });
+    if (ops.unassignedCovered) items.push({
+      state: 'todo', main: `<b class="ops-count">${plural(ops.unassignedCovered, 'active account')}</b> in your territories without a rep firm`,
+      sub: ops.unassignedElsewhere ? `${ops.unassignedElsewhere} more ${ops.unassignedElsewhere === 1 ? 'lies' : 'lie'} outside every territory and ${ops.unassignedElsewhere === 1 ? 'is' : 'are'} left alone.` : '',
+      href: '/crm?view=unassigned', action: 'Assign',
+    });
+    if (ops.repsAttention) items.push({
+      state: 'todo', main: `<b class="ops-count">${plural(ops.repsAttention, 'rep')}</b> to finish setting up`,
+      sub: [ops.repsNoFirm && `${ops.repsNoFirm} without a firm`, ops.repsNoLink && `${ops.repsNoLink} not linked to their CRM contact`, ops.repsNoName && `${ops.repsNoName} without a name`].filter(Boolean).join(' · '),
+      href: '/reps?view=attention', action: 'Open',
+    });
+    if (ops.skippedAliases) items.push({
+      state: 'off', main: `<b class="ops-count">${plural(ops.skippedAliases, 'company name')}</b> from imports set to “Skip”`,
+      sub: 'Their education, pipeline and sell-out rows are ignored. Check none of them is actually a rep firm.',
+      href: '/admin?filter=skipped#mappings', action: 'Check',
+    });
+    const open = items.filter(i => i.state === 'bad' || i.state === 'todo').length;
+    const chip = document.getElementById('wl-chip');
+    chip.className = open ? 'chip warn' : 'chip ok';
+    chip.textContent = open ? `${open} open` : 'All clear';
+    document.getElementById('wl-items').innerHTML = items.map(i => `
+      <li>${ICO[i.state]}<span class="ops-main">${i.main}${i.sub ? `<span class="ops-sub">${i.sub}</span>` : ''}</span>
+      <a class="ops-action" href="${i.href}">${i.action} →</a></li>`).join('');
+  }
+
+  // "Month close": the review-day checklist for the selected month, in the
+  // order it's done on the 1st.
+  function renderMonthClose() {
+    if (!ops) return;
+    const m = monthInput.value;
+    const running = m >= localMonth();
+    const total = scorecardCache.length;
+    const withActivity = scorecardCache.filter(r => Number(r.activity_count) > 0);
+    const silent = scorecardCache.filter(r => Number(r.activity_count) === 0);
+    const acts = scorecardCache.reduce((s, r) => s + Number(r.activity_count || 0), 0);
+    const newOpps = scorecardCache.reduce((s, r) => s + Number(r.new_pipeline_count || 0), 0);
+    const certs = scorecardCache.reduce((s, r) => s + Number(r.education_count || 0), 0);
+    const sellFirms = scorecardCache.filter(r => Number(r.sellout_revenue || 0) > 0).length;
+    const finalized = scorecardCache.filter(r => reviewByFirm.get(r.rep_firm_id)?.is_finalized).length;
+    const started = scorecardCache.filter(r => { const v = reviewByFirm.get(r.rep_firm_id); return v && !v.is_finalized && (v.agenda_generated_at || (v.notes || '').trim()); }).length;
+
+    const firmLinks = (rows) => rows.slice(0, 6).map(r => `<a href="#" data-open-firm="${r.rep_firm_id}">${escapeHtml(r.firm_name)}</a>`).join(', ') + (rows.length > 6 ? ` +${rows.length - 6} more` : '');
+    const steps = [
+      { state: doneAfter(ops.lastCrmSync, m) || (running && ops.lastCrmSync && (Date.now() - new Date(ops.lastCrmSync)) < 7 * 86400000) ? 'ok' : 'todo',
+        main: '<b>Sync the CRM</b>', sub: `Last sync ${agoText(ops.lastCrmSync)}.`, href: '/crm', action: 'Sync' },
+      { state: doneAfter(ops.lastPipeSync, m) ? 'ok' : 'todo',
+        main: '<b>Sync opportunities</b>', sub: `Last opportunity sync ${agoText(ops.lastPipeSync)} · ${plural(newOpps, 'new opportunity', 'new opportunities')} in ${monthLabel(m)}.`, href: '/admin#pipeline', action: 'Open' },
+      { state: doneAfter(ops.lastEduImport, m) ? 'ok' : 'todo',
+        main: '<b>Import education</b>', sub: `Last import ${agoText(ops.lastEduImport)} · ${plural(certs, 'certificate')} in ${monthLabel(m)}.`, href: '/admin#education', action: 'Import' },
+      ops.selloutInUse
+        ? { state: sellFirms ? 'ok' : 'todo', main: '<b>Import sell-out</b>', sub: sellFirms ? `${plural(sellFirms, 'firm')} with sell-out in ${monthLabel(m)}.` : `No sell-out imported for ${monthLabel(m)} yet.`, href: '/admin#sellout', action: 'Import' }
+        : { state: 'off', main: '<b>Import sell-out</b> <span class="chip">Not in use yet</span>', sub: 'Monthly AVL sell-out. Optional until it’s part of the process.', href: '/admin#sellout', action: 'Open' },
+      { state: silent.length ? 'todo' : 'ok',
+        main: `<b>Rep activity</b>: ${plural(acts, 'activity', 'activities')} from ${withActivity.length} of ${total} firms`,
+        sub: silent.length ? `Nothing logged by ${firmLinks(silent)}${running ? '' : '. Remind them before you finalize'}.` : 'Every firm logged activity.', href: '/admin#activities', action: 'Search' },
+      running
+        ? { state: 'off', main: '<b>Review &amp; finalize</b>', sub: `${monthLabel(m)} is still running. The review is on the 1st.`, href: '', action: '' }
+        : { state: finalized === total && total ? 'ok' : 'todo',
+            main: `<b>Review &amp; finalize</b>: ${finalized} of ${total} firms finalized`,
+            sub: `${started ? `${started} in progress. ` : ''}Open a firm, generate the agenda, add notes, then finalize. Sort the scorecard by <b>Review</b> to see what’s left.<div class="mc-progress"><i style="width:${total ? Math.round(finalized / total * 100) : 0}%"></i></div>`,
+            href: '', action: '' },
+    ];
+
+    document.getElementById('mc-title').textContent = `Month close · ${monthLabel(m)}`;
+    const chip = document.getElementById('mc-chip');
+    if (running) { chip.className = 'chip'; chip.textContent = 'Running'; }
+    else if (finalized === total && total) { chip.className = 'chip ok'; chip.textContent = 'Closed'; }
+    else { chip.className = 'chip warn'; chip.textContent = `${finalized}/${total} finalized`; }
+
+    const list = document.getElementById('mc-steps');
+    list.innerHTML = steps.map(st => `
+      <li>${ICO[st.state]}<span class="ops-main">${st.main}<span class="ops-sub">${st.sub}</span></span>
+      ${st.href ? `<a class="ops-action" href="${st.href}">${st.action} →</a>` : '<span></span>'}</li>`).join('');
+    list.querySelectorAll('[data-open-firm]').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); openDrilldown(a.dataset.openFirm); }));
+  }
+
   // ---------- Init ----------
   (async function init() {
     const g = await guard();
     if (!g) return;
     currentUser = g.user;
     document.getElementById('user-email').textContent = g.profile.email;
-    monthInput.value = currentMonthValue();
     await loadFirms();
+    const params = new URLSearchParams(location.search);
+    const urlMonth = params.get('month');
+    monthInput.value = /^\d{4}-\d{2}$/.test(urlMonth || '') ? urlMonth : await defaultMonth();
     await fetchAllAttachmentCounts();
     await loadRepSignupAlerts();
+    await loadOpsData();
+    renderWorklist();
     await loadScorecard();
-    monthInput.addEventListener('change', loadScorecard);
+    const urlFirm = params.get('firm');
+    if (urlFirm && scorecardCache.some(r => r.rep_firm_id === urlFirm)) openDrilldown(urlFirm);
+    syncUrl();
+    monthInput.addEventListener('change', async () => { await loadScorecard(); syncUrl(); });
   })();
 </script>
 </body>

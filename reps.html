@@ -132,6 +132,13 @@
           <option value="__unassigned">Unassigned</option>
         </select>
       </div>
+      <div class="field">
+        <label for="attention-filter">Show</label>
+        <select id="attention-filter">
+          <option value="">All reps</option>
+          <option value="attention">Needs attention (no firm, no CRM link or no name)</option>
+        </select>
+      </div>
     </div>
 
     <div class="result-count" id="result-count"></div>
@@ -244,6 +251,9 @@
     let rows = repsCache.filter(r => matchesSearch(r, q));
     if (firmFilter === '__unassigned') rows = rows.filter(r => !r.rep_firm_id);
     else if (firmFilter) rows = rows.filter(r => r.rep_firm_id === firmFilter);
+    if (document.getElementById('attention-filter').value === 'attention') {
+      rows = rows.filter(r => !r.rep_firm_id || !r.crm_contact_external_id || !r.full_name);
+    }
 
     document.getElementById('result-count').textContent = `Showing ${rows.length} of ${repsCache.length} reps`;
 
@@ -330,6 +340,7 @@
 
   document.getElementById('search-input').addEventListener('input', renderReps);
   document.getElementById('firm-filter').addEventListener('change', renderReps);
+  document.getElementById('attention-filter').addEventListener('change', renderReps);
 
   // ---------- Rep Firms & their CRM contacts ----------
   // Every rep firm is itself a Dataverse Account (Relationship Type =
@@ -574,6 +585,12 @@
     currentUser = g.user;
     document.getElementById('user-email').textContent = g.profile.email;
     await loadAll();
+    // Deep link from the dashboard work list: /reps?view=attention
+    if (new URLSearchParams(location.search).get('view') === 'attention') {
+      document.getElementById('attention-filter').value = 'attention';
+      renderReps();
+      document.getElementById('attention-filter').scrollIntoView({ block: 'center' });
+    }
   })();
 </script>
 </body>
