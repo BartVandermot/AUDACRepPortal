@@ -162,6 +162,10 @@
   .link-btn { background: none; border: none; padding: 8px 4px; margin: -8px -4px; font: inherit; font-size: 12.5px; cursor: pointer; text-decoration: underline; color: var(--audac-black); }
   .link-btn.danger { color: #b3261e; }
 
+  /* The submissions table has 9+ columns -- it scrolls inside this box on a
+     phone instead of widening (and zooming out) the whole page. */
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .entry-month-note { color: #b3261e; }
   table.detail { width: 100%; border-collapse: collapse; background: #fff; font-size: 12.5px; }
   table.detail th, table.detail td { padding: 8px 10px; border-bottom: 1px solid #eee; text-align: left; }
   table.detail th { background: #f1f1f1; }
@@ -229,35 +233,34 @@
     <button type="button" class="audac-btn-outline" id="name-prompt-save-btn" style="width:auto; padding:6px 14px;">Save</button>
   </div>
 
-  <div id="my-submissions-section" hidden>
-    <h2 style="padding-left:4px;" id="my-submissions-heading">My Submissions</h2>
-    <div id="my-submissions-list"></div>
-    <hr style="border:none; border-top:1px solid #eee; margin:28px 0;">
+  <div id="signin-gate" class="card" hidden>
+    <h2>Sign in to log your activities</h2>
+    <p style="font-size:14px; line-height:1.6; margin:0 0 18px;">Your activities are saved under your name, so you can find, edit and re-use them later, and your firm and AUDAC see who did the work. First time here? Choose <b>Create account</b> on the next screen. It takes a minute.</p>
+    <button type="button" class="audac-btn" id="gate-signin-btn">Sign In / Create Account</button>
   </div>
 
   <div id="error-banner"></div>
 
+  <div id="signed-in-area" hidden>
+  <div id="draft-notice" hidden style="background:#fff8e6; border:1px solid #eddca0; border-radius:4px; padding:10px 14px; margin-bottom:16px; font-size:13px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+    <span id="draft-notice-text"></span>
+    <button type="button" class="link-btn" id="draft-discard-btn">Discard draft</button>
+  </div>
+
   <form id="activity-form">
     <div class="card">
-      <h2>Firm &amp; Reporting Period</h2>
-      <div class="row">
-        <div class="field">
-          <label for="firm-select">Rep Firm</label>
-          <select id="firm-select" required></select>
-        </div>
-        <div class="field">
-          <label for="reporting-month">Reporting Month</label>
-          <input type="month" id="reporting-month" required>
-          <div class="hint" id="period-locked-note" style="display:none; color:#b3261e;"></div>
-        </div>
+      <h2>Rep Firm</h2>
+      <div class="field" style="margin-bottom:0;">
+        <label for="firm-select">Rep Firm</label>
+        <select id="firm-select" required></select>
+        <div class="hint">Each activity is filed under the month of its own date.</div>
       </div>
     </div>
 
     <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
       <h2 style="padding-left:4px; margin:0;">Activity Entries</h2>
-      <a href="/import" id="import-link" hidden class="audac-btn-outline" style="text-decoration:none; padding:8px 14px; font-size:12px;">Upload from CRM export</a>
+      <a href="/import" id="import-link" class="audac-btn-outline" style="text-decoration:none; padding:8px 14px; font-size:12px;">Upload from CRM export</a>
     </div>
-    <div class="hint" id="import-link-signed-out" style="margin:-8px 0 16px 4px;">Logging lots of activities? <a href="#" id="import-signin-link">Sign in</a> to upload them from your own CRM export instead.</div>
     <div id="entries-container"></div>
 
     <button type="button" class="audac-btn-outline" id="add-entry-btn">+ Add Another Activity</button>
@@ -273,6 +276,13 @@
     <h2 id="confirmation-title">Submitted</h2>
     <p id="confirmation-detail"></p>
     <button type="button" class="audac-btn-outline" id="submit-more-btn">Submit More Activities</button>
+  </div>
+
+  <div id="my-submissions-section" hidden>
+    <hr style="border:none; border-top:1px solid #eee; margin:36px 0 28px;">
+    <h2 style="padding-left:4px;" id="my-submissions-heading">My Submissions</h2>
+    <div id="my-submissions-list"></div>
+  </div>
   </div>
 </main>
 
@@ -296,7 +306,6 @@
   const PENDING_FIRM_KEY = 'audac_pending_firm_id';
   const entriesContainer = document.getElementById('entries-container');
   const firmSelect = document.getElementById('firm-select');
-  const monthInput = document.getElementById('reporting-month');
   const errorBanner = document.getElementById('error-banner');
 
   function showError(msg) {
@@ -308,13 +317,11 @@
     errorBanner.style.display = 'none';
   }
 
+  // The rep's LOCAL date -- toISOString() is UTC, which for a US rep logging a
+  // visit after ~7pm Eastern defaulted the entry date to tomorrow.
   function todayISO() {
     const d = new Date();
-    return d.toISOString().slice(0, 10);
-  }
-  function currentMonthValue() {
-    const d = new Date();
-    return d.toISOString().slice(0, 7);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }
 
   // monthly_reviews itself is manager/executive-only under RLS, so this form
@@ -329,16 +336,22 @@
     return finalizedPeriods.has(`${firmId}|${month}`);
   }
 
-  // Warns before a rep fills out an entire new-activity form only to have the
-  // submission rejected at the end -- the DB trigger (migration 0015) blocks
-  // inserts for a finalized period exactly like it blocks edits/deletes.
-  function updateLockWarning() {
-    const note = document.getElementById('period-locked-note');
-    const submitBtn = document.getElementById('submit-btn');
-    const locked = firmSelect.value && monthInput.value && isPeriodLocked(firmSelect.value, monthInput.value);
-    note.style.display = locked ? 'block' : 'none';
-    note.textContent = locked ? '🔒 This firm’s review for this month has been finalized — new entries can’t be submitted. Ask a manager to un-finalize it first.' : '';
-    submitBtn.disabled = !!locked;
+  // The reporting month is the month of each activity's own date (same rule as
+  // the CRM import). Warns per activity as soon as its date falls in a month
+  // that's already finalized for this firm -- the DB trigger (migration 0015)
+  // would reject it at submit anyway.
+  function lockedMonthFor(dateStr) {
+    if (!firmSelect.value || !dateStr) return null;
+    const month = dateStr.slice(0, 7);
+    return isPeriodLocked(firmSelect.value, month) ? month : null;
+  }
+  function refreshMonthNotes() {
+    entriesContainer.querySelectorAll('.activity-entry').forEach(block => {
+      const month = lockedMonthFor(block.querySelector('[name="entry_date"]').value);
+      block.querySelector('.entry-month-note').textContent = month
+        ? `🔒 ${month} has already been finalized for this firm, so this activity can't be added. Ask AUDAC to re-open the month.`
+        : '';
+    });
   }
 
   function buildOptions(values, placeholder) {
@@ -387,6 +400,8 @@
       details.hidden = true;
       contactField.classList.add('active');
       wireContactCombo(block);
+      if (!isNew) suggestContactType(block, acc.external_id);
+      saveDraft();
     }
 
     function showNewAccountDetails(name) {
@@ -445,6 +460,23 @@
     });
   }
 
+  // Pre-fills Contact Type from what the AUDAC CRM knows about the picked
+  // account (suggest_contact_type RPC: business/relationship type). Never
+  // overrides a type the rep chose themselves; a later account pick may
+  // replace an earlier automatic one.
+  async function suggestContactType(block, externalId) {
+    const sel = block.querySelector('[name="contact_type"]');
+    const hint = block.querySelector('.contact-type-hint');
+    if (sel.value && sel.dataset.auto !== '1') return;
+    const { data, error } = await client.rpc('suggest_contact_type', { p_account_external_id: externalId });
+    if (error || !CONTACT_TYPES.includes(data)) return;
+    if (sel.value && sel.dataset.auto !== '1') return; // rep picked one while we were asking
+    sel.value = data;
+    sel.dataset.auto = '1';
+    hint.textContent = 'Filled in from the AUDAC CRM. Change it if it’s not right.';
+    saveDraft();
+  }
+
   function clearContact(block) {
     delete block.dataset.contactExternalId;
     const input = block.querySelector('.contact-input');
@@ -472,6 +504,7 @@
       statusEl.className = 'combo-status contact-status linked';
       list.hidden = true;
       details.hidden = true;
+      saveDraft();
     }
 
     function showNewContactDetails() {
@@ -625,6 +658,8 @@
     if (currentProfile?.rep_firm_id) lockFirmToProfile(currentProfile.rep_firm_id);
     document.getElementById('name-prompt-bar').hidden = !!currentProfile?.full_name;
     updateSignedInGreeting();
+    restoreDraft();
+    refreshMonthNotes();
     await loadMySubmissions();
   }
 
@@ -656,11 +691,14 @@
     firmSelect.classList.add('firm-locked');
   }
 
+  // Signing in is required (anonymous submission was retired 2026-11 -- the DB
+  // insert policy now demands created_by = auth.uid()). Signed out, the rep
+  // only sees the sign-in card; ?firm= still travels along via the button.
   function renderAuthState() {
     document.getElementById('auth-signed-out').hidden = !!currentSession;
     document.getElementById('auth-signed-in').hidden = !currentSession;
-    document.getElementById('import-link').hidden = !currentSession;
-    document.getElementById('import-link-signed-out').hidden = !!currentSession;
+    document.getElementById('signin-gate').hidden = !!currentSession;
+    document.getElementById('signed-in-area').hidden = !currentSession;
     if (currentSession) document.getElementById('signed-in-email').textContent = currentSession.user.email;
     else document.getElementById('name-prompt-bar').hidden = true;
   }
@@ -675,8 +713,7 @@
     window.location.href = '/login' + qs;
   });
 
-  document.getElementById('import-signin-link').addEventListener('click', (e) => {
-    e.preventDefault();
+  document.getElementById('gate-signin-btn').addEventListener('click', () => {
     document.getElementById('show-signin-btn').click();
   });
 
@@ -722,9 +759,9 @@
   }
 
   function renderMySubmissionsTable(rows, showCreator, profileByCreator) {
-    return `<table class="detail"><thead><tr>
+    return `<div class="table-scroll"><table class="detail"><thead><tr>
       <th>Date</th><th>Firm</th>${showCreator ? '<th>Submitted By</th><th>Territory</th>' : ''}<th>Account</th><th>Contact Type</th><th>Activity Type</th><th>Topic / Opportunity</th><th>Files</th><th>Actions</th>
-    </tr></thead><tbody>${rows.map(r => activityRowHtml(r, showCreator, profileByCreator)).join('')}</tbody></table>`;
+    </tr></thead><tbody>${rows.map(r => activityRowHtml(r, showCreator, profileByCreator)).join('')}</tbody></table></div>`;
   }
 
   function activityRowHtml(r, showCreator, profileByCreator) {
@@ -882,7 +919,7 @@
     editRow.innerHTML = `<td colspan="${colspan}">
       <div class="edit-grid">
         <label>Date<input type="date" class="ae-date" value="${row.entry_date}" max="${todayISO()}"></label>
-        <label>Account<input type="text" class="ae-account" value="${escapeHtml(row.account_name)}"></label>
+        <label>Account<input type="text" class="ae-account" value="${escapeHtml(row.account_name)}">${row.account_external_id ? '<span class="hint" style="display:block; font-weight:400;">Changing the name removes the link to the AUDAC CRM account.</span>' : ''}</label>
         <label>Contact<input type="text" class="ae-contact" value="${escapeHtml(row.contact_name || '')}"></label>
         <label>Contact Type<select class="ae-contact-type">${CONTACT_TYPES.map(v => `<option value="${v}">${v}</option>`).join('')}</select></label>
         <label>Activity Type<select class="ae-activity-type">${ACTIVITY_TYPES.map(v => `<option value="${v}">${v}</option>`).join('')}</select></label>
@@ -914,7 +951,17 @@
       if (patch.entry_date > todayISO()) { statusEl.textContent = 'Entry date can\'t be in the future.'; return; }
       statusEl.style.color = '#999';
       statusEl.textContent = 'Saving…';
-      const { error } = await client.from('activity_entries').update(patch).eq('id', row.id);
+      // The month follows the date (as on the form/import), and a renamed
+      // account or contact must drop its CRM link -- otherwise the entry stays
+      // linked to the OLD account's record under the new name.
+      const fullPatch = { ...patch, reporting_month: patch.entry_date.slice(0, 7) };
+      if (patch.account_name !== (row.account_name || '')) {
+        fullPatch.account_external_id = null;
+        fullPatch.contact_external_id = null;
+      } else if ((patch.contact_name || null) !== (row.contact_name || null)) {
+        fullPatch.contact_external_id = null;
+      }
+      const { error } = await client.from('activity_entries').update(fullPatch).eq('id', row.id);
       if (error) {
         statusEl.style.color = '#b3261e';
         statusEl.textContent = 'Error: ' + error.message;
@@ -953,6 +1000,7 @@
         <div class="field">
           <label>Entry Date</label>
           <input type="date" name="entry_date" value="${todayISO()}" max="${todayISO()}" required>
+          <div class="hint entry-month-note"></div>
         </div>
         <div class="field">
           <label>Account / Company</label>
@@ -999,6 +1047,7 @@
         <div class="field">
           <label>Contact Type</label>
           <select name="contact_type" required>${buildOptions(CONTACT_TYPES, 'Select contact type')}</select>
+          <div class="hint contact-type-hint"></div>
         </div>
         <div class="field">
           <label>Activity Type</label>
@@ -1034,8 +1083,102 @@
     entriesContainer.appendChild(wrap);
     wireCompanyCombo(wrap);
     wireAttachmentInput(wrap);
+    wrap.querySelector('[name="entry_date"]').addEventListener('change', refreshMonthNotes);
+    // A rep's own pick always wins over the CRM suggestion from then on.
+    wrap.querySelector('[name="contact_type"]').addEventListener('change', (e) => {
+      delete e.target.dataset.auto;
+      wrap.querySelector('.contact-type-hint').textContent = '';
+    });
     updateEntryHint();
+    refreshMonthNotes();
+    return wrap;
   }
+
+  // ---------- Draft (per signed-in rep, this browser only) ----------
+  // A long entry typed on a phone shouldn't vanish on an accidental refresh or
+  // "back". Photos can't be kept in localStorage, so they're the one thing a
+  // restored draft lacks -- the notice says so.
+  const DRAFT_MAX_AGE_MS = 14 * 24 * 3600 * 1000;
+  const DRAFT_FIELDS = ['entry_date', 'account_name', 'contact_type', 'activity_type', 'topic_opportunity', 'solution_feedback', 'competitive_feedback', 'additional_comments'];
+  function draftKey() { return currentSession ? `audac_activity_draft_${currentSession.user.id}` : null; }
+
+  function serializeEntries() {
+    return [...entriesContainer.querySelectorAll('.activity-entry')].map(b => {
+      const out = {};
+      for (const f of DRAFT_FIELDS) out[f] = b.querySelector(`[name="${f}"]`).value;
+      out.demo_gear_used = b.querySelector('[name="demo_gear_used"]').checked;
+      out.contact_type_auto = b.querySelector('[name="contact_type"]').dataset.auto === '1';
+      out.account_external_id = b.dataset.accountExternalId || '';
+      out.contact_name = b.querySelector('.contact-input')?.value || '';
+      out.contact_external_id = b.dataset.contactExternalId || '';
+      return out;
+    });
+  }
+  function hasContent(entries) {
+    return entries.some(e => e.account_name || e.topic_opportunity || e.solution_feedback || e.competitive_feedback || e.additional_comments);
+  }
+  const saveDraft = debounce(() => {
+    const key = draftKey();
+    if (!key) return;
+    const entries = serializeEntries();
+    try {
+      if (hasContent(entries)) localStorage.setItem(key, JSON.stringify({ savedAt: Date.now(), firmId: firmSelect.value || null, entries }));
+      else localStorage.removeItem(key);
+    } catch { /* storage blocked or full -- drafts are a convenience only */ }
+  }, 600);
+  function clearDraft() {
+    const key = draftKey();
+    if (key) { try { localStorage.removeItem(key); } catch { /* ignore */ } }
+    document.getElementById('draft-notice').hidden = true;
+  }
+
+  function restoreDraft() {
+    const key = draftKey();
+    if (!key) return;
+    let draft = null;
+    try { draft = JSON.parse(localStorage.getItem(key) || 'null'); } catch { draft = null; }
+    if (!draft?.entries?.length || Date.now() - draft.savedAt > DRAFT_MAX_AGE_MS) return;
+    if (hasContent(serializeEntries())) return; // never overwrite what's on screen
+    if (draft.firmId && !firmSelect.disabled && [...firmSelect.options].some(o => o.value === draft.firmId)) firmSelect.value = draft.firmId;
+
+    entriesContainer.innerHTML = '';
+    for (const e of draft.entries) {
+      const b = addEntry();
+      for (const f of DRAFT_FIELDS) if (e[f]) b.querySelector(`[name="${f}"]`).value = e[f];
+      b.querySelector('[name="demo_gear_used"]').checked = !!e.demo_gear_used;
+      if (e.contact_type_auto) b.querySelector('[name="contact_type"]').dataset.auto = '1';
+      if (e.account_external_id) {
+        b.dataset.accountExternalId = e.account_external_id;
+        const st = b.querySelector('.account-status');
+        st.textContent = '✓ Linked to CRM account';
+        st.className = 'combo-status account-status linked';
+        b.querySelector('.contact-field').classList.add('active');
+        wireContactCombo(b);
+        if (e.contact_name) b.querySelector('.contact-input').value = e.contact_name;
+        if (e.contact_external_id) {
+          b.dataset.contactExternalId = e.contact_external_id;
+          const cs = b.querySelector('.contact-status');
+          cs.textContent = '✓ Linked to CRM contact';
+          cs.className = 'combo-status contact-status linked';
+        }
+      }
+    }
+    refreshMonthNotes();
+    const n = draft.entries.length;
+    const when = new Date(draft.savedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+    document.getElementById('draft-notice-text').textContent =
+      `We restored ${n === 1 ? 'the activity' : `${n} activities`} you hadn’t submitted yet (saved ${when}). Photos aren’t kept in a draft, so add them again if needed.`;
+    document.getElementById('draft-notice').hidden = false;
+  }
+
+  document.getElementById('draft-discard-btn').addEventListener('click', () => {
+    if (!confirm('Discard this draft? What you typed will be cleared.')) return;
+    clearDraft();
+    entriesContainer.innerHTML = '';
+    addEntry();
+  });
+  entriesContainer.addEventListener('input', () => saveDraft());
+  entriesContainer.addEventListener('change', () => saveDraft());
 
   function removeEntry(idx) {
     const el = entriesContainer.querySelector(`.activity-entry[data-idx="${idx}"]`);
@@ -1046,6 +1189,7 @@
     }
     el.remove();
     updateEntryHint();
+    saveDraft();
   }
 
   function updateEntryHint() {
@@ -1058,8 +1202,7 @@
     if (btn) removeEntry(btn.dataset.remove);
   });
   document.getElementById('add-entry-btn').addEventListener('click', addEntry);
-  firmSelect.addEventListener('change', updateLockWarning);
-  monthInput.addEventListener('change', updateLockWarning);
+  firmSelect.addEventListener('change', () => { refreshMonthNotes(); saveDraft(); });
 
   async function loadFirms() {
     const params = new URLSearchParams(window.location.search);
@@ -1113,9 +1256,8 @@
     });
   }
 
-  function validate(firmId, month, entries) {
+  function validate(firmId, entries) {
     if (!firmId) return 'Please select your rep firm.';
-    if (!month) return 'Please select the reporting month.';
     for (const [i, e] of entries.entries()) {
       if (!e.entry_date || !e.account_name || !e.contact_type || !e.activity_type) {
         return `Activity #${i + 1} is missing a required field.`;
@@ -1123,47 +1265,31 @@
       if (e.entry_date > todayISO()) {
         return `Activity #${i + 1}'s entry date can't be in the future.`;
       }
+      const locked = lockedMonthFor(e.entry_date);
+      if (locked) return `Activity #${i + 1} is dated in ${locked}, which has already been finalized for this firm. Ask AUDAC to re-open the month, or check the date.`;
     }
     return null;
-  }
-
-  // Soft nudge, not a block -- late entries for a prior month are legitimate,
-  // this only catches the "picked the wrong year/month" kind of mistake.
-  function monthsApart(dateStr, monthStr) {
-    const [dy, dm] = dateStr.split('-').map(Number);
-    const [my, mm] = monthStr.split('-').map(Number);
-    return Math.abs((dy - my) * 12 + (dm - mm));
   }
 
   document.getElementById('activity-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     clearError();
+    if (!currentSession) { showError('Please sign in first.'); return; }
 
     const firmId = firmSelect.value;
-    const month = monthInput.value;
     const blocks = [...entriesContainer.querySelectorAll('.activity-entry')];
     const entries = collectEntries();
 
-    const validationError = validate(firmId, month, entries);
+    const validationError = validate(firmId, entries);
     if (validationError) {
       showError(validationError);
       return;
     }
 
-    const monthMismatchNumbers = entries
-      .map((e, i) => (monthsApart(e.entry_date, month) > 2 ? i + 1 : null))
-      .filter(Boolean);
-    if (monthMismatchNumbers.length) {
-      const proceed = confirm(
-        `Activity #${monthMismatchNumbers.join(', #')} ${monthMismatchNumbers.length === 1 ? 'has' : 'have'} an entry date far from the selected reporting month (${month}). Double-check the date and month are both correct.\n\nSubmit anyway?`
-      );
-      if (!proceed) return;
-    }
-
     // Soft duplicate warning, not a hard block -- two genuinely separate visits
     // can share every one of these fields, so this asks rather than refuses.
-    // anon can't SELECT activity_entries directly, so this goes through a
-    // narrow security-definer RPC instead of a client-side query.
+    // A rep can only SELECT their own entries, so this goes through a narrow
+    // security-definer RPC that checks the whole firm.
     const dupChecks = await Promise.all(entries.map(e =>
       client.rpc('check_duplicate_activity', {
         p_rep_firm_id: firmId, p_account_name: e.account_name, p_entry_date: e.entry_date, p_activity_type: e.activity_type,
@@ -1181,22 +1307,29 @@
     submitBtn.disabled = true;
     submitBtn.textContent = 'Submitting…';
 
-    // ids are generated client-side (rather than read back via .insert().select())
-    // because .select() after an insert makes PostgREST evaluate this table's
-    // SELECT policies to build the RETURNING result -- and the manager/executive
-    // policy calls current_role_name(), which anon has no EXECUTE grant on. That
-    // throws "permission denied for function current_role_name" for anonymous
-    // (not-signed-in) submissions specifically. Supplying the id ourselves avoids
-    // RETURNING entirely, so anonymous submission stays exactly as unrestricted
-    // as it was before attachments existed.
+    // A rep whose account isn't tied to a firm yet (signed up without a firm
+    // link) gets tied to the firm they're submitting for -- once; after that
+    // the firm is locked to their profile like everyone else's.
+    if (currentProfile?.role === 'rep' && !currentProfile.rep_firm_id) {
+      const { error: claimErr } = await client.rpc('claim_rep_firm', { p_firm_id: firmId });
+      if (!claimErr) {
+        currentProfile.rep_firm_id = firmId;
+        lockFirmToProfile(firmId);
+      }
+    }
+
+    // ids are generated client-side so photos can be uploaded under each
+    // entry's id without reading the inserted rows back (no RETURNING needed).
+    // The reporting month is the month of each activity's own date.
     const rows = entries.map(e => ({
       id: crypto.randomUUID(),
       rep_firm_id: firmId,
-      reporting_month: month,
-      created_by: currentSession?.user?.id || null,
-      created_by_email: currentSession?.user?.email || null,
+      reporting_month: e.entry_date.slice(0, 7),
+      created_by: currentSession.user.id,
+      created_by_email: currentSession.user.email,
       ...e,
     }));
+    const months = [...new Set(rows.map(r => r.reporting_month))].sort();
 
     const { error } = await client.from('activity_entries').insert(rows);
 
@@ -1223,7 +1356,7 @@
         if (upErr) { uploadErrors.push(`${file.name}: ${upErr.message}`); continue; }
         const { error: metaErr } = await client.from('activity_attachments').insert({
           activity_entry_id: entryId, storage_path: path, file_name: file.name,
-          content_type: file.type, uploaded_by: currentSession?.user?.id || null,
+          content_type: file.type, uploaded_by: currentSession.user.id,
         });
         if (metaErr) uploadErrors.push(`${file.name}: ${metaErr.message}`);
       }
@@ -1232,13 +1365,15 @@
     submitBtn.disabled = false;
     submitBtn.textContent = 'Submit Activities';
 
+    clearDraft();
     const firmLabel = firmSelect.selectedOptions[0]?.textContent || '';
     document.getElementById('confirmation-detail').textContent =
-      `${entries.length} activity ${entries.length === 1 ? 'entry' : 'entries'} submitted for ${firmLabel} — ${month}.` +
+      `${entries.length} activity ${entries.length === 1 ? 'entry' : 'entries'} submitted for ${firmLabel}, filed under ${months.join(', ')}.` +
       (uploadErrors.length ? ` Note: ${uploadErrors.length} photo(s) failed to upload — ${uploadErrors.join('; ')}` : '');
     document.getElementById('activity-form').style.display = 'none';
     document.getElementById('confirmation').style.display = 'block';
-    if (currentSession) loadMySubmissions();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    loadMySubmissions();
   });
 
   document.getElementById('submit-more-btn').addEventListener('click', () => {
@@ -1248,13 +1383,12 @@
     document.getElementById('activity-form').style.display = 'block';
   });
 
-  monthInput.value = currentMonthValue();
   addEntry();
   (async () => {
     // firmsCache must be populated before My Submissions can show firm names
     await Promise.all([loadFirms(), loadFinalizedPeriods()]);
     await initAuth(); // may lock firmSelect to the rep's own firm (lockFirmToProfile), programmatically -- no 'change' event fires for that
-    updateLockWarning();
+    refreshMonthNotes();
   })();
 </script>
 </body>
