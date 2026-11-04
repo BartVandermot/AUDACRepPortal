@@ -274,6 +274,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="/assets/audac-shell.js"></script>
+<script src="/assets/audac-data.js"></script>
 <script src="/assets/audac-sync.js"></script>
 <script>
   const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
@@ -599,8 +600,8 @@
   async function computeAllDormantAccounts(month) {
     const months = trailingMonths(month, 3);
     const [{ data: accounts }, { data: acts }] = await Promise.all([
-      client.from('crm_accounts').select('external_id, name, city, state_code, relationship_type, rep_firm_id').not('rep_firm_id', 'is', null),
-      client.from('activity_entries').select('rep_firm_id, account_external_id').in('reporting_month', months).not('account_external_id', 'is', null),
+      AudacData.all(client.from('crm_accounts').select('external_id, name, city, state_code, relationship_type, rep_firm_id').not('rep_firm_id', 'is', null).order('external_id')),
+      AudacData.all(client.from('activity_entries').select('rep_firm_id, account_external_id').in('reporting_month', months).not('account_external_id', 'is', null).order('id')),
     ]);
     const touchedByFirm = new Map();
     (acts || []).forEach(a => {
@@ -1308,7 +1309,7 @@
   const NOT_ASSIGNABLE = new Set(['Independent Rep Firm', 'Competitor', 'Supplier']);
   async function loadOpsData() {
     const [accts, zips, blocking, manualContacts, reps, skipped, lastPipe, lastEdu, sellAny, lastRuns, lastOkRun] = await Promise.all([
-      client.from('crm_accounts').select('name_key, source, rep_firm_id, relationship_type, state_code, is_active, last_synced_at'),
+      AudacData.all(client.from('crm_accounts').select('name_key, source, rep_firm_id, relationship_type, state_code, is_active, last_synced_at').order('external_id')),
       client.from('rep_firm_zip_ranges').select('state_code'),
       client.from('crm_contacts').select('external_id', { count: 'exact', head: true }).eq('blocks_pipeline_sync', true),
       client.from('crm_contacts').select('external_id', { count: 'exact', head: true }).eq('source', 'manual'),

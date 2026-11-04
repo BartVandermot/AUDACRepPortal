@@ -131,6 +131,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <script src="/assets/audac-shell.js"></script>
+<script src="/assets/audac-data.js"></script>
 <script>
   const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
@@ -242,8 +243,8 @@
   async function renderDormantAccounts(month, scorecardRows) {
     const months = trailingMonths(month, 3);
     const [{ data: accounts }, { data: acts }] = await Promise.all([
-      client.from('crm_accounts').select('external_id, name, rep_firm_id').not('rep_firm_id', 'is', null),
-      client.from('activity_entries').select('rep_firm_id, account_external_id').in('reporting_month', months).not('account_external_id', 'is', null),
+      AudacData.all(client.from('crm_accounts').select('external_id, name, rep_firm_id').not('rep_firm_id', 'is', null).order('external_id')),
+      AudacData.all(client.from('activity_entries').select('rep_firm_id, account_external_id').in('reporting_month', months).not('account_external_id', 'is', null).order('id')),
     ]);
     const touchedByFirm = new Map();
     (acts || []).forEach(a => {

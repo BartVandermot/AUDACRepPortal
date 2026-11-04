@@ -63,6 +63,17 @@
 
   .link-btn { background: none; border: none; padding: 0; font: inherit; font-size: 12px; cursor: pointer; text-decoration: underline; color: var(--audac-black); margin-right: 10px; }
   .link-btn.danger { color: var(--red); }
+  select.needs-choice { outline: 2px solid var(--amber); outline-offset: 1px; }
+  .import-history { margin-top: 14px; }
+  .import-history:empty { display: none; }
+  .import-history ul { list-style: none; margin: 0; padding: 0; border: 1px solid var(--color-border); border-radius: 10px; }
+  .import-history li { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; padding: 8px 12px; font-size: 13px; }
+  .import-history li + li { border-top: 1px solid var(--color-border); }
+  .import-history .ih-file { font-weight: 600; overflow-wrap: anywhere; }
+  .import-history .ih-meta { color: var(--color-text-muted); font-size: 12px; }
+  .import-history .ih-undone { color: var(--color-text-muted); font-size: 12px; font-style: italic; }
+  .import-history .ih-action { margin-left: auto; }
+  table.detail td.num, table.detail th.num { text-align: right; font-variant-numeric: tabular-nums; }
   tr.activity-edit-row td { background-color: var(--color-surface); padding: 16px; border-bottom: 2px solid var(--audac-gold); }
   .edit-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 14px; margin-bottom: 10px; }
   .edit-grid label, tr.activity-edit-row > td > label { display: block; font-size: 11.5px; font-weight: 500; color: var(--audac-black); margin-bottom: 10px; }
@@ -236,6 +247,7 @@
     <input type="file" accept=".csv,.xlsx,.xls" id="file-education">
     <div id="mapping-area-education"></div>
     <div id="status-education"></div>
+    <div class="import-history" id="history-education"></div>
 
     <div class="dd-sub-title" style="margin-top:22px;">Imported Certificates</div>
     <div class="upload-hint">Every certificate imported so far. "No CRM match" means the row's email didn't match any synced CRM contact at import time — this re-checks live, so it clears itself once that person is added to CRM.</div>
@@ -324,6 +336,7 @@
     <input type="file" accept=".csv,.xlsx,.xls" id="file-pipeline">
     <div id="mapping-area-pipeline"></div>
     <div id="status-pipeline"></div>
+    <div class="import-history" id="history-pipeline"></div>
 
     <div class="dd-sub-title" style="margin-top:22px;">Imported Pipeline Records (CSV)</div>
     <div class="upload-hint">Every pipeline row imported via the CSV fallback above (separate from the CRM-synced Opportunities table further up).</div>
@@ -367,6 +380,41 @@
     <input type="file" accept=".csv,.xlsx,.xls" id="file-sellout">
     <div id="mapping-area-sellout"></div>
     <div id="status-sellout"></div>
+    <div class="import-history" id="history-sellout"></div>
+
+    <div class="dd-sub-title" style="margin-top:22px;">Sell-out Records</div>
+    <div class="upload-hint">Every sell-out row for the Reporting Month selected above.</div>
+    <div class="toolbar" style="margin-bottom:12px;">
+      <div>
+        <label for="so-search-input">Search</label>
+        <input type="text" id="so-search-input" placeholder="Dealer, SKU…">
+      </div>
+      <div>
+        <label for="so-search-firm">Rep Firm</label>
+        <select id="so-search-firm"><option value="">All</option></select>
+      </div>
+      <div>
+        <label for="so-search-filter">Show</label>
+        <select id="so-search-filter">
+          <option value="">All</option>
+          <option value="norepfirm">No rep firm mapping</option>
+        </select>
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <button type="button" class="audac-btn-outline" id="so-export-btn">Export to Excel</button>
+      </div>
+    </div>
+    <div class="result-count" id="so-search-count"></div>
+    <div style="overflow-x:auto;">
+      <table class="detail">
+        <thead><tr>
+          <th>Dealer</th><th>Product SKU</th><th class="num">Quantity</th><th class="num">Revenue</th>
+          <th>Rep Firm</th><th>Reporting Month</th><th></th><th></th>
+        </tr></thead>
+        <tbody id="so-search-results"></tbody>
+      </table>
+    </div>
   </div>
 
   <div class="tab-panel" id="tab-mappings">
@@ -408,6 +456,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="/assets/audac-shell.js"></script>
+<script src="/assets/audac-data.js"></script>
 <script>
   const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
@@ -844,7 +893,7 @@
     let q = client.from('activity_entries').select('*').order('entry_date', { ascending: false });
     if (from) q = q.gte('reporting_month', from);
     if (to) q = q.lte('reporting_month', to);
-    const { data, error } = await q;
+    const { data, error } = await AudacData.all(q.order('id'));
     if (error) {
       document.getElementById('activity-search-results').innerHTML = `<div class="empty-note">Failed to load: ${escapeHtml(error.message)}</div>`;
       countEl.textContent = '';
@@ -1233,7 +1282,7 @@
 
   async function loadAliases(force) {
     if (aliasCache.loaded && !force) return aliasCache.byKey;
-    const { data } = await client.from('rep_firm_aliases').select('alias_key, rep_firm_id');
+    const { data } = await AudacData.all(client.from('rep_firm_aliases').select('alias_key, rep_firm_id').order('id'));
     aliasCache.byKey = new Map((data || []).map(r => [r.alias_key, r.rep_firm_id]));
     aliasCache.loaded = true;
     return aliasCache.byKey;
@@ -1241,7 +1290,7 @@
 
   async function loadCrmAccounts(force) {
     if (accountsCache.loaded && !force) return accountsCache.byKey;
-    const { data } = await client.from('crm_accounts').select('name_key, rep_firm_id');
+    const { data } = await AudacData.all(client.from('crm_accounts').select('name_key, rep_firm_id').order('external_id'));
     accountsCache.byKey = new Map((data || []).map(r => [r.name_key, r.rep_firm_id]));
     accountsCache.loaded = true;
     return accountsCache.byKey;
@@ -1249,7 +1298,7 @@
 
   async function loadCrmContacts(force) {
     if (contactsCache.loaded && !force) return contactsCache.byEmail;
-    const { data } = await client.from('crm_contacts').select('email_key, rep_firm_id').not('email_key', 'is', null);
+    const { data } = await AudacData.all(client.from('crm_contacts').select('email_key, rep_firm_id').not('email_key', 'is', null).order('external_id'));
     contactsCache.byEmail = new Map((data || []).map(r => [r.email_key, r.rep_firm_id]));
     contactsCache.loaded = true;
     return contactsCache.byEmail;
@@ -1346,7 +1395,7 @@
   // the CSV-imported pipeline data below has its own workflow and isn't
   // mixed into this view.
   async function loadPipelineEntries() {
-    const { data, error } = await client.from('pipeline_entries').select('*').not('crm_id', 'is', null).order('created_date', { ascending: false });
+    const { data, error } = await AudacData.all(client.from('pipeline_entries').select('*').not('crm_id', 'is', null).order('created_date', { ascending: false }).order('id'));
     if (error) {
       document.getElementById('opp-search-results').innerHTML = `<tr><td colspan="11" class="empty-note">Failed to load: ${escapeHtml(error.message)}</td></tr>`;
       return;
@@ -1458,7 +1507,7 @@
       statusEl.textContent = 'Could not read file: ' + err.message;
       return;
     }
-    uploadState[sourceConfig.source] = parsed;
+    uploadState[sourceConfig.source] = { ...parsed, fileName: file.name };
     const saved = await loadSavedMapping(sourceConfig.source);
     const savedUsable = saved && allMappingFields(sourceConfig.fields).every(leaf => {
       const v = leaf.partKey ? (saved[leaf.fieldKey] || {})[leaf.partKey] : saved[leaf.fieldKey];
@@ -1622,12 +1671,14 @@
 
   function renderAliasAssignment(sourceConfig, area, mapping, distinctCompanies) {
     const aliasArea = document.getElementById(`alias-area-${sourceConfig.source}`);
-    const firmOptions = ['<option value="">Skip — not a rep-tracked account</option>']
+    // No default: "Skip" used to be preselected, so clicking straight through
+    // silently marked every new company as not rep-tracked -- permanently.
+    const firmOptions = ['<option value="" disabled selected>— Choose a rep firm —</option>', '<option value="__skip">Skip — not a rep-tracked account</option>']
       .concat(firmsCache.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`)).join('');
 
     aliasArea.innerHTML = `
       <div class="dd-sub-title" style="margin-top:18px;">Companies Without a Rep Firm — Assign One</div>
-      <div class="upload-hint">These company/dealer names aren't yet mapped to a rep firm (either never seen before, or synced from CRM but not yet resolved to a territory). Pick the rep firm each belongs to, or leave "Skip" if it's not rep-tracked — either way this is remembered for future uploads and the row still imports, just with a blank rep firm if skipped.</div>
+      <div class="upload-hint">These company/dealer names aren't yet mapped to a rep firm (either never seen before, or synced from CRM but not yet resolved to a territory). Pick the rep firm each belongs to, or choose "Skip" if it's not rep-tracked. Either way this is remembered for future uploads, and the row still imports (with a blank rep firm if skipped).</div>
       <div class="mapping-grid" style="grid-template-columns: 1fr 260px;">
         ${[...distinctCompanies.entries()].map(([key, display]) => `
           <label>${escapeHtml(display)}</label>
@@ -1638,16 +1689,27 @@
         <button class="audac-btn" data-action="save-aliases">Save Assignments &amp; Import</button>
       </div>
     `;
+    aliasArea.querySelectorAll('select[data-alias-key]').forEach(sel => sel.addEventListener('change', () => sel.classList.remove('needs-choice')));
     aliasArea.querySelector('[data-action="save-aliases"]').addEventListener('click', async () => {
       const selects = [...aliasArea.querySelectorAll('select[data-alias-key]')];
+      const statusEl = document.getElementById(`status-${sourceConfig.source}`);
+      const open = selects.filter(sel => !sel.value);
+      selects.forEach(sel => sel.classList.toggle('needs-choice', !sel.value));
+      if (open.length) {
+        statusEl.className = 'upload-status warn';
+        statusEl.textContent = `Choose a rep firm (or "Skip") for ${open.length === 1 ? 'the 1 remaining company' : `the ${open.length} remaining companies`} first.`;
+        open[0].focus();
+        return;
+      }
+      statusEl.className = '';
+      statusEl.textContent = '';
       const upserts = selects.map(sel => ({
         alias_key: sel.dataset.aliasKey,
         display_name: sel.dataset.aliasDisplay,
-        rep_firm_id: sel.value || null,
+        rep_firm_id: sel.value === '__skip' ? null : sel.value,
         updated_by: currentUser.id,
         updated_at: new Date().toISOString(),
       }));
-      const statusEl = document.getElementById(`status-${sourceConfig.source}`);
       const { error } = await client.from('rep_firm_aliases').upsert(upserts, { onConflict: 'alias_key' });
       if (error) {
         statusEl.className = 'upload-status err';
@@ -1740,7 +1802,9 @@
       const selectCols = ['id', ...keyFields, ...backfillFields];
       let existingQuery = client.from(sourceConfig.table).select(selectCols.join(','));
       if (scopeToMonth) existingQuery = existingQuery.eq('reporting_month', month);
-      const { data: existingRows } = await existingQuery;
+      // Paged: an unscoped duplicate check (education) must see every existing
+      // row, not just the first 1000, or re-imports would slip through as new.
+      const { data: existingRows } = await AudacData.all(existingQuery.order('id'));
       // Grouped as an array per key, not a single row -- some keys already have more
       // than one existing row sharing it (duplicates imported before this dedupe
       // guard existed, e.g. the same certificate filed under two reporting months),
@@ -1799,9 +1863,26 @@
       return;
     }
 
-    const toInsert = candidates.map(c => c.record);
+    // One batch row per import, so the whole file can be undone later from
+    // "Recent imports" (undo_data_import). Created first so every inserted
+    // row carries its id; removed again if the insert itself fails.
+    const { data: batch, error: batchError } = await client.from('data_import_batches').insert({
+      source: sourceConfig.source,
+      file_name: uploadState[sourceConfig.source].fileName || null,
+      reporting_month: sourceConfig.reportingMonthFrom ? null : month,
+      row_count: candidates.length,
+      imported_by: currentUser.id,
+      imported_by_email: currentUser.email || null,
+    }).select('id').single();
+    if (batchError) {
+      statusEl.className = 'upload-status err';
+      statusEl.textContent = 'Import failed: ' + batchError.message;
+      return;
+    }
+    const toInsert = candidates.map(c => ({ ...c.record, import_batch_id: batch.id }));
     const { error } = await client.from(sourceConfig.table).insert(toInsert);
     if (error) {
+      await client.from('data_import_batches').delete().eq('id', batch.id);
       statusEl.className = 'upload-status err';
       statusEl.textContent = 'Import failed: ' + error.message;
       return;
@@ -1841,9 +1922,14 @@
     statusEl.innerHTML = `<strong>Imported ${toInsert.length} of ${rows.length} row(s)${monthLabel}.</strong>` +
       (details.length ? `<ul style="margin:6px 0 0 18px; padding:0;">${details.join('')}</ul>` : '');
 
-    if (sourceConfig.source === 'education') await loadEducationRecords();
-    else if (sourceConfig.source === 'pipeline') await loadPipelineCsvEntries();
-    else await refreshImportKpis();
+    await reloadImportSource(sourceConfig.source);
+  }
+
+  async function reloadImportSource(source) {
+    if (source === 'education') await loadEducationRecords();
+    else if (source === 'pipeline') await loadPipelineCsvEntries();
+    else await Promise.all([refreshImportKpis(), loadSelloutRecords()]);
+    await loadImportHistory();
   }
 
   // ---------- At-a-glance counts for the three CSV-import tabs ----------
@@ -1864,7 +1950,7 @@
     `;
   }
   async function onImportMonthChange() {
-    await refreshImportKpis();
+    await Promise.all([refreshImportKpis(), loadSelloutRecords()]);
     renderEducationKpis();
     renderEducationRecords();
     renderPipelineCsvKpis();
@@ -1872,12 +1958,148 @@
   }
   importMonthInput.addEventListener('change', onImportMonthChange);
 
+  // ---------- Recent imports + undo (Education, Pipeline CSV, Sell-out) ----------
+  // Every file import is one data_import_batches row; undo_data_import deletes
+  // exactly the rows that import added. Details an import filled in on rows
+  // that already existed (backfill) are kept -- they were missing, not wrong.
+  const IMPORT_HISTORY_LIMIT = 6;
+  let importHistoryCache = [];
+
+  async function loadImportHistory() {
+    const { data, error } = await client.from('data_import_batches').select('*').order('created_at', { ascending: false }).limit(60);
+    importHistoryCache = error ? [] : (data || []);
+    ['education', 'pipeline', 'sellout'].forEach(renderImportHistory);
+  }
+
+  function renderImportHistory(source) {
+    const el = document.getElementById(`history-${source}`);
+    if (!el) return;
+    const rows = importHistoryCache.filter(b => b.source === source).slice(0, IMPORT_HISTORY_LIMIT);
+    if (!rows.length) { el.innerHTML = ''; return; }
+    const fmt = iso => new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    el.innerHTML = `
+      <div class="dd-sub-title">Recent imports</div>
+      <ul>${rows.map(b => `
+        <li>
+          <span class="ih-file">${escapeHtml(b.file_name || 'Unnamed file')}</span>
+          <span class="ih-meta">${b.row_count} row${b.row_count === 1 ? '' : 's'}${b.reporting_month ? ` · ${b.reporting_month}` : ''} · ${fmt(b.created_at)}${b.imported_by_email ? ` · ${escapeHtml(b.imported_by_email)}` : ''}</span>
+          ${b.undone_at
+            ? `<span class="ih-undone ih-action">Undone ${fmt(b.undone_at)}</span>`
+            : `<button type="button" class="link-btn danger ih-action" data-undo-import="${b.id}">Undo import</button>`}
+        </li>`).join('')}
+      </ul>`;
+    el.querySelectorAll('[data-undo-import]').forEach(btn => btn.addEventListener('click', () => undoDataImport(btn.dataset.undoImport)));
+  }
+
+  async function undoDataImport(batchId) {
+    const b = importHistoryCache.find(x => x.id === batchId);
+    if (!b) return;
+    if (!confirm(`Undo the import of "${b.file_name || 'this file'}"?\n\nThis deletes the ${b.row_count} row(s) it added. Details it filled in on records that already existed stay as they are.`)) return;
+    const { data: deleted, error } = await client.rpc('undo_data_import', { p_batch_id: batchId });
+    const statusEl = document.getElementById(`status-${b.source}`);
+    if (error) {
+      statusEl.className = 'upload-status err';
+      statusEl.textContent = 'Could not undo the import: ' + error.message;
+      return;
+    }
+    statusEl.className = 'upload-status ok';
+    statusEl.textContent = `Import undone — ${deleted} row(s) removed.`;
+    await reloadImportSource(b.source);
+  }
+
+  // ---------- Sell-out: browse, review, delete (selected Reporting Month) ----------
+  let selloutCache = [];
+
+  async function loadSelloutRecords() {
+    const month = importMonthInput.value;
+    const { data, error } = await AudacData.all(client.from('sellout_records').select('*').eq('reporting_month', month).order('dealer_name').order('id'));
+    if (error) {
+      document.getElementById('so-search-results').innerHTML = `<tr><td colspan="8" class="empty-note">Failed to load: ${escapeHtml(error.message)}</td></tr>`;
+      return;
+    }
+    selloutCache = data || [];
+    const sel = document.getElementById('so-search-firm');
+    const current = sel.value;
+    sel.innerHTML = '<option value="">All</option>' + firmsCache.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`).join('');
+    sel.value = current || '';
+    renderSelloutRecords();
+  }
+
+  function getFilteredSelloutRecords() {
+    const q = document.getElementById('so-search-input').value.trim().toLowerCase();
+    const firmFilter = document.getElementById('so-search-firm').value;
+    const filter = document.getElementById('so-search-filter').value;
+    let rows = selloutCache;
+    if (firmFilter) rows = rows.filter(r => r.rep_firm_id === firmFilter);
+    if (filter === 'norepfirm') rows = rows.filter(r => !r.rep_firm_id);
+    if (q) rows = rows.filter(r => `${r.dealer_name || ''} ${r.product_sku || ''}`.toLowerCase().includes(q));
+    return rows;
+  }
+
+  const fmtUsd = (v) => v == null ? '' : Number(v).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+
+  function renderSelloutRecords() {
+    const rows = getFilteredSelloutRecords();
+    const month = importMonthInput.value;
+    document.getElementById('so-search-count').textContent = `Showing ${rows.length} of ${selloutCache.length} sell-out record(s) for ${month}`;
+    const tbody = document.getElementById('so-search-results');
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="8" class="empty-note">${selloutCache.length ? 'No records match the current filters.' : `No sell-out imported for ${month} yet.`}</td></tr>`;
+      return;
+    }
+    const firmNameById = new Map(firmsCache.map(f => [f.id, f.name]));
+    tbody.innerHTML = rows.map(r => `
+      <tr>
+        <td>${escapeHtml(r.dealer_name || '')}</td>
+        <td>${escapeHtml(r.product_sku || '')}</td>
+        <td class="num">${r.quantity ?? ''}</td>
+        <td class="num">${fmtUsd(r.revenue_usd)}</td>
+        <td>${escapeHtml(firmNameById.get(r.rep_firm_id) || '')}</td>
+        <td>${r.reporting_month || ''}</td>
+        <td>${r.rep_firm_id ? '' : '<span class="status-badge open">No rep firm</span>'}</td>
+        <td><button type="button" class="link-btn danger" data-del-sellout="${r.id}">Delete</button></td>
+      </tr>
+    `).join('');
+    tbody.querySelectorAll('[data-del-sellout]').forEach(btn => btn.addEventListener('click', () => deleteSelloutRecord(btn.dataset.delSellout)));
+  }
+
+  async function deleteSelloutRecord(id) {
+    if (!confirm('Delete this sell-out record? This cannot be undone.')) return;
+    const { error } = await client.from('sellout_records').delete().eq('id', id);
+    if (error) { alert('Could not delete: ' + error.message); return; }
+    selloutCache = selloutCache.filter(r => r.id !== id);
+    renderSelloutRecords();
+    await refreshImportKpis();
+  }
+
+  function exportSelloutToExcel() {
+    const rows = getFilteredSelloutRecords();
+    if (!rows.length) { alert('No records match the current filters — nothing to export.'); return; }
+    const firmNameById = new Map(firmsCache.map(f => [f.id, f.name]));
+    const sheetRows = rows.map(r => ({
+      'Dealer': r.dealer_name || '',
+      'Product SKU': r.product_sku || '',
+      'Quantity': r.quantity ?? '',
+      'Revenue (USD)': r.revenue_usd ?? '',
+      'Rep Firm': firmNameById.get(r.rep_firm_id) || '',
+      'Reporting Month': r.reporting_month || '',
+    }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheetRows), 'Sell-out');
+    XLSX.writeFile(wb, `audac-sellout-${importMonthInput.value}.xlsx`);
+  }
+
+  document.getElementById('so-search-input').addEventListener('input', renderSelloutRecords);
+  document.getElementById('so-search-firm').addEventListener('change', renderSelloutRecords);
+  document.getElementById('so-search-filter').addEventListener('change', renderSelloutRecords);
+  document.getElementById('so-export-btn').addEventListener('click', exportSelloutToExcel);
+
   // ---------- Pipeline (CSV): browse, review, delete ----------
   // Same gap Education had -- the CSV fallback had a KPI tile but no way to
   // see, search, or fix an individual imported row; separate from the
   // CRM-synced Opportunities table above, which already has its own browse UI.
   async function loadPipelineCsvEntries() {
-    const { data, error } = await client.from('pipeline_entries').select('*').is('crm_id', null).order('created_date', { ascending: false, nullsFirst: false });
+    const { data, error } = await AudacData.all(client.from('pipeline_entries').select('*').is('crm_id', null).order('created_date', { ascending: false, nullsFirst: false }).order('id'));
     if (error) {
       document.getElementById('pipe-csv-search-results').innerHTML = `<tr><td colspan="9" class="empty-note">Failed to load: ${escapeHtml(error.message)}</td></tr>`;
       return;
@@ -1994,7 +2216,7 @@
   // reviewer can tell which company/address produced a given row, not just
   // which rep firm it resolved to.
   async function loadEducationRecords() {
-    const { data, error } = await client.from('education_records').select('*').order('completion_date', { ascending: false, nullsFirst: false });
+    const { data, error } = await AudacData.all(client.from('education_records').select('*').order('completion_date', { ascending: false, nullsFirst: false }).order('id'));
     if (error) {
       document.getElementById('edu-search-results').innerHTML = `<tr><td colspan="11" class="empty-note">Failed to load: ${escapeHtml(error.message)}</td></tr>`;
       return;
@@ -2155,7 +2377,7 @@
   }
 
   async function loadCompanyMappings() {
-    const { data, error } = await client.from('rep_firm_aliases').select('*').order('display_name');
+    const { data, error } = await AudacData.all(client.from('rep_firm_aliases').select('*').order('display_name').order('id'));
     if (error) {
       document.getElementById('mappings-body').innerHTML = `<tr><td colspan="3" class="empty-note">Failed to load: ${escapeHtml(error.message)}</td></tr>`;
       return;
@@ -2282,7 +2504,7 @@
     document.getElementById('activity-search-to').value = nowMonth;
     document.getElementById('activity-search-from').value = trailingMonths(nowMonth, 6)[5];
     await fetchAllAttachmentCounts();
-    await Promise.all([loadActivitySearchRange(), loadAuditLog(), loadPipelineEntries(), refreshImportKpis(), loadCompanyMappings(), loadEducationRecords(), loadPipelineCsvEntries()]);
+    await Promise.all([loadActivitySearchRange(), loadAuditLog(), loadPipelineEntries(), refreshImportKpis(), loadCompanyMappings(), loadEducationRecords(), loadPipelineCsvEntries(), loadSelloutRecords(), loadImportHistory()]);
     switchTab((window.location.hash || '').replace('#', ''));
     // Deep link from the dashboard work list: /admin?filter=skipped#mappings
     const mapFilter = new URLSearchParams(location.search).get('filter');

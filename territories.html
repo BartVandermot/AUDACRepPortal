@@ -229,6 +229,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="/assets/audac-shell.js"></script>
+<script src="/assets/audac-data.js"></script>
 <script src="/assets/audac-sync.js"></script>
 <script>
   const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
@@ -672,7 +673,7 @@
     const [firmsRes, zipRangesRes, accountsRes] = await Promise.all([
       client.from('rep_firms').select('id, name, territory, states').eq('status', 'active').order('name'),
       client.from('rep_firm_zip_ranges').select('id, rep_firm_id, state_code, zip3_start, zip3_end'),
-      client.from('crm_accounts').select('name, state_code, country_code').eq('country_code', 'US').not('state_code', 'is', null),
+      AudacData.all(client.from('crm_accounts').select('name, state_code, country_code').eq('country_code', 'US').not('state_code', 'is', null).order('external_id')),
     ]);
     if (firmsRes.error) {
       document.getElementById('loading-note').textContent = 'Failed to load rep firms: ' + firmsRes.error.message;

@@ -164,6 +164,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="/assets/audac-shell.js"></script>
+<script src="/assets/audac-data.js"></script>
 <script src="/assets/audac-sync.js"></script>
 <script>
   const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
@@ -542,8 +543,8 @@ They can no longer log or import activities. Everything they logged stays, under
     const [firmsRes, repsRes, contactsRes, accountsRes] = await Promise.all([
       client.from('rep_firms').select('id, name, crm_account_external_id').eq('status', 'active').order('name'),
       client.from('profiles').select('id, email, full_name, rep_firm_id, is_rep_admin, created_at, territory_note, crm_contact_external_id, is_active').eq('role', 'rep').order('created_at', { ascending: false }),
-      client.from('crm_contacts').select('external_id, full_name, email, parent_account_external_id, is_active').order('full_name'),
-      client.from('crm_accounts').select('external_id, name, city, state_code, relationship_type'),
+      AudacData.all(client.from('crm_contacts').select('external_id, full_name, email, parent_account_external_id, is_active').order('full_name').order('external_id')),
+      AudacData.all(client.from('crm_accounts').select('external_id, name, city, state_code, relationship_type').order('external_id')),
     ]);
 
     if (repsRes.error) {
