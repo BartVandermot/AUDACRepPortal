@@ -645,8 +645,12 @@
     const { data: profile } = await client.from('profiles').select('*').eq('id', currentSession.user.id).maybeSingle();
     currentProfile = profile;
 
+    // Only reps belong to a firm -- a manager opening a ?firm= link must not
+    // get tied (and have this form locked) to that firm.
+    const isRep = profile?.role === 'rep';
     const pendingFirmId = localStorage.getItem(PENDING_FIRM_KEY);
-    if (pendingFirmId && !profile?.rep_firm_id) {
+    if (!isRep) localStorage.removeItem(PENDING_FIRM_KEY);
+    if (isRep && pendingFirmId && !profile?.rep_firm_id) {
       const { error } = await client.rpc('claim_rep_firm', { p_firm_id: pendingFirmId });
       if (!error) {
         localStorage.removeItem(PENDING_FIRM_KEY);
@@ -655,7 +659,7 @@
       }
     }
 
-    if (currentProfile?.rep_firm_id) lockFirmToProfile(currentProfile.rep_firm_id);
+    if (isRep && currentProfile?.rep_firm_id) lockFirmToProfile(currentProfile.rep_firm_id);
     document.getElementById('name-prompt-bar').hidden = !!currentProfile?.full_name;
     updateSignedInGreeting();
     restoreDraft();
