@@ -157,6 +157,12 @@
   .signal[open] { flex-basis: 100%; }
   .signal .sig-body { font-size: 12.5px; line-height: 20px; color: var(--color-text-secondary); padding: 8px 12px 2px; }
   .signal .sig-body a { color: var(--color-text-primary); }
+  /* Account health in the firm drilldown */
+  .ah-meter { font-size: 13px; color: var(--color-text-secondary); margin: 2px 0 10px; max-width: 420px; }
+  .ah-meter b { color: var(--color-text-primary); }
+  .ah-label { font-size: 12px; font-weight: 650; color: var(--color-text-secondary); margin: 12px 0 4px; }
+  .ah-other summary { cursor: pointer; font-size: 12.5px; color: var(--color-text-muted); margin-top: 12px; }
+  .key-tag { display: inline-block; font-size: 10.5px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--color-border); color: var(--color-text-muted); margin-left: 6px; }
   /* Operations row: month-close checklist + work list */
   .ops-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: var(--space-4); margin-bottom: var(--space-4); align-items: start; }
   .ops-card {
@@ -282,7 +288,7 @@
     <div class="dd-sub-title">Education</div>
     <div id="dd-education"></div>
 
-    <div class="dd-sub-title">Dormant Accounts <span style="font-weight:400; text-transform:none; letter-spacing:0; color:#999;">— assigned to this firm, no linked activity in the last 3 months</span></div>
+    <div class="dd-sub-title">Accounts <span style="font-weight:400; text-transform:none; letter-spacing:0; color:var(--color-text-muted);">— contact = linked activity in the last 3 months</span></div>
     <div id="dd-dormant"></div>
   </div>
 
@@ -305,7 +311,10 @@
   let firmsCache = [];
   let scorecardCache = [];
   let selectedFirmId = null;
-  let dormantByFirm = new Map();
+  // Per firm: key-account coverage, accounts to follow up, and the rest
+  // without contact. Replaces the old flat "dormant accounts" list, which was
+  // ~all of a firm's accounts (activity logging only started in 2026).
+  let accountHealth = new Map();
   let attachmentCountByEntry = new Map();
   let pipelineCacheById = new Map();
   let currentReviewRow = null;
@@ -486,7 +495,7 @@
   // Surfaces what a manager would otherwise only notice by opening every firm's
   // drilldown one at a time: firms at Red RAG this month, firms with accounts
   // that have gone quiet, and reps who've signed up but haven't been assigned
-  // to a firm yet. Reuses the same dormantByFirm map the drilldown itself reads
+  // to a firm yet. Reuses the same accountHealth map the drilldown itself reads
   // from, computed once per scorecard load rather than per firm.
   function renderAlerts() {
     const panel = document.getElementById('alerts-panel');
@@ -496,10 +505,12 @@
     // reported in at all this month, so it gets its own callout.
     const zeroActivityFirms = redFirms.filter(r => Number(r.activity_count) === 0);
     const lowActivityRedFirms = redFirms.filter(r => Number(r.activity_count) > 0);
-    const dormantEntries = [...dormantByFirm.entries()].filter(([, accts]) => accts.length > 0);
-    const totalDormant = dormantEntries.reduce((s, [, accts]) => s + accts.length, 0);
+    const health = [...accountHealth.entries()];
+    const keyTotal = health.reduce((n, [, h]) => n + h.keyTotal, 0);
+    const keyContacted = health.reduce((n, [, h]) => n + h.keyContacted, 0);
+    const followUps = health.flatMap(([id, h]) => h.followUp.map(a => ({ ...a, firmId: id })));
 
-    if (!redFirms.length && !dormantEntries.length) {
+    if (!redFirms.length && !keyTotal && !followUps.length) {
       panel.style.display = 'none';
       panel.innerHTML = '';
       return;
@@ -511,7 +522,8 @@
     panel.innerHTML = '<div class="signals">' +
       (zeroActivityFirms.length ? signal('sig-red', `<b>${zeroActivityFirms.length}</b> firm${zeroActivityFirms.length === 1 ? '' : 's'} without activity`, `Nothing logged this month by ${firmLinkList(zeroActivityFirms)}.`) : '') +
       (lowActivityRedFirms.length ? signal('sig-red', `<b>${lowActivityRedFirms.length}</b> more at red`, `Fewer than 4 activities this month: ${firmLinkList(lowActivityRedFirms)}.`) : '') +
-      (dormantEntries.length ? signal('sig-amber', `<b>${totalDormant}</b> dormant account${totalDormant === 1 ? '' : 's'}`, `No linked activity in the last 3 months, per firm: ${dormantEntries.map(([id, accts]) => `<a href="#" data-open-firm="${id}">${escapeHtml(firmName(id))} (${accts.length})</a>`).join(', ')}.`) : '') +
+      (followUps.length ? signal('sig-amber', `<b>${followUps.length}</b> to follow up`, `A deal in the last 12 months but no contact in 3 months: ${followUps.map(a => `${escapeHtml(a.name)} (<a href="#" data-open-firm="${a.firmId}">${escapeHtml(firmName(a.firmId))}</a>)`).join(', ')}.`) : '') +
+      (keyTotal ? signal('', `<b>${keyContacted}</b> of ${keyTotal} key accounts contacted`, `TOP AUDAC LEAD or AUDAC Partner accounts with linked activity in the last 3 months, per firm: ${health.filter(([, h]) => h.keyTotal).sort((a, b) => a[1].keyContacted / a[1].keyTotal - b[1].keyContacted / b[1].keyTotal).map(([id, h]) => `<a href="#" data-open-firm="${id}">${escapeHtml(firmName(id))}</a> ${h.keyContacted}/${h.keyTotal}`).join(', ')}.`) : '') +
       '</div>';
     panel.querySelectorAll('[data-open-firm]').forEach(a => {
       a.addEventListener('click', (e) => {
@@ -613,7 +625,7 @@
     ddPipeline.innerHTML = renderPipelineTable(pipe.data || [], acts.data || [], locked);
     wirePipelineRows(ddPipeline);
     document.getElementById('dd-education').innerHTML = renderEducationTable(edu.data || []);
-    document.getElementById('dd-dormant').innerHTML = renderDormantTable(dormantByFirm.get(firmId) || []);
+    document.getElementById('dd-dormant').innerHTML = renderAccountHealth(accountHealth.get(firmId));
   }
 
   // A finalized firm+month freezes activity_entries at the DB layer (see
@@ -670,34 +682,67 @@
     return out;
   }
 
+  // Key accounts = what Dynamics already marks as important: classification
+  // "TOP AUDAC LEAD" or an AUDAC partner type (Partner / Certified Partner /
+  // Certified Distributor). Agreed with Bart, 2026-11-05.
+  function keyReason(a) {
+    if (a.classification === 'TOP AUDAC LEAD') return 'Top lead';
+    if (/AUDAC\s+(Certified\s+)?(Partner|Distributor)/i.test(a.audac_partner_type || '')) return (a.audac_partner_type || '').trim();
+    return null;
+  }
+
   async function computeAllDormantAccounts(month) {
     const months = trailingMonths(month, 3);
-    const [{ data: accounts }, { data: acts }] = await Promise.all([
-      AudacData.all(client.from('crm_accounts').select('external_id, name, city, state_code, relationship_type, rep_firm_id').not('rep_firm_id', 'is', null).order('external_id')),
+    // Deals in the 12 months up to the end of the selected month.
+    const [y, mm] = month.split('-').map(Number);
+    const dealCutoff = `${y - 1}-${String(mm).padStart(2, '0')}-01`;
+    const [{ data: accounts }, { data: acts }, { data: deals }] = await Promise.all([
+      AudacData.all(client.from('crm_accounts').select('external_id, name, city, state_code, relationship_type, classification, audac_partner_type, rep_firm_id, is_active').not('rep_firm_id', 'is', null).order('external_id')),
       AudacData.all(client.from('activity_entries').select('rep_firm_id, account_external_id').in('reporting_month', months).not('account_external_id', 'is', null).order('id')),
+      AudacData.all(client.from('pipeline_entries').select('account_external_id, project_name, status, created_date, actual_close_date').not('crm_id', 'is', null).not('account_external_id', 'is', null).order('id')),
     ]);
-    const touchedByFirm = new Map();
-    (acts || []).forEach(a => {
-      if (!touchedByFirm.has(a.rep_firm_id)) touchedByFirm.set(a.rep_firm_id, new Set());
-      touchedByFirm.get(a.rep_firm_id).add(a.account_external_id);
+    const touched = new Set((acts || []).map(a => a.account_external_id));
+    const lastDealByAccount = new Map();
+    (deals || []).forEach(d => {
+      const when = d.actual_close_date || d.created_date;
+      if (!when || when < dealCutoff) return;
+      const prev = lastDealByAccount.get(d.account_external_id);
+      if (!prev || when > prev.when) lastDealByAccount.set(d.account_external_id, { when, name: d.project_name, status: d.status });
     });
-    dormantByFirm = new Map();
+    accountHealth = new Map();
     (accounts || []).forEach(a => {
-      const touched = touchedByFirm.get(a.rep_firm_id);
-      if (touched && touched.has(a.external_id)) return;
-      if (!dormantByFirm.has(a.rep_firm_id)) dormantByFirm.set(a.rep_firm_id, []);
-      dormantByFirm.get(a.rep_firm_id).push(a);
+      if (a.is_active === false || NOT_ASSIGNABLE.has(a.relationship_type)) return;
+      if (!accountHealth.has(a.rep_firm_id)) accountHealth.set(a.rep_firm_id, { keyTotal: 0, keyContacted: 0, keyMissed: [], followUp: [], other: [] });
+      const h = accountHealth.get(a.rep_firm_id);
+      const contacted = touched.has(a.external_id);
+      const reason = keyReason(a);
+      if (reason) { h.keyTotal++; if (contacted) h.keyContacted++; }
+      if (contacted) return;
+      const deal = lastDealByAccount.get(a.external_id);
+      if (deal) h.followUp.push({ ...a, deal, reason });
+      else if (reason) h.keyMissed.push({ ...a, reason });
+      else h.other.push(a);
     });
   }
 
-  function renderDormantTable(rows) {
-    if (!rows.length) return '<div class="empty-note">No dormant accounts — every account assigned to this firm has had linked activity in the last 3 months (or none are assigned to this firm yet).</div>';
-    return `<table class="detail"><thead><tr>
-      <th>Account</th><th>City / State</th><th>Relationship Type</th>
-    </tr></thead><tbody>${rows.map(r => `
-      <tr><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.city || '')}${r.city && r.state_code ? ', ' : ''}${escapeHtml(r.state_code || '')}</td>
-      <td>${escapeHtml(r.relationship_type || '')}</td></tr>
-    `).join('')}</tbody></table>`;
+  function renderAccountHealth(h) {
+    if (!h) return '<div class="empty-note">No accounts are assigned to this firm yet.</div>';
+    const place = (r) => `${escapeHtml(r.city || '')}${r.city && r.state_code ? ', ' : ''}${escapeHtml(r.state_code || '')}`;
+    const pct = h.keyTotal ? Math.round(h.keyContacted / h.keyTotal * 100) : 0;
+    const meter = h.keyTotal
+      ? `<div class="ah-meter"><b>${h.keyContacted} of ${h.keyTotal}</b> key accounts contacted (TOP AUDAC LEAD or AUDAC Partner)<div class="mc-progress"><i style="width:${pct}%"></i></div></div>`
+      : '<div class="ah-meter">No key accounts (TOP AUDAC LEAD or AUDAC Partner) assigned to this firm.</div>';
+    const followUp = h.followUp.length ? `<div class="ah-label">Follow up: a deal in the last 12 months, no contact since</div>
+      <table class="detail"><thead><tr><th>Account</th><th>City / State</th><th>Last deal</th></tr></thead><tbody>${h.followUp.map(r => `
+        <tr><td>${escapeHtml(r.name)}${r.reason ? `<span class="key-tag">${escapeHtml(r.reason)}</span>` : ''}</td><td>${place(r)}</td>
+        <td>${escapeHtml(r.deal.name || '')} <span class="muted">(${escapeHtml(r.deal.status || '')}, ${escapeHtml(r.deal.when)})</span></td></tr>`).join('')}</tbody></table>` : '';
+    const missed = h.keyMissed.length ? `<div class="ah-label">Key accounts without contact</div>
+      <table class="detail"><thead><tr><th>Account</th><th>City / State</th><th>Why key</th></tr></thead><tbody>${h.keyMissed.map(r => `
+        <tr><td>${escapeHtml(r.name)}</td><td>${place(r)}</td><td>${escapeHtml(r.reason)}</td></tr>`).join('')}</tbody></table>` : '';
+    const other = h.other.length ? `<details class="ah-other"><summary>Other accounts without contact (${h.other.length})</summary>
+      <table class="detail"><thead><tr><th>Account</th><th>City / State</th><th>Relationship Type</th></tr></thead><tbody>${h.other.map(r => `
+        <tr><td>${escapeHtml(r.name)}</td><td>${place(r)}</td><td>${escapeHtml(r.relationship_type || '')}</td></tr>`).join('')}</tbody></table></details>` : '';
+    return meter + followUp + missed + other;
   }
 
   function closeDrilldown() {
@@ -1209,14 +1254,14 @@
         seriesByMonth[m] = data || [];
       }));
       if (!win) { alert('Your browser blocked the report popup. Please allow popups for this site and try again.'); return; }
-      openExecutiveReportWindow(win, scorecardCache, month, dormantByFirm, trendMonths, seriesByMonth);
+      openExecutiveReportWindow(win, scorecardCache, month, accountHealth, trendMonths, seriesByMonth);
     } finally {
       btn.disabled = false;
       btn.textContent = 'Generate Executive Report';
     }
   });
 
-  function openExecutiveReportWindow(win, rows, month, dormantMap, trendMonths, seriesByMonth) {
+  function openExecutiveReportWindow(win, rows, month, healthMap, trendMonths, seriesByMonth) {
     const totalActivities = rows.reduce((s, r) => s + Number(r.activity_count), 0);
     const activeReps = rows.filter(r => Number(r.activity_count) > 0).length;
     const totalOpenPipelineValue = rows.reduce((s, r) => s + Number(r.open_pipeline_value_usd || 0), 0);
@@ -1245,12 +1290,15 @@
       ? `<ul>${flagged.map(r => `<li><strong>${escapeHtml(r.firm_name)}</strong> — ${Number(r.activity_count) === 0 ? 'no activity submitted' : r.activity_count + ' activities'}, RAG: ${r.rag_status}</li>`).join('')}</ul>`
       : '<p style="color:#2e7d32;">No exceptions — all reps on track.</p>';
 
-    const dormantEntries = [...dormantMap.entries()].filter(([, accts]) => accts.length > 0);
-    const totalDormant = dormantEntries.reduce((s, [, accts]) => s + accts.length, 0);
+    const healthEntries = [...healthMap.entries()].filter(([, h]) => h.keyTotal || h.followUp.length);
     const firmName = (id) => (rows.find(r => r.rep_firm_id === id) || {}).firm_name || '(unknown firm)';
-    const dormantHtml = dormantEntries.length
-      ? `<p><strong>${totalDormant} account${totalDormant === 1 ? '' : 's'}</strong> with no linked activity in the last 3 months: ${dormantEntries.map(([id, accts]) => `${escapeHtml(firmName(id))} (${accts.length})`).join(', ')}.</p>`
-      : '<p style="color:#2e7d32;">No dormant accounts.</p>';
+    const keyTot = healthEntries.reduce((n, [, h]) => n + h.keyTotal, 0);
+    const keyCon = healthEntries.reduce((n, [, h]) => n + h.keyContacted, 0);
+    const follow = healthEntries.flatMap(([id, h]) => h.followUp.map(a => `${escapeHtml(a.name)} (${escapeHtml(firmName(id))})`));
+    const dormantHtml = keyTot
+      ? `<p><strong>${keyCon} of ${keyTot}</strong> key accounts (TOP AUDAC LEAD or AUDAC Partner) had contact in the last 3 months: ${healthEntries.filter(([, h]) => h.keyTotal).map(([id, h]) => `${escapeHtml(firmName(id))} ${h.keyContacted}/${h.keyTotal}`).join(', ')}.</p>`
+        + (follow.length ? `<p><strong>To follow up</strong> (a deal in the last 12 months, no contact in 3 months): ${follow.join(', ')}.</p>` : '')
+      : '<p>No key accounts assigned yet.</p>';
 
     const activityData = trendMonths.map(m => seriesByMonth[m].reduce((s, r) => s + Number(r.activity_count), 0));
     // New pipeline (entered that month), not open pipeline -- open pipeline is
@@ -1300,7 +1348,7 @@
       <h2>Exceptions</h2>
       <div class="exceptions-box">${exceptionsHtml}</div>
 
-      <h2>Dormant Accounts</h2>
+      <h2>Key Accounts</h2>
       <div class="dormant-box">${dormantHtml}</div>
 
       <h2>6-Month Trends</h2>
