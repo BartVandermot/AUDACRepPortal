@@ -2,128 +2,83 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0c0e">
 <title>AUDAC Rep Portal — Import from CRM Export</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/audac-ui.css">
 <style>
-  :root {
-    --audac-gold: #d9a653;
-    --audac-black: #000000;
-    --audac-white: #ffffff;
-    --audac-section-bg: #f8f8f8;
-    --audac-text: #737373;
-    --ok: #2e7d32;
-    --warn: #a86b00;
-    --err: #b3261e;
-  }
-  * { box-sizing: border-box; }
-  [hidden] { display: none !important; }
-  body { margin: 0; font-family: 'Montserrat', sans-serif; background: var(--audac-white); color: var(--audac-text); }
-  header.audac-header {
-    background: var(--audac-black); color: #fff; padding: 18px 32px;
-    display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
-  }
-  header.audac-header img.logo { height: 32px; filter: invert(1); }
-  header.audac-header .wordmark { font-weight: 700; font-size: 20px; letter-spacing: 3px; color: #fff; display: none; }
-  header.audac-header h1 { font-size: 15px; font-weight: 400; margin: 0; color: var(--audac-gold); letter-spacing: 1px; text-transform: uppercase; }
-  .nav-link { background: transparent; border: 1px solid #555; color: #fff; padding: 7px 14px; border-radius: 3px; font-size: 12px; text-decoration: none; }
-  main { max-width: 1000px; margin: 0 auto; padding: 32px 20px 80px; }
-  .card { background: var(--audac-section-bg); border-radius: 4px; padding: 24px; margin-bottom: 20px; }
-  h2 { font-size: 16px; font-weight: 700; color: var(--audac-black); margin: 0 0 6px; text-transform: uppercase; letter-spacing: .5px; }
-  h3 { font-size: 13px; font-weight: 700; color: var(--audac-black); margin: 18px 0 8px; text-transform: uppercase; letter-spacing: .5px; }
-  .step-intro { font-size: 13px; margin: 0 0 16px; line-height: 1.5; max-width: 70ch; }
-  label { display: block; font-size: 13px; font-weight: 500; color: var(--audac-black); margin-bottom: 6px; }
-  input, select {
-    font-family: 'Montserrat', sans-serif; font-size: 14px; padding: 8px 10px;
-    border: 1px solid #ddd; border-radius: 3px; background: #fff; color: var(--audac-black); max-width: 100%;
-  }
-  input[type="file"] { border: none; background: none; padding: 6px 0; }
-  .hint { font-size: 12px; color: #999; margin-top: 4px; }
-  .row { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-end; }
-  button.audac-btn {
-    background: var(--audac-gold); color: #000; border: none; padding: 13px 28px;
-    font-family: 'Montserrat', sans-serif; font-weight: 700; font-size: 13px; letter-spacing: .5px;
-    text-transform: uppercase; cursor: pointer; border-radius: 3px;
-  }
-  button.audac-btn:disabled, button.audac-btn-outline:disabled { opacity: .5; cursor: not-allowed; }
-  button.audac-btn-outline {
-    background: transparent; color: var(--audac-black); border: 1.5px solid var(--audac-black);
-    padding: 9px 18px; font-family: 'Montserrat', sans-serif; font-weight: 500; font-size: 12px;
-    letter-spacing: .5px; text-transform: uppercase; cursor: pointer; border-radius: 3px;
-  }
-  button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--audac-gold); outline-offset: 2px; }
-  .notice { padding: 12px 16px; border-radius: 3px; font-size: 13px; margin-bottom: 16px; line-height: 1.5; }
-  .notice.error { background: #fdeaea; color: #a33; border: 1px solid #e0b4b4; }
-  .notice.info { background: #fff8e6; color: #6b5200; border: 1px solid #eddca0; }
-  .notice.success { background: #eaf5ea; color: #1f5e22; border: 1px solid #b9dcb9; }
+  /* Page-specific layout only -- tokens and components come from /assets/audac-ui.css */
+  :root { --err: var(--color-danger); }
+  .card { padding: var(--space-6); margin-bottom: var(--space-5); }
+  .card h2 { font-size: 16px; line-height: 22px; font-weight: 650; margin: 0 0 var(--space-2); }
+  .card h3 { font-size: 12px; line-height: 16px; font-weight: 650; letter-spacing: 1.2px; text-transform: uppercase; color: var(--color-gold); margin: var(--space-5) 0 var(--space-3); }
+  .step-intro { font-size: 14px; line-height: 21px; color: var(--color-text-secondary); margin: 0 0 var(--space-5); max-width: 70ch; }
+  .row { align-items: flex-end; }
+  #firm-fixed { font-weight: 650; font-size: 16px; }
 
-  .map-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px 20px; }
-  .map-field label .req { color: var(--err); }
-  .map-field select { width: 100%; }
-  .map-field .sample { font-size: 11.5px; color: #999; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .map-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--space-4) var(--space-5); }
+  .map-field label .req { color: var(--color-danger); }
+  .map-field .sample { font-size: 13px; color: var(--color-text-muted); margin-top: var(--space-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-  .table-wrap { overflow-x: auto; background: #fff; border: 1px solid #eee; border-radius: 3px; }
-  .table-wrap.tall { max-height: 520px; overflow-y: auto; }
-  table.detail { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-  table.detail th, table.detail td { padding: 7px 10px; border-bottom: 1px solid #eee; text-align: left; vertical-align: top; }
-  table.detail th { background: #f1f1f1; color: var(--audac-black); position: sticky; top: 0; z-index: 1; white-space: nowrap; }
+  .table-wrap.tall { max-height: 560px; overflow-y: auto; }
+  table.detail th { position: sticky; top: 0; z-index: 1; }
   table.detail td.num, table.detail th.num { text-align: right; font-variant-numeric: tabular-nums; }
-  table.detail select { font-size: 12.5px; padding: 5px 6px; }
-  .val-tables { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  table.detail select { min-height: 40px; padding: 8px 36px 8px 10px; font-size: 14px; background-position: right 10px center; }
+  .val-tables { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--space-5); }
   .clip { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  .pill { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
-  .pill.ok { background: #e3f1e3; color: var(--ok); }
-  .pill.dup { background: #fdf0d9; color: var(--warn); }
-  .pill.err { background: #fbe3e1; color: var(--err); }
-  .crm-link { color: var(--ok); font-weight: 700; }
-  .crm-none { color: #aaa; }
-  .why { font-size: 11.5px; color: var(--err); }
-  .why.dup { color: var(--warn); }
+  .pill { display: inline-block; font-size: 12px; font-weight: 650; padding: 3px 10px; border-radius: 999px; white-space: nowrap; border: 1px solid transparent; }
+  .pill.ok { color: var(--color-success); background: rgba(113,198,139,0.08); border-color: rgba(113,198,139,0.22); }
+  .pill.dup { color: var(--color-warning); background: rgba(232,182,91,0.08); border-color: rgba(232,182,91,0.22); }
+  .pill.err { color: var(--color-danger); background: var(--color-danger-tint); border-color: rgba(231,127,123,0.25); }
+  .crm-link { color: var(--color-success); font-weight: 700; }
+  .crm-none { color: var(--color-text-muted); }
+  .why { font-size: 12px; line-height: 16px; color: var(--color-danger); margin-top: 4px; }
+  .why.dup { color: var(--color-warning); }
 
-  .summary { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
-  .summary .stat { background: #fff; border: 1px solid #eee; border-radius: 3px; padding: 10px 14px; min-width: 120px; }
-  .summary .stat b { display: block; font-size: 20px; color: var(--audac-black); font-variant-numeric: tabular-nums; }
-  .summary .stat span { font-size: 11.5px; text-transform: uppercase; letter-spacing: .4px; }
-  .actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 18px; }
-  .checkbox { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--audac-black); }
-  .checkbox input { width: auto; }
-  .filter-bar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
-  .filter-bar button { font-size: 11.5px; padding: 6px 12px; }
-  .filter-bar button.active { background: var(--audac-black); color: #fff; }
-  .link-btn { background: none; border: none; padding: 6px 4px; font: inherit; font-size: 12.5px; cursor: pointer; text-decoration: underline; color: var(--audac-black); }
-  .link-btn.danger { color: var(--err); }
-  @media (max-width: 600px) {
-    header.audac-header { padding: 14px 16px; }
-    main { padding: 20px 16px 60px; }
-    .card { padding: 18px 16px; }
+  .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: var(--space-3); margin-bottom: var(--space-4); }
+  .summary .stat { padding: var(--space-4); border-radius: var(--radius-tile); background: var(--color-bg-raised); border: 1px solid var(--color-border); }
+  .summary .stat b { display: block; font-size: 28px; line-height: 32px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .summary .stat span { font-size: 13px; color: var(--color-text-secondary); }
+  .actions { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); flex-wrap: wrap; margin-top: var(--space-5); }
+  .checkbox { display: flex; align-items: center; gap: var(--space-3); font-size: 15px; min-height: 44px; }
+  .filter-bar { display: flex; gap: var(--space-2); flex-wrap: wrap; margin-bottom: var(--space-3); }
+  .filter-bar button { min-height: 40px; font-size: 13px; }
+  .filter-bar button.active { color: var(--color-gold-light); background: var(--color-gold-tint); border-color: rgba(217,166,83,0.35); }
+  #result .notice a { color: var(--color-gold-light); }
+
+  @media (max-width: 760px) {
+    .card { padding: var(--space-5); }
+    .actions { flex-direction: column-reverse; align-items: stretch; }
+    #import-btn { width: 100%; }
   }
 </style>
 </head>
 <body>
 
-<header class="audac-header">
-  <div style="display:flex; align-items:center; gap:12px;">
-    <img class="logo" src="https://audac.eu/images/AUDAC-logo.webp" alt="AUDAC"
-         onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
-    <span class="wordmark">AUDAC</span>
-  </div>
-  <h1>Import from CRM Export</h1>
-  <a class="nav-link" id="back-link" href="/form">← Activity Form</a>
+<div class="app-shell">
+<aside class="sidebar glass-floating" id="app-sidebar" aria-label="Main menu"></aside>
+<div class="app-content">
+<header class="topbar">
+  <h1>Import CRM export</h1>
+  <span class="spacer"></span>
+  <button type="button" class="icon-btn mobile-only" id="mobile-signout" aria-label="Sign out" title="Sign out"></button>
 </header>
 
-<main>
+<main class="page">
   <div id="gate" class="notice info">Loading…</div>
 
   <div id="app" hidden>
     <div id="error-banner" class="notice error" hidden></div>
 
     <!-- Firm -->
-    <div class="card">
-      <h2>Rep Firm</h2>
+    <div class="card surface-card--elevated">
+      <p class="eyebrow">Import</p>
+      <h2>Rep firm</h2>
       <p class="step-intro">Upload the activities your firm logged in its own CRM (Salesforce, HubSpot, Dynamics, Excel…) instead of typing them in one by one. Each activity is filed under the reporting month of its own date.</p>
-      <div id="firm-fixed" style="font-weight:700; color:var(--audac-black);"></div>
+      <div id="firm-fixed"></div>
       <div id="firm-pick" hidden>
         <label for="firm-select">Import for firm</label>
         <select id="firm-select"></select>
@@ -191,9 +146,13 @@
     </div>
   </div>
 </main>
+</div>
+</div>
+<nav class="bottom-nav glass-floating" id="app-bottom-nav" aria-label="Main menu"></nav>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="/assets/audac-shell.js"></script>
 <script>
   const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
@@ -259,12 +218,19 @@
   }
   function firmName(id) { return state.firms.find(f => f.id === id)?.name || ''; }
 
+  // ---------- Shell ----------
+  AudacShell.mount('import');
+  const signOut = async () => { await client.auth.signOut(); window.location.href = '/login'; };
+  AudacShell.onSignOut(signOut);
+  $('mobile-signout').innerHTML = AudacShell.icon('out');
+  $('mobile-signout').addEventListener('click', signOut);
+
   // ---------- Access ----------
   async function init() {
     const { data: { session } } = await client.auth.getSession();
     state.session = session;
     if (!session) {
-      $('gate').innerHTML = 'Sign in to import activities. <a href="/login">Sign in</a>, then choose <b>Upload from CRM export</b> on the activity form.';
+      $('gate').innerHTML = 'Sign in to import activities. <a href="/login">Sign in</a>, then come back here or choose <b>Import</b> in the menu.';
       return;
     }
     const [{ data: profile }, { data: firms }, { data: fin }] = await Promise.all([
@@ -277,9 +243,11 @@
     state.finalized = new Set((fin || []).map(r => `${r.rep_firm_id}|${r.reporting_month}`));
 
     const isManager = profile?.role === 'manager';
+    const ownFirm = state.firms.find(x => x.id === profile?.rep_firm_id);
+    AudacShell.setUser({ name: profile?.full_name || session.user.email, sub: ownFirm ? ownFirm.name : session.user.email });
     if (isManager) {
-      $('back-link').href = '/admin';
-      $('back-link').textContent = '← Data Admin';
+      AudacShell.addItem({ key: 'admin', href: '/admin', label: 'Data Admin', short: 'Admin', icon: 'grid' });
+      AudacShell.setUser({ name: profile?.full_name || session.user.email, sub: 'AUDAC manager' }); // addItem re-renders the sidebar
       $('firm-pick').hidden = false;
       $('firm-select').innerHTML = '<option value="" disabled selected>Select a firm</option>' +
         state.firms.map(f => `<option value="${f.id}">${escapeHtml(f.name)} — ${escapeHtml(f.territory || '')}</option>`).join('');

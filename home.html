@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AUDAC Rep Portal — Home</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/audac-ui.css">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="AUDAC Reps">
+<meta name="theme-color" content="#0b0c0e">
+<style>
+  .greeting { margin: 0 0 var(--space-6); }
+  .greeting p { margin: 0; font-size: 14px; line-height: 21px; color: var(--color-text-secondary); }
+  .greeting h2 { margin: var(--space-1) 0 0; font-size: 22px; line-height: 28px; font-weight: 650; text-wrap: balance; }
+
+  .bento { display: grid; grid-template-columns: repeat(12, 1fr); gap: var(--space-4); align-items: start; }
+  .hero { grid-column: span 5; padding: var(--space-6); }
+  .kpis { grid-column: span 7; padding: var(--space-6); }
+  .recent { grid-column: span 7; padding: var(--space-6); }
+  .side-stack { grid-column: span 5; display: grid; gap: var(--space-4); }
+  .side-stack > .surface-card { padding: var(--space-5) var(--space-6); }
+
+  .hero h3 { margin: 0; font-size: 22px; line-height: 28px; font-weight: 650; }
+  .hero .lead { margin: var(--space-2) 0 var(--space-5); font-size: 14px; line-height: 21px; color: var(--color-text-secondary); max-width: 44ch; }
+  .hero .button-primary { width: 100%; }
+
+  .kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-3); margin-top: var(--space-4); }
+  .kpi { padding: var(--space-4); border-radius: var(--radius-tile); background: var(--color-bg-raised); border: 1px solid var(--color-border); }
+  .kpi .value { display: block; font-size: 28px; line-height: 32px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .kpi .label { display: block; margin-top: var(--space-1); font-size: 14px; line-height: 21px; color: var(--color-text-secondary); }
+  .kpi .trend { display: inline-flex; align-items: flex-start; gap: 4px; margin-top: var(--space-2); font-size: 12px; line-height: 16px; color: var(--color-text-muted); }
+  .kpi .trend.up { color: var(--color-success); }
+  .kpi .trend.down { color: var(--color-warning); }
+  .kpi .trend svg { width: 14px; height: 14px; flex: none; margin-top: 1px; }
+
+  .rows { list-style: none; margin: var(--space-3) 0 0; padding: 0; }
+  .rows li { display: grid; grid-template-columns: 64px 1fr auto; gap: var(--space-4); align-items: center; padding: var(--space-3) 0; border-top: 1px solid var(--color-border); }
+  .rows li:first-child { border-top: 0; }
+  .rows time { font-size: 14px; color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
+  .rows b { display: block; font-size: 15px; line-height: 22px; font-weight: 600; overflow-wrap: anywhere; }
+  .rows span.sub { font-size: 14px; line-height: 21px; color: var(--color-text-secondary); }
+  .see-all { display: inline-flex; margin-top: var(--space-3); min-height: 44px; align-items: center; font-size: 14px; font-weight: 600; color: var(--color-text-primary); text-decoration: none; }
+  .empty { margin: var(--space-3) 0 0; font-size: 14px; color: var(--color-text-secondary); }
+
+  .month-row { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); }
+  .progress { height: 6px; border-radius: 999px; background: var(--color-bg-raised); border: 1px solid var(--color-border); overflow: hidden; margin: var(--space-3) 0 var(--space-2); }
+  .progress i { display: block; height: 100%; width: 0; background: var(--color-gold); }
+  .meta-line { margin: 0; font-size: 14px; line-height: 21px; color: var(--color-text-secondary); display: flex; gap: 6px; align-items: center; }
+  .meta-line svg { width: 16px; height: 16px; color: var(--color-text-muted); flex: none; }
+  .import-row { display: flex; align-items: center; gap: var(--space-4); }
+  .import-row .text { flex: 1; }
+  .import-row p { margin: var(--space-1) 0 0; font-size: 14px; line-height: 21px; color: var(--color-text-secondary); }
+
+  .skeleton { color: transparent !important; background: rgba(255,255,255,0.06); border-radius: 8px; }
+
+  @media (max-width: 1000px) {
+    .hero, .kpis, .recent, .side-stack { grid-column: 1 / -1; }
+  }
+  @media (max-width: 760px) {
+    .bento { gap: var(--space-3); }
+    .hero, .kpis, .recent { padding: var(--space-5); }
+    .kpi-grid { gap: var(--space-2); }
+    .kpi { padding: var(--space-3); }
+    .kpi .value { font-size: 24px; line-height: 28px; }
+    .kpi .label { font-size: 13px; line-height: 18px; }
+    .rows li { grid-template-columns: 52px 1fr; }
+    .rows li .chip { grid-column: 2; justify-self: start; }
+  }
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <aside class="sidebar glass-floating" id="app-sidebar" aria-label="Main menu"></aside>
+  <div class="app-content">
+    <header class="topbar">
+      <h1>Home</h1>
+      <span class="spacer"></span>
+      <button type="button" class="icon-btn mobile-only" id="mobile-signout" aria-label="Sign out" title="Sign out"></button>
+    </header>
+
+    <main class="page" id="page" aria-busy="true">
+      <div class="greeting">
+        <p id="today"></p>
+        <h2 id="headline">Welcome back.</h2>
+      </div>
+
+      <div class="bento">
+        <section class="hero surface-card surface-card--elevated" aria-labelledby="hero-h">
+          <p class="eyebrow">Log activity</p>
+          <h3 id="hero-h">Just visited a dealer?</h3>
+          <p class="lead">Log it while it’s fresh: the account, what you showed and what they said about AUDAC.</p>
+          <a class="button-primary" href="/form" id="new-activity-btn"></a>
+        </section>
+
+        <section class="kpis surface-card" aria-labelledby="kpi-h">
+          <h3 class="card-title" id="kpi-h">This month so far</h3>
+          <div class="kpi-grid">
+            <div class="kpi"><span class="value skeleton" id="k-acts">00</span><span class="label">Activities</span><span class="trend" id="t-acts"></span></div>
+            <div class="kpi"><span class="value skeleton" id="k-accts">00</span><span class="label">Accounts reached</span><span class="trend" id="t-accts"></span></div>
+            <div class="kpi"><span class="value skeleton" id="k-demos">00</span><span class="label">Demos with gear</span><span class="trend" id="t-demos"></span></div>
+          </div>
+        </section>
+
+        <section class="recent surface-card" aria-labelledby="recent-h">
+          <h3 class="card-title" id="recent-h">Recent activity</h3>
+          <div id="recent-list"><p class="empty">Loading…</p></div>
+          <a class="see-all" href="/form#my-submissions-section">See all submissions →</a>
+        </section>
+
+        <div class="side-stack">
+          <section class="surface-card" aria-labelledby="month-h">
+            <div class="month-row">
+              <h3 class="card-title" id="month-h"></h3>
+              <span class="chip" id="month-chip"></span>
+            </div>
+            <div class="progress" role="img" id="month-progress"><i></i></div>
+            <p class="meta-line" id="month-meta"></p>
+            <p class="meta-line" id="prev-month-meta" style="margin-top:8px;"></p>
+          </section>
+
+          <section class="surface-card" aria-labelledby="imp-h">
+            <div class="import-row">
+              <div class="text">
+                <h3 class="card-title" id="imp-h">Import from your CRM</h3>
+                <p>Upload an export instead of typing each visit.</p>
+              </div>
+              <a class="button-secondary" href="/import" id="import-btn"></a>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<nav class="bottom-nav glass-floating" id="app-bottom-nav" aria-label="Main menu"></nav>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/assets/audac-shell.js"></script>
+<script>
+  const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
+  const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const PENDING_FIRM_KEY = 'audac_pending_firm_id';
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  AudacShell.mount('home');
+  const signOut = async () => { await client.auth.signOut(); window.location.href = '/login'; };
+  AudacShell.onSignOut(signOut);
+  $('mobile-signout').innerHTML = AudacShell.icon('out');
+  $('mobile-signout').addEventListener('click', signOut);
+  $('new-activity-btn').innerHTML = AudacShell.icon('plus') + 'New activity';
+  $('import-btn').innerHTML = AudacShell.icon('upload') + 'Upload';
+
+  // ---- dates (rep's local time) ----
+  const now = new Date();
+  const ym = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  const thisMonth = ym(now);
+  const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const prevMonth = ym(prevDate);
+  const monthName = (d) => d.toLocaleString('en-US', { month: 'long' });
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const hour = now.getHours();
+  const partOfDay = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+  $('today').textContent = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+
+  function trendHtml(cur, prev) {
+    const diff = cur - prev;
+    if (diff > 0) return { cls: 'trend up', html: AudacShell.icon('up') + `+${diff} vs last month` };
+    if (diff < 0) return { cls: 'trend down', html: AudacShell.icon('down') + `${diff} vs last month` };
+    return { cls: 'trend', html: 'Same as last month' };
+  }
+  function setKpi(id, cur, prev) {
+    const v = $('k-' + id); v.textContent = cur; v.classList.remove('skeleton');
+    const t = trendHtml(cur, prev); const el = $('t-' + id); el.className = t.cls; el.innerHTML = t.html;
+  }
+  function accountKey(r) { return r.account_external_id || ('name:' + String(r.account_name || '').trim().toLowerCase()); }
+  function summarize(rows) {
+    return { acts: rows.length, accts: new Set(rows.map(accountKey)).size, demos: rows.filter(r => r.demo_gear_used).length };
+  }
+  function crmChip(r) {
+    if (!r.account_external_id) return '<span class="chip">Not linked</span>';
+    if (String(r.account_external_id).startsWith('manual:')) return `<span class="chip warn">${AudacShell.icon('spark')}New account</span>`;
+    return `<span class="chip ok">${AudacShell.icon('check')}In CRM</span>`;
+  }
+  const shortDate = (iso) => new Date(iso + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const lower = (s) => String(s || '').toLowerCase();
+
+  async function init() {
+    const { data: { session } } = await client.auth.getSession();
+    if (!session) { window.location.href = '/login'; return; }
+
+    let { data: profile } = await client.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
+    if (profile?.role === 'manager') { window.location.href = '/dashboard'; return; }
+    if (profile?.role === 'executive') { window.location.href = '/executive'; return; }
+
+    // A rep who arrived via their firm's signup link gets tied to that firm here
+    // (same hand-off form.html does -- login now lands reps on /home).
+    const pendingFirmId = localStorage.getItem(PENDING_FIRM_KEY);
+    if (profile?.role === 'rep' && pendingFirmId && !profile.rep_firm_id) {
+      const { error } = await client.rpc('claim_rep_firm', { p_firm_id: pendingFirmId });
+      if (!error) {
+        localStorage.removeItem(PENDING_FIRM_KEY);
+        ({ data: profile } = await client.from('profiles').select('*').eq('id', session.user.id).maybeSingle());
+      }
+    }
+
+    const [firmsRes, finRes, monthsRes, recentRes] = await Promise.all([
+      client.from('rep_firms').select('id, name, territory'),
+      client.rpc('get_finalized_periods'),
+      // RLS scopes these to the rep's own entries (or the whole firm for a firm admin)
+      client.from('activity_entries').select('reporting_month, account_external_id, account_name, demo_gear_used').in('reporting_month', [thisMonth, prevMonth]),
+      client.from('activity_entries').select('id, entry_date, account_name, account_external_id, activity_type, contact_type').order('entry_date', { ascending: false }).order('submitted_at', { ascending: false }).limit(4),
+    ]);
+
+    const firm = (firmsRes.data || []).find(f => f.id === profile?.rep_firm_id);
+    const name = profile?.full_name || session.user.email;
+    const first = (profile?.full_name || '').trim().split(/\s+/)[0];
+    AudacShell.setUser({ name, sub: firm ? firm.name : session.user.email });
+    AudacShell.setSection(firm ? firm.name : '');
+
+    const finalized = new Set((finRes.data || []).map(r => `${r.rep_firm_id}|${r.reporting_month}`));
+    const thisLocked = firm && finalized.has(`${firm.id}|${thisMonth}`);
+    $('headline').textContent = `${partOfDay}${first ? ', ' + first : ''}. ` +
+      (thisLocked ? `${monthName(now)} has been finalized.` : `${monthName(now)} is open for logging.`);
+
+    // KPIs
+    const rows = monthsRes.data || [];
+    const cur = summarize(rows.filter(r => r.reporting_month === thisMonth));
+    const prev = summarize(rows.filter(r => r.reporting_month === prevMonth));
+    $('kpi-h').textContent = profile?.is_rep_admin ? `Your firm’s ${monthName(now)} so far` : `Your ${monthName(now)} so far`;
+    setKpi('acts', cur.acts, prev.acts);
+    setKpi('accts', cur.accts, prev.accts);
+    setKpi('demos', cur.demos, prev.demos);
+
+    // Recent
+    const recent = recentRes.data || [];
+    $('recent-list').innerHTML = recent.length
+      ? `<ul class="rows">${recent.map(r => `
+          <li><time datetime="${esc(r.entry_date)}">${esc(shortDate(r.entry_date))}</time>
+            <div><b>${esc(r.account_name)}</b><span class="sub">${esc(r.activity_type)} · ${esc(lower(r.contact_type))}</span></div>
+            ${crmChip(r)}</li>`).join('')}</ul>`
+      : '<p class="empty">Nothing logged yet. Your first activity will show up here.</p>';
+
+    // Month status
+    $('month-h').textContent = monthName(now);
+    const chip = $('month-chip');
+    if (!firm) { chip.className = 'chip'; chip.textContent = 'No firm yet'; }
+    else if (thisLocked) { chip.className = 'chip'; chip.innerHTML = AudacShell.icon('lock') + 'Finalized'; }
+    else { chip.className = 'chip ok'; chip.textContent = 'Open'; }
+    const pct = Math.round((now.getDate() / daysInMonth) * 100);
+    $('month-progress').querySelector('i').style.width = pct + '%';
+    $('month-progress').setAttribute('aria-label', `Day ${now.getDate()} of ${daysInMonth}`);
+    $('month-meta').textContent = `Day ${now.getDate()} of ${daysInMonth} · AUDAC reviews after ${monthName(now).slice(0, 3)} ${daysInMonth}`;
+    if (firm) {
+      const prevLocked = finalized.has(`${firm.id}|${prevMonth}`);
+      $('prev-month-meta').innerHTML = prevLocked
+        ? AudacShell.icon('lock') + `${esc(monthName(prevDate))} is finalized`
+        : `${esc(monthName(prevDate))} is still open, so late entries are welcome`;
+    } else {
+      $('prev-month-meta').textContent = 'Your account isn’t linked to a rep firm yet. Use your firm’s signup link, or pick your firm on your first activity.';
+    }
+    $('page').setAttribute('aria-busy', 'false');
+  }
+
+  init().catch(err => {
+    $('recent-list').innerHTML = `<div class="notice error">Couldn’t load your overview: ${esc(err.message || err)}. Refresh to try again.</div>`;
+  });
+</script>
+</body>
+</html>

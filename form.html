@@ -2,10 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>AUDAC Rep Portal — Activity Submission</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/audac-ui.css">
 <!-- Lets a rep add this to their phone's home screen as a standalone app
      (see manifest.json) instead of re-typing/re-finding the URL every time.
      iOS ignores the manifest for "Add to Home Screen" and uses these
@@ -15,282 +16,218 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="AUDAC Reps">
-<meta name="theme-color" content="#000000">
+<meta name="theme-color" content="#0b0c0e">
 <style>
-  :root {
-    --audac-gold: #d9a653;
-    --audac-black: #000000;
-    --audac-white: #ffffff;
-    --audac-section-bg: #f8f8f8;
-    --audac-text: #737373;
-  }
-  * { box-sizing: border-box; }
-  [hidden] { display: none !important; }
-  body {
-    margin: 0;
-    font-family: 'Montserrat', sans-serif;
-    background: var(--audac-white);
-    color: var(--audac-text);
-  }
-  header.audac-header {
-    background: var(--audac-black);
-    color: #fff;
-    padding: 18px 32px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  header.audac-header .brand { display: flex; align-items: center; gap: 12px; }
-  header.audac-header img.logo { height: 32px; filter: invert(1); }
-  header.audac-header .wordmark {
-    font-weight: 700; font-size: 20px; letter-spacing: 3px; color: #fff; display: none;
-  }
-  header.audac-header h1 {
-    font-size: 15px; font-weight: 400; margin: 0; color: var(--audac-gold);
-    letter-spacing: 1px; text-transform: uppercase;
-  }
-  main { max-width: 780px; margin: 0 auto; padding: 32px 20px 80px; }
-  .card {
-    background: var(--audac-section-bg);
-    border-radius: 4px;
-    padding: 24px;
-    margin-bottom: 20px;
-  }
-  h2 { font-size: 16px; font-weight: 700; color: var(--audac-black); margin: 0 0 16px; text-transform: uppercase; letter-spacing: .5px; }
-  label { display: block; font-size: 13px; font-weight: 500; color: var(--audac-black); margin-bottom: 6px; }
-  .field { margin-bottom: 16px; }
-  input, select, textarea {
-    width: 100%;
-    font-family: 'Montserrat', sans-serif;
-    font-size: 16px; /* iOS Safari zooms the page on focus for any input under 16px */
-    padding: 10px 12px;
-    border: 1px solid #ddd;
-    border-radius: 3px;
-    background: #fff;
-    color: var(--audac-black);
-  }
-  textarea { min-height: 64px; resize: vertical; }
-  .row { display: flex; gap: 16px; flex-wrap: wrap; }
-  .row .field { flex: 1; min-width: 200px; }
-  .checkbox-field { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
-  .checkbox-field input { width: auto; }
-  .checkbox-field label { margin: 0; }
-  .activity-entry {
-    background: #fff;
-    border: 1px solid #e5e5e5;
-    border-radius: 4px;
-    padding: 20px;
-    margin-bottom: 16px;
-    position: relative;
-  }
-  .activity-entry .entry-title { font-weight: 700; color: var(--audac-black); font-size: 13px; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 14px; }
-  .remove-entry {
-    position: absolute; top: 8px; right: 8px; padding: 10px 12px;
-    background: none; border: none; color: #b33; font-size: 13px; cursor: pointer; font-weight: 500;
-  }
-  button.audac-btn {
-    background: var(--audac-gold);
-    color: #000;
-    border: none;
-    padding: 13px 28px;
-    font-family: 'Montserrat', sans-serif;
-    font-weight: 700;
-    font-size: 13px;
-    letter-spacing: .5px;
-    text-transform: uppercase;
-    cursor: pointer;
-    border-radius: 3px;
-  }
-  button.audac-btn:hover { opacity: .88; }
-  button.audac-btn:disabled { opacity: .5; cursor: not-allowed; }
-  button.audac-btn-outline {
-    background: transparent;
-    color: var(--audac-black);
-    border: 1.5px solid var(--audac-black);
-    padding: 11px 24px;
-    font-family: 'Montserrat', sans-serif;
-    font-weight: 500;
-    font-size: 13px;
-    letter-spacing: .5px;
-    text-transform: uppercase;
-    cursor: pointer;
-    border-radius: 3px;
-  }
-  .actions { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
-  #error-banner {
-    display: none;
-    background: #fdeaea; color: #a33; border: 1px solid #e0b4b4;
-    padding: 12px 16px; border-radius: 3px; margin-bottom: 16px; font-size: 13px;
-  }
-  #confirmation {
-    display: none;
-    text-align: center;
-    padding: 60px 20px;
-  }
-  #confirmation .check {
-    width: 56px; height: 56px; border-radius: 50%;
-    background: var(--audac-gold); color: #000;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 28px; margin: 0 auto 20px;
-  }
-  #confirmation h2 { text-align: center; }
-  #confirmation p { color: var(--audac-text); font-size: 14px; }
-  select.firm-locked { background: #eee; color: #555; }
-  .hint { font-size: 12px; color: #999; margin-top: 4px; }
+  /* Page-specific layout only -- tokens, inputs, buttons, tables, notices
+     and the app shell come from /assets/audac-ui.css. */
+  main h2.section-title { font-size: 16px; line-height: 22px; font-weight: 650; margin: 0; }
+  .card { padding: var(--space-6); margin-bottom: var(--space-5); }
+  .card h2 { font-size: 16px; line-height: 22px; font-weight: 650; margin: 0 0 var(--space-4); }
+  #signin-gate h2 { font-size: 22px; line-height: 28px; margin-bottom: var(--space-3); }
+  #signin-gate p { color: var(--color-text-secondary); }
 
+  .activity-entry {
+    position: relative; margin-bottom: var(--space-4); padding: var(--space-6);
+    background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-card);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), var(--shadow-card);
+  }
+  .activity-entry .entry-title { font-size: 12px; line-height: 16px; font-weight: 650; letter-spacing: 1.2px; text-transform: uppercase; color: var(--color-gold); margin-bottom: var(--space-4); }
+  .remove-entry {
+    position: absolute; top: 12px; right: 12px; min-height: 44px; padding: 0 12px;
+    background: none; border: none; color: var(--color-danger); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; border-radius: 12px;
+  }
+  .remove-entry:hover { background: var(--color-danger-tint); }
+  .checkbox-field { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4); min-height: 44px; }
+  .checkbox-field label { margin: 0; font-weight: 500; }
+  #add-entry-btn { width: 100%; border-style: dashed; }
+  .actions { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); flex-wrap: wrap; margin-top: var(--space-2); }
+  #submit-btn { min-width: 220px; }
+
+  #error-banner { display: none; padding: 12px 16px; border-radius: var(--radius-tile); margin-bottom: var(--space-4); font-size: 14px; line-height: 21px; }
+  #confirmation { display: none; text-align: center; padding: var(--space-10) var(--space-5); }
+  #confirmation .check {
+    width: 64px; height: 64px; border-radius: 50%; margin: 0 auto var(--space-5);
+    display: flex; align-items: center; justify-content: center; font-size: 30px;
+    color: #171714; background: linear-gradient(180deg, var(--color-gold-light), var(--color-gold-deep));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.3);
+  }
+  #confirmation h2 { font-size: 22px; line-height: 28px; margin: 0 0 var(--space-2); }
+  #confirmation p { color: var(--color-text-secondary); font-size: 15px; margin: 0 0 var(--space-6); }
+  select.firm-locked { color: var(--color-text-secondary); background-color: var(--color-bg-raised); }
+
+  /* CRM account/contact search */
   .combo { position: relative; }
   .combo-list {
-    position: absolute; top: 100%; left: 0; right: 0; z-index: 20;
-    background: #fff; border: 1px solid #ddd; border-top: none; border-radius: 0 0 3px 3px;
-    max-height: 220px; overflow-y: auto; box-shadow: 0 4px 10px rgba(0,0,0,.1);
+    position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 30;
+    max-height: 260px; overflow-y: auto; padding: var(--space-1);
+    background: rgba(30, 31, 34, 0.98); border: 1px solid var(--color-border-strong); border-radius: var(--radius-input);
+    box-shadow: 0 18px 42px rgba(0,0,0,0.45);
   }
-  .combo-item { padding: 12px; font-size: 13.5px; cursor: pointer; color: var(--audac-black); }
-  .combo-item:hover { background: #f6ecd8; }
-  .combo-item-sub { color: #999; font-size: 11.5px; margin-left: 6px; }
-  .combo-item-new { color: var(--audac-gold); font-weight: 600; border-top: 1px solid #eee; }
-  .combo-status { font-size: 11.5px; margin-top: 4px; min-height: 14px; }
-  .new-details { background: #fbf7ee; border: 1px solid #e9dcc0; border-radius: 4px; padding: 16px 16px 0; margin: -4px 0 16px; }
-  .combo-status.linked { color: #2e7d32; }
-  .combo-status.error { color: #b3261e; }
+  .combo-item { padding: 12px; min-height: 44px; font-size: 15px; cursor: pointer; color: var(--color-text-primary); border-radius: 10px; }
+  .combo-item:hover { background: rgba(255,255,255,0.06); }
+  .combo-item-sub { color: var(--color-text-muted); font-size: 13px; margin-left: 6px; }
+  .combo-item-new { color: var(--color-gold-light); font-weight: 600; border-top: 1px solid var(--color-border); border-radius: 0 0 10px 10px; }
+  .combo-status { font-size: 13px; line-height: 18px; margin-top: var(--space-1); min-height: 18px; color: var(--color-text-muted); }
+  .combo-status.linked { color: var(--color-success); }
+  .combo-status.error { color: var(--color-danger); }
+  .new-details { background: var(--color-bg-raised); border: 1px solid var(--color-border); border-radius: var(--radius-tile); padding: var(--space-4) var(--space-4) 0; margin: calc(-1 * var(--space-2)) 0 var(--space-4); }
   .contact-field { display: none; }
   .contact-field.active { display: block; }
+  .entry-month-note { color: var(--color-danger); }
 
-  #auth-bar { font-size: 12.5px; color: var(--audac-text); margin-bottom: 16px; text-align: right; }
-  /* Tap targets: a bare 12.5px underlined text link with no padding measures out
-     to a ~15px-tall hit area on a real phone -- padding here doesn't change how
-     it looks, just how forgiving it is to actually tap. */
-  .link-btn { background: none; border: none; padding: 8px 4px; margin: -8px -4px; font: inherit; font-size: 12.5px; cursor: pointer; text-decoration: underline; color: var(--audac-black); }
-  .link-btn.danger { color: #b3261e; }
+  /* Top bar auth line + notices */
+  #auth-bar { font-size: 14px; color: var(--color-text-secondary); display: flex; align-items: center; gap: var(--space-3); }
+  #auth-bar strong { color: var(--color-text-primary); font-weight: 600; }
+  /* Signed in, the sidebar profile already shows who you are (and has Sign out);
+     the top bar only keeps a sign-out icon on phones, where the sidebar is hidden. */
+  #auth-signed-in { display: flex; align-items: center; gap: var(--space-3); }
+  #auth-signed-in .signed-in-label { display: none; }
+  .inline-notice { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+  .inline-notice input { flex: 1; min-width: 200px; }
+  .inline-notice .button-secondary { min-height: 48px; }
+  #my-submissions-list td:first-child { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .submissions-head { margin: var(--space-10) 0 var(--space-4); padding-top: var(--space-6); border-top: 1px solid var(--color-border); }
 
-  /* The submissions table has 9+ columns -- it scrolls inside this box on a
-     phone instead of widening (and zooming out) the whole page. */
-  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  .entry-month-note { color: #b3261e; }
-  table.detail { width: 100%; border-collapse: collapse; background: #fff; font-size: 12.5px; }
-  table.detail th, table.detail td { padding: 8px 10px; border-bottom: 1px solid #eee; text-align: left; }
-  table.detail th { background: #f1f1f1; }
-  tr.activity-edit-row td { background: #fbf7ee; padding: 16px; border-bottom: 2px solid var(--audac-gold); }
-  .edit-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 14px; margin-bottom: 10px; }
-  .edit-grid label, tr.activity-edit-row > td > label { display: block; font-size: 11.5px; font-weight: 500; color: var(--audac-black); margin-bottom: 10px; }
-  .edit-grid input, .edit-grid select, tr.activity-edit-row textarea {
-    display: block; width: 100%; font-size: 16px; padding: 6px 8px; margin-top: 3px;
-  }
-  tr.activity-edit-row textarea { min-height: 44px; resize: vertical; }
-  /* Sticks to the bottom of the viewport while scrolling through this row's
-     fields (several textareas -- easy for Save/Cancel to end up scrolled out
-     of view otherwise, which is exactly the "almost lost my changes" report
-     the confirm-before-discard above already catches, but shouldn't need to). */
+  /* My Submissions: inline editor + attachments */
+  tr.activity-edit-row td { background: var(--color-surface-elevated); padding: var(--space-5); border-bottom: 2px solid var(--color-gold); }
+  .edit-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--space-3) var(--space-4); margin-bottom: var(--space-3); }
+  .edit-grid label, tr.activity-edit-row > td > label { display: block; font-size: 13px; font-weight: 600; margin-bottom: var(--space-3); }
+  .edit-grid input, .edit-grid select, tr.activity-edit-row textarea { display: block; margin-top: var(--space-1); }
+  tr.activity-edit-row textarea { min-height: 64px; }
   tr.activity-edit-row .actions {
-    position: sticky; bottom: 0;
-    background: #fbf7ee; margin: 14px -16px -16px; padding: 12px 16px;
-    border-top: 2px solid var(--audac-gold); box-shadow: 0 -4px 10px rgba(0,0,0,.06);
+    position: sticky; bottom: 0; justify-content: flex-start;
+    background: var(--color-surface-elevated); margin: var(--space-4) calc(-1 * var(--space-5)) calc(-1 * var(--space-5)); padding: var(--space-3) var(--space-5);
+    border-top: 1px solid var(--color-border-strong); box-shadow: 0 -8px 18px rgba(0,0,0,.25);
   }
-  .ae-checkbox { display: flex !important; align-items: center; gap: 6px; margin-top: 12px; }
-  .ae-checkbox input { width: auto !important; margin: 0; }
-  .ae-status { font-size: 12px; margin-left: 8px; color: #b3261e; }
+  .ae-checkbox { display: flex !important; align-items: center; gap: var(--space-2); margin-top: var(--space-6); }
+  .ae-checkbox input { margin: 0; }
+  .ae-status { font-size: 13px; margin-left: var(--space-2); color: var(--color-danger); }
+  tr.attachments-row td { background: var(--color-surface-elevated); padding: var(--space-4) var(--space-5); }
+  .attachment-preview { display: flex; gap: var(--space-2); flex-wrap: wrap; margin-top: var(--space-2); }
+  .attachment-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; font-size: 13px; background: var(--color-surface-elevated); border: 1px solid var(--color-border); color: var(--color-text-primary); }
+  .attachment-chip-remove { background: none; border: none; color: var(--color-danger); cursor: pointer; font-size: 16px; font-weight: 700; padding: 10px; margin: -10px -6px -10px 0; line-height: 1; }
 
-  @media (max-width: 480px) {
+  @media (max-width: 760px) {
+    .card, .activity-entry { padding: var(--space-5); }
     .edit-grid { grid-template-columns: 1fr; }
-    table.detail { font-size: 11.5px; }
+    #submit-btn { width: 100%; }
+    .actions { flex-direction: column-reverse; align-items: stretch; }
+    .actions .hint { text-align: center; }
   }
-  .muted { color: #bbb; }
-  tr.attachments-row td { background: #fbf7ee; padding: 14px 20px; }
-
-  input[type="file"] { font-family: 'Montserrat', sans-serif; font-size: 12.5px; padding: 6px 0; border: none; }
-  .attachment-preview { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
-  .attachment-chip {
-    display: inline-flex; align-items: center; gap: 6px; background: #f1f1f1; border-radius: 3px;
-    padding: 5px 8px; font-size: 12px; color: var(--audac-black);
-  }
-  .attachment-chip-remove { background: none; border: none; color: #b3261e; cursor: pointer; font-size: 14px; font-weight: 700; padding: 8px; margin: -8px; line-height: 1; }
 </style>
 </head>
 <body>
-
-<header class="audac-header">
-  <div class="brand">
-    <img class="logo" src="https://audac.eu/images/AUDAC-logo.webp" alt="AUDAC"
-         onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
-    <span class="wordmark">AUDAC</span>
-  </div>
-  <h1>Rep Activity Submission</h1>
-</header>
-
-<main>
+<div class="app-shell">
+<aside class="sidebar glass-floating" id="app-sidebar" aria-label="Main menu"></aside>
+<div class="app-content">
+<header class="topbar">
+  <h1 id="page-title">Log activity</h1>
+  <span class="spacer"></span>
   <div id="auth-bar">
     <div id="auth-signed-out">
-      <button type="button" class="link-btn" id="show-signin-btn">Sign In / Create Account</button>
+      <button type="button" class="link-btn" id="show-signin-btn">Sign in / Create account</button>
     </div>
     <div id="auth-signed-in" hidden>
-      Signed in as <strong id="signed-in-email"></strong> —
-      <button type="button" class="link-btn" id="sign-out-btn">Sign Out</button>
+      <span class="signed-in-label">Signed in as <strong id="signed-in-email"></strong></span>
+      <button type="button" class="icon-btn mobile-only" id="sign-out-btn" aria-label="Sign out" title="Sign out"></button>
     </div>
   </div>
+</header>
 
-  <div id="name-prompt-bar" hidden style="background:#fff8e6; border:1px solid #eddca0; border-radius:4px; padding:10px 14px; margin-bottom:16px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-    <span>Your name isn't on file yet — it's shown next to your activity so your firm and AUDAC know who submitted what.</span>
-    <input type="text" id="name-prompt-input" placeholder="Your full name" style="padding:6px 8px; border:1px solid #ddd; border-radius:3px;">
-    <button type="button" class="audac-btn-outline" id="name-prompt-save-btn" style="width:auto; padding:6px 14px;">Save</button>
+<main class="page narrow">
+  <div id="name-prompt-bar" class="notice info inline-notice" hidden>
+    <span>Your name isn’t on file yet. It’s shown next to your activity so your firm and AUDAC know who submitted what.</span>
+    <input type="text" id="name-prompt-input" placeholder="Your full name" aria-label="Your full name">
+    <button type="button" class="button-secondary" id="name-prompt-save-btn">Save</button>
   </div>
 
-  <div id="signin-gate" class="card" hidden>
+  <div id="signin-gate" class="card surface-card--elevated" hidden>
+    <p class="eyebrow">Log activity</p>
     <h2>Sign in to log your activities</h2>
-    <p style="font-size:14px; line-height:1.6; margin:0 0 18px;">Your activities are saved under your name, so you can find, edit and re-use them later, and your firm and AUDAC see who did the work. First time here? Choose <b>Create account</b> on the next screen. It takes a minute.</p>
-    <button type="button" class="audac-btn" id="gate-signin-btn">Sign In / Create Account</button>
+    <p style="font-size:15px; line-height:23px; margin:0 0 var(--space-6);">Your activities are saved under your name, so you can find, edit and re-use them later, and your firm and AUDAC see who did the work. First time here? Choose <b>Create account</b> on the next screen. It takes a minute.</p>
+    <button type="button" class="audac-btn" id="gate-signin-btn" style="width:100%;">Sign in / Create account</button>
   </div>
 
   <div id="error-banner"></div>
 
   <div id="signed-in-area" hidden>
-  <div id="draft-notice" hidden style="background:#fff8e6; border:1px solid #eddca0; border-radius:4px; padding:10px 14px; margin-bottom:16px; font-size:13px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-    <span id="draft-notice-text"></span>
+  <div id="draft-notice" class="notice info inline-notice" hidden>
+    <span id="draft-notice-text" style="flex:1; min-width:200px;"></span>
     <button type="button" class="link-btn" id="draft-discard-btn">Discard draft</button>
   </div>
 
   <form id="activity-form">
     <div class="card">
-      <h2>Rep Firm</h2>
       <div class="field" style="margin-bottom:0;">
-        <label for="firm-select">Rep Firm</label>
+        <label for="firm-select">Rep firm</label>
         <select id="firm-select" required></select>
         <div class="hint">Each activity is filed under the month of its own date.</div>
       </div>
     </div>
 
-    <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
-      <h2 style="padding-left:4px; margin:0;">Activity Entries</h2>
-      <a href="/import" id="import-link" class="audac-btn-outline" style="text-decoration:none; padding:8px 14px; font-size:12px;">Upload from CRM export</a>
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:var(--space-3); flex-wrap:wrap; margin:var(--space-6) 0 var(--space-4);">
+      <h2 class="section-title">Activities</h2>
+      <a href="/import" id="import-link" class="audac-btn-outline">Upload from CRM export</a>
     </div>
     <div id="entries-container"></div>
 
-    <button type="button" class="audac-btn-outline" id="add-entry-btn">+ Add Another Activity</button>
+    <button type="button" class="audac-btn-outline" id="add-entry-btn">+ Add another activity</button>
 
-    <div class="actions" style="margin-top:28px;">
+    <div class="actions" style="margin-top:var(--space-6);">
       <span class="hint" id="entry-count-hint"></span>
-      <button type="submit" class="audac-btn" id="submit-btn">Submit Activities</button>
+      <button type="submit" class="audac-btn" id="submit-btn">Submit activities</button>
     </div>
   </form>
 
-  <div id="confirmation">
+  <div id="confirmation" class="card">
     <div class="check">&#10003;</div>
     <h2 id="confirmation-title">Submitted</h2>
     <p id="confirmation-detail"></p>
-    <button type="button" class="audac-btn-outline" id="submit-more-btn">Submit More Activities</button>
+    <button type="button" class="audac-btn-outline" id="submit-more-btn">Log more activities</button>
   </div>
 
   <div id="my-submissions-section" hidden>
-    <hr style="border:none; border-top:1px solid #eee; margin:36px 0 28px;">
-    <h2 style="padding-left:4px;" id="my-submissions-heading">My Submissions</h2>
+    <div class="submissions-head"><h2 class="section-title" id="my-submissions-heading">My submissions</h2></div>
     <div id="my-submissions-list"></div>
   </div>
   </div>
 </main>
+</div>
+</div>
+<nav class="bottom-nav glass-floating" id="app-bottom-nav" aria-label="Main menu"></nav>
 
+<script src="/assets/audac-shell.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
   const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
   const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  // ---------- App shell (shared nav from /assets/audac-shell.js) ----------
+  const onSubmissionsView = () => location.hash === '#my-submissions-section';
+  let managerItemAdded = false;
+  function applyShellUser() {
+    if (!currentSession) { AudacShell.setUser({}); AudacShell.setSection(''); return; }
+    const firm = firmsCache.find(f => f.id === currentProfile?.rep_firm_id);
+    AudacShell.setUser({ name: currentProfile?.full_name || currentSession.user.email, sub: firm ? firm.name : currentSession.user.email });
+    AudacShell.setSection(firm ? firm.name : '');
+    if (currentProfile?.role === 'manager' && !managerItemAdded) {
+      managerItemAdded = true;
+      AudacShell.addItem({ key: 'dash', href: '/dashboard', label: 'Manager dashboard', short: 'Dashboard', icon: 'grid' });
+      applyShellUser(); // addItem re-renders the sidebar
+    }
+  }
+  function mountShell() {
+    AudacShell.mount(onSubmissionsView() ? 'submissions' : 'log'); // extra items persist inside the shell
+    applyShellUser();
+  }
+  function scrollToSubmissionsIfAsked() {
+    const sec = document.getElementById('my-submissions-section');
+    if (onSubmissionsView() && !sec.hidden) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  window.addEventListener('hashchange', () => { mountShell(); scrollToSubmissionsIfAsked(); });
+  AudacShell.onSignOut(() => client.auth.signOut());
+  document.getElementById('sign-out-btn').innerHTML = AudacShell.icon('out');
 
   const CONTACT_TYPES = ['Dealer', 'Consultant', 'End User'];
   const ACTIVITY_TYPES = [
@@ -669,6 +606,7 @@
 
   function updateSignedInGreeting() {
     document.getElementById('signed-in-email').textContent = currentProfile?.full_name || currentSession.user.email;
+    applyShellUser();
   }
 
   document.getElementById('name-prompt-save-btn').addEventListener('click', async () => {
@@ -705,6 +643,7 @@
     document.getElementById('signed-in-area').hidden = !currentSession;
     if (currentSession) document.getElementById('signed-in-email').textContent = currentSession.user.email;
     else document.getElementById('name-prompt-bar').hidden = true;
+    applyShellUser();
   }
 
   // Sign-in itself (Google/Microsoft/password) all lives on the shared
@@ -750,6 +689,7 @@
     const profileByCreator = showCreator ? await fetchProfilesByCreator(data) : new Map();
     container.innerHTML = renderMySubmissionsTable(data, showCreator, profileByCreator);
     wireActivityRows(container, data, loadMySubmissions);
+    scrollToSubmissionsIfAsked();
   }
 
   // Only fetched for admins viewing the whole firm's list (see is_rep_admin
@@ -858,8 +798,8 @@
 
     td.innerHTML = `<div style="display:flex; gap:14px; flex-wrap:wrap;">${withUrls.map(a => `
       <div style="text-align:center;">
-        ${a.url ? `<a href="${a.url}" target="_blank" rel="noopener"><img src="${a.url}" alt="${escapeHtml(a.file_name || '')}" style="width:100px; height:100px; object-fit:cover; border-radius:4px; border:1px solid #ddd; display:block;"></a>` : '<div class="hint">Preview unavailable</div>'}
-        <div style="font-size:11px; color:#999; max-width:100px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(a.file_name || '')}</div>
+        ${a.url ? `<a href="${a.url}" target="_blank" rel="noopener"><img src="${a.url}" alt="${escapeHtml(a.file_name || '')}" style="width:100px; height:100px; object-fit:cover; border-radius:12px; border:1px solid var(--color-border); display:block;"></a>` : '<div class="hint">Preview unavailable</div>'}
+        <div style="font-size:12px; color:var(--color-text-muted); max-width:100px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(a.file_name || '')}</div>
         <button type="button" class="link-btn danger" data-delete-attachment="${a.id}" data-storage-path="${escapeHtml(a.storage_path)}" style="font-size:11px;">Delete</button>
       </div>
     `).join('')}</div>`;
@@ -953,7 +893,7 @@
       const patch = collectEditFields(editRow);
       if (!patch.account_name) { statusEl.textContent = 'Account name is required.'; return; }
       if (patch.entry_date > todayISO()) { statusEl.textContent = 'Entry date can\'t be in the future.'; return; }
-      statusEl.style.color = '#999';
+      statusEl.style.color = 'var(--color-text-muted)';
       statusEl.textContent = 'Saving…';
       // The month follows the date (as on the form/import), and a renamed
       // account or contact must drop its CRM link -- otherwise the entry stays
@@ -967,7 +907,7 @@
       }
       const { error } = await client.from('activity_entries').update(fullPatch).eq('id', row.id);
       if (error) {
-        statusEl.style.color = '#b3261e';
+        statusEl.style.color = 'var(--color-danger)';
         statusEl.textContent = 'Error: ' + error.message;
         return;
       }
@@ -1339,7 +1279,7 @@
 
     if (error) {
       submitBtn.disabled = false;
-      submitBtn.textContent = 'Submit Activities';
+      submitBtn.textContent = 'Submit activities';
       showError('Submission failed: ' + error.message);
       return;
     }
@@ -1367,7 +1307,7 @@
     }));
 
     submitBtn.disabled = false;
-    submitBtn.textContent = 'Submit Activities';
+    submitBtn.textContent = 'Submit activities';
 
     clearDraft();
     const firmLabel = firmSelect.selectedOptions[0]?.textContent || '';
@@ -1387,6 +1327,7 @@
     document.getElementById('activity-form').style.display = 'block';
   });
 
+  mountShell();
   addEntry();
   (async () => {
     // firmsCache must be populated before My Submissions can show firm names

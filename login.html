@@ -2,109 +2,39 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>AUDAC Rep Portal — Sign In</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/audac-ui.css">
+<meta name="theme-color" content="#0b0c0e">
 <style>
-  :root {
-    --audac-gold: #d9a653;
-    --audac-black: #000000;
-    --audac-white: #ffffff;
-    --audac-section-bg: #f8f8f8;
-    --audac-text: #737373;
-  }
-  * { box-sizing: border-box; }
-  html, body {
-    margin: 0; height: 100%;
-    font-family: 'Montserrat', sans-serif;
-    background: var(--audac-black);
-    color: var(--audac-text);
-  }
-  .wrap {
-    min-height: 100%;
-    display: flex; align-items: center; justify-content: center;
-    padding: 24px;
-  }
-  .card {
-    background: var(--audac-white);
-    border-radius: 4px;
-    padding: 40px 36px;
-    width: 100%;
-    max-width: 380px;
-  }
-  .brand { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 28px; }
-  .brand img.logo { height: 34px; }
-  .brand .wordmark { font-weight: 700; font-size: 22px; letter-spacing: 3px; color: var(--audac-black); display: none; }
-  h1 { font-size: 13px; font-weight: 500; text-transform: uppercase; letter-spacing: 1px; color: var(--audac-black); text-align: center; margin: 0 0 24px; }
-  label { display: block; font-size: 13px; font-weight: 500; color: var(--audac-black); margin-bottom: 6px; }
-  .field { margin-bottom: 16px; }
-  input {
-    width: 100%;
-    font-family: 'Montserrat', sans-serif;
-    font-size: 14px;
-    padding: 11px 12px;
-    border: 1px solid #ddd;
-    border-radius: 3px;
-    background: #fff;
-    color: var(--audac-black);
-  }
-  button.audac-btn {
-    width: 100%;
-    background: var(--audac-gold);
-    color: #000;
-    border: none;
-    padding: 13px 0;
-    font-family: 'Montserrat', sans-serif;
-    font-weight: 700;
-    font-size: 13px;
-    letter-spacing: .5px;
-    text-transform: uppercase;
-    cursor: pointer;
-    border-radius: 3px;
-    margin-top: 8px;
-  }
-  button.audac-btn:disabled { opacity: .5; cursor: not-allowed; }
-  button.audac-btn-outline {
-    width: 100%;
-    background: transparent;
-    color: var(--audac-black);
-    border: 1.5px solid var(--audac-black);
-    padding: 11px 0;
-    font-family: 'Montserrat', sans-serif;
-    font-weight: 500;
-    font-size: 13px;
-    letter-spacing: .5px;
-    text-transform: uppercase;
-    cursor: pointer;
-    border-radius: 3px;
-    margin-bottom: 10px;
-  }
-  button.audac-btn-outline:disabled { opacity: .5; cursor: not-allowed; }
-  .divider { display: flex; align-items: center; gap: 10px; margin: 20px 0; font-size: 11px; color: #bbb; text-transform: uppercase; letter-spacing: .5px; }
-  .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: #eee; }
-  .link-btn { display: block; width: 100%; text-align: center; background: none; border: none; padding: 8px 4px; margin-top: 10px; font: inherit; font-size: 12.5px; cursor: pointer; text-decoration: underline; color: var(--audac-black); }
+  .wrap { min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: var(--space-6) var(--space-4); }
+  .card { width: 100%; max-width: 420px; padding: var(--space-8) var(--space-6); }
+  .brand { display: flex; align-items: baseline; justify-content: center; gap: var(--space-2); margin-bottom: var(--space-6); }
+  .brand b { font-size: 22px; letter-spacing: 5px; font-weight: 700; }
+  .brand span { font-size: 12px; color: var(--color-text-muted); }
+  h1 { font-size: 22px; line-height: 28px; font-weight: 650; text-align: center; margin: 0 0 var(--space-6); }
+  .card .audac-btn, .card .audac-btn-outline { width: 100%; }
+  .card .audac-btn { margin-top: var(--space-2); }
+  .card .audac-btn-outline { min-height: 50px; margin-bottom: var(--space-3); }
+  .divider { display: flex; align-items: center; gap: var(--space-3); margin: var(--space-5) 0; font-size: 12px; color: var(--color-text-muted); }
+  .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: var(--color-border); }
+  .card .link-btn { display: block; width: 100%; text-align: center; margin: var(--space-3) 0 0; padding: 10px 4px; color: var(--color-text-secondary); }
   .link-btn:disabled { opacity: .5; cursor: not-allowed; }
-  #error-msg {
-    display: none;
-    background: #fdeaea; color: #a33; border: 1px solid #e0b4b4;
-    padding: 10px 14px; border-radius: 3px; margin-bottom: 16px; font-size: 13px;
-  }
-  .footnote { text-align: center; font-size: 12px; color: #aaa; margin-top: 20px; }
+  #error-msg { display: none; padding: 12px 16px; border-radius: var(--radius-tile); margin-bottom: var(--space-4); font-size: 14px; line-height: 21px; }
+  #password-action-status, #signup-status { display: block; text-align: center; font-size: 14px; line-height: 21px; color: var(--color-text-secondary); margin-top: var(--space-2); }
+  .footnote { text-align: center; font-size: 13px; line-height: 19px; color: var(--color-text-muted); margin-top: var(--space-5); }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="card">
-    <div class="brand">
-      <img class="logo" src="https://audac.eu/images/AUDAC-logo.webp" alt="AUDAC"
-           onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
-      <span class="wordmark">AUDAC</span>
-    </div>
+  <div class="card surface-card--elevated">
+    <div class="brand"><b>AUDAC</b><span>Rep Portal</span></div>
     <div id="error-msg"></div>
 
     <div id="signin-view">
-      <h1>Rep Portal — Sign In</h1>
+      <h1>Sign in</h1>
 
       <button type="button" class="audac-btn-outline" id="google-signin-btn">Sign in with Google</button>
       <button type="button" class="audac-btn-outline" id="microsoft-signin-btn">Sign in with Microsoft</button>
@@ -204,7 +134,7 @@
     } else if (profile.role === 'executive') {
       window.location.href = '/executive';
     } else if (profile.role === 'rep') {
-      window.location.href = '/form';
+      window.location.href = '/home';
     } else {
       showError('This account does not have portal access. Contact the AUDAC administrator.');
       await client.auth.signOut();
