@@ -256,6 +256,12 @@ const COUNTRY_GUID_CA = "c1abf5cd-c846-e811-a9c6-000d3a254a9a";
 // something worth a schema column for a single country.
 const PAG_CANADA_FIRM_ID = "c1a84e17-3e17-4af0-8f8b-47c229e8fda1";
 
+// Intellimix became the distributor on this date. Deals that were already
+// closed (Won/Lost) before it belong to the previous distributor's era: they
+// aren't credited to any rep firm, aren't listed as skipped, and don't flag
+// their contact as blocking (decided by Bart, 2026-11-04).
+const DISTRIBUTOR_START = "2025-06-23";
+
 const ACCOUNTS_URL_BASE = `${DATAVERSE_ORG_URL}/api/data/v9.2/accounts?$select=${ACCOUNTS_SELECT}`;
 const ACCOUNTS_URL_LEVELS = [
   { level: "full", url: `${ACCOUNTS_URL_BASE}&$filter=statecode eq 0 and (_scp_countrylookup_value eq ${COUNTRY_GUID_US} or _scp_countrylookup_value eq ${COUNTRY_GUID_CA})` },
@@ -618,15 +624,24 @@ async function runPage(svc: any, phase: Phase, cursor: string | null, syncStarte
       // Dataverse's standard Opportunity statecode option set: 0 Open, 1 Won, 2 Lost.
       const STATUS_BY_STATECODE: Record<number, "Open" | "Won" | "Lost"> = { 0: "Open", 1: "Won", 2: "Lost" };
       const syncMonth = new Date().toISOString().slice(0, 7);
-      let matchedByInstaller = 0, matchedByContactAccount = 0, matchedByLocation = 0, skippedNoMatch = 0;
+      let matchedByInstaller = 0, matchedByContactAccount = 0, matchedByCountry = 0, matchedByLocation = 0, skippedNoMatch = 0, historical = 0;
       let openCount = 0, wonCount = 0, lostCount = 0;
       const blockingContactIds = new Set<string>();
       const resolvedContactIds = new Set<string>();
       const upserts: any[] = [];
       const skipped: any[] = [];
+      const historicalIds: string[] = [];
       const seenAt = new Date().toISOString();
 
       for (const r of rows) {
+        const status = STATUS_BY_STATECODE[r.statecode] ?? null;
+        const closedOn = String(r.actualclosedate || r.estimatedclosedate || "").slice(0, 10);
+        if (status !== "Open" && status !== null && closedOn && closedOn < DISTRIBUTOR_START) {
+          historical++;
+          historicalIds.push(r.opportunityid);
+          continue;
+        }
+
         const installerId = r._pvs_involvedinstallerid_value || null;
         const installer = installerId ? installerById.get(installerId) : undefined;
         const contactId = r._parentcontactid_value || null;
@@ -641,6 +656,12 @@ async function runPage(svc: any, phase: Phase, cursor: string | null, syncStarte
           if (contact?.repFirmId) {
             repFirmId = contact.repFirmId;
             matchedByContactAccount++;
+          } else if (r._pvs_countrylookup_value === COUNTRY_GUID_CA) {
+            // The deal's own Country Lookup says Canada -- PAG Canada covers the
+            // whole country, so no need to parse the free-typed Location
+            // ("Canada", "Montreal", "Toronto" never matched a province).
+            repFirmId = PAG_CANADA_FIRM_ID;
+            matchedByCountry++;
           } else {
             const territory = extractLocationTerritory(r.pvs_opportunitylocation);
             // PAG Canada covers the whole country -- any parsed Canadian
@@ -662,8 +683,6 @@ async function runPage(svc: any, phase: Phase, cursor: string | null, syncStarte
           if (repFirmId) resolvedContactIds.add(contactId);
           else blockingContactIds.add(contactId);
         }
-
-        const status = STATUS_BY_STATECODE[r.statecode] ?? null;
 
         if (!repFirmId) {
           skipped.push({
@@ -729,6 +748,11 @@ async function runPage(svc: any, phase: Phase, cursor: string | null, syncStarte
       if (upserts.length) {
         await svc.from("crm_skipped_opportunities").delete().in("crm_id", upserts.map((u) => u.crm_id));
       }
+      // Previous-distributor-era deals: out of both lists.
+      if (historicalIds.length) {
+        await svc.from("crm_skipped_opportunities").delete().in("crm_id", historicalIds);
+        await svc.from("pipeline_entries").delete().in("crm_id", historicalIds);
+      }
       // After the last page of a logged full run, anything not seen in it is
       // gone from Dynamics (or out of scope) and no longer "skipped".
       if (!nextLink && syncStartedAt) {
@@ -762,8 +786,10 @@ async function runPage(svc: any, phase: Phase, cursor: string | null, syncStarte
         processed: upserts.length,
         matchedByInstaller,
         matchedByContactAccount,
+        matchedByCountry,
         matchedByLocation,
         skippedNoMatch,
+        historical,
         openCount,
         wonCount,
         lostCount,
