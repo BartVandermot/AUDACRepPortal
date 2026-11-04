@@ -1302,8 +1302,12 @@
     const prev = prevMonthOf(cur);
     const { data } = await client.from('monthly_reviews').select('rep_firm_id').eq('reporting_month', prev).eq('is_finalized', true);
     const done = new Set((data || []).map(r => r.rep_firm_id));
-    return firmsCache.length && firmsCache.every(f => done.has(f.id)) ? cur : prev;
+    lastClosedMonth = firmsCache.length && firmsCache.every(f => done.has(f.id)) ? prev : null;
+    return lastClosedMonth ? cur : prev;
   }
+  // The month that just ended, once every firm's review for it is finalized --
+  // shown as "closed" on top of the running month's checklist.
+  let lastClosedMonth = null;
 
   // ---------- Operations data (not month-scoped) ----------
   let ops = null;
@@ -1441,19 +1445,28 @@
     const started = scorecardCache.filter(r => { const v = reviewByFirm.get(r.rep_firm_id); return v && !v.is_finalized && (v.agenda_generated_at || (v.notes || '').trim()); }).length;
 
     const firmLinks = (rows) => rows.slice(0, 6).map(r => `<a href="#" data-open-firm="${r.rep_firm_id}">${escapeHtml(r.firm_name)}</a>`).join(', ') + (rows.length > 6 ? ` +${rows.length - 6} more` : '');
+    // A running month can't be closed yet: steps that only make sense after
+    // it ends are shown neutral ("–"), not as open to-dos. A closed month has
+    // nothing left to chase either.
+    const closed = !running && total > 0 && finalized === total;
+    const afterEnd = `Done after ${monthLabel(m).split(' ')[0]} ends`;
     const steps = [
       { state: doneAfter(ops.lastCrmSync, m) || (running && ops.lastCrmSync && (Date.now() - new Date(ops.lastCrmSync)) < 7 * 86400000) ? 'ok' : 'todo',
         main: '<b>Sync the CRM</b>', sub: `Last sync ${agoText(ops.lastCrmSync)} · runs ${AudacSync.NIGHTLY_LABEL}.`, syncButton: true, action: 'Sync now' },
-      { state: doneAfter(ops.lastPipeSync, m) ? 'ok' : 'todo',
-        main: '<b>Sync opportunities</b>', sub: `Part of the same sync · last ${agoText(ops.lastPipeSync)} · ${plural(newOpps, 'new opportunity', 'new opportunities')} in ${monthLabel(m)}.`, href: `/admin?month=${m}#pipeline`, action: 'Details' },
-      { state: doneAfter(ops.lastEduImport, m) ? 'ok' : 'todo',
-        main: '<b>Import education</b>', sub: `Last import ${agoText(ops.lastEduImport)} · ${plural(certs, 'certificate')} in ${monthLabel(m)}.`, href: `/admin?month=${m}#education`, action: 'Import' },
+      { state: doneAfter(ops.lastPipeSync, m) ? 'ok' : running ? 'off' : 'todo',
+        main: '<b>Sync opportunities</b>', sub: `Part of the same sync · last ${agoText(ops.lastPipeSync)} · ${plural(newOpps, 'new opportunity', 'new opportunities')} in ${monthLabel(m)}${running ? ` so far. ${afterEnd}.` : '.'}`, href: `/admin?month=${m}#pipeline`, action: 'Details' },
+      { state: doneAfter(ops.lastEduImport, m) ? 'ok' : running ? 'off' : 'todo',
+        main: '<b>Import education</b>', sub: `Last import ${agoText(ops.lastEduImport)} · ${plural(certs, 'certificate')} in ${monthLabel(m)}${running ? ` so far. ${afterEnd}.` : '.'}`, href: `/admin?month=${m}#education`, action: 'Import' },
       ops.selloutInUse
         ? { state: sellFirms ? 'ok' : 'todo', main: '<b>Import sell-out</b>', sub: sellFirms ? `${plural(sellFirms, 'firm')} with sell-out in ${monthLabel(m)}.` : `No sell-out imported for ${monthLabel(m)} yet.`, href: `/admin?month=${m}#sellout`, action: 'Import' }
         : { state: 'off', main: '<b>Import sell-out</b> <span class="chip">Not in use yet</span>', sub: 'Monthly AVL sell-out. Optional until it’s part of the process.', href: `/admin?month=${m}#sellout`, action: 'Open' },
-      { state: silent.length ? 'todo' : 'ok',
+      { state: !silent.length ? 'ok' : (running || closed) ? 'off' : 'todo',
         main: `<b>Rep activity</b>: ${plural(acts, 'activity', 'activities')} from ${withActivity.length} of ${total} firms`,
-        sub: silent.length ? `Nothing logged by ${firmLinks(silent)}${running ? '' : '. Remind them before you finalize'}.${remindButtonHtml(silent)}` : 'Every firm logged activity.', href: `/admin?month=${m}#activities`, action: 'Search' },
+        sub: !silent.length ? 'Every firm logged activity.'
+          : closed ? `Nothing was logged by ${firmLinks(silent)}.`
+          : running ? `Nothing logged yet by ${firmLinks(silent)}.${remindButtonHtml(silent)}`
+          : `Nothing logged by ${firmLinks(silent)}. Remind them before you finalize.${remindButtonHtml(silent)}`,
+        href: `/admin?month=${m}#activities`, action: 'Search' },
       running
         ? { state: 'off', main: '<b>Review &amp; finalize</b>', sub: `${monthLabel(m)} is still running. The review is on the 1st.`, href: '', action: '' }
         : { state: finalized === total && total ? 'ok' : 'todo',
@@ -1467,6 +1480,15 @@
     if (running) { chip.className = 'chip'; chip.textContent = 'Running'; }
     else if (finalized === total && total) { chip.className = 'chip ok'; chip.textContent = 'Closed'; }
     else { chip.className = 'chip warn'; chip.textContent = `${finalized}/${total} finalized`; }
+
+    // Just closed the previous month? Say so on top of the running month,
+    // with a way back to it -- otherwise the switch to a fresh "Running"
+    // checklist reads as if nothing got done.
+    if (running && lastClosedMonth && m === localMonth()) {
+      steps.unshift({ state: 'ok', main: `<b>${monthLabel(lastClosedMonth)} is closed</b>`,
+        sub: `Every firm's review is finalized. This checklist is for ${monthLabel(m)}, reviewed on the 1st.`,
+        href: `?month=${lastClosedMonth}`, action: 'View' });
+    }
 
     const list = document.getElementById('mc-steps');
     list.innerHTML = steps.map(st => `
@@ -1597,7 +1619,8 @@ Their activity entries for ${monthLabel(m)} get locked until re-opened.`)) retur
     await loadFirms();
     const params = new URLSearchParams(location.search);
     const urlMonth = params.get('month');
-    monthInput.value = /^\d{4}-\d{2}$/.test(urlMonth || '') ? urlMonth : await defaultMonth();
+    const reviewMonth = await defaultMonth(); // also sets lastClosedMonth, needed even when the URL names a month
+    monthInput.value = /^\d{4}-\d{2}$/.test(urlMonth || '') ? urlMonth : reviewMonth;
     await fetchAllAttachmentCounts();
     await loadRepSignupAlerts();
     await loadOpsData();
