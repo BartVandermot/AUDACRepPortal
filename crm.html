@@ -448,7 +448,10 @@
     if (firmFilter === '__unassigned') rows = rows.filter(a => !a.rep_firm_id);
     // Synced US accounts the portal can't place: no State in Dynamics and no
     // usable ZIP to derive it from. Fix them in Dynamics, then sync.
-    else if (firmFilter === '__nostate') rows = rows.filter(a => !a.rep_firm_id && a.source !== 'manual' && a.country_code === 'US' && !a.state_code);
+    // (Same set as the dashboard's work-list count: rep firms, competitors and
+    // suppliers never get a rep firm anyway, so they aren't listed.)
+    else if (firmFilter === '__nostate') rows = rows.filter(a => !a.rep_firm_id && a.source !== 'manual' && a.country_code === 'US' && !a.state_code
+      && !['Independent Rep Firm', 'Competitor', 'Supplier'].includes(a.relationship_type));
     else if (firmFilter) rows = rows.filter(a => a.rep_firm_id === firmFilter);
     if (sourceFilter) rows = rows.filter(a => (a.source || 'dataverse') === sourceFilter);
     // Manual rows are never touched by the sync's deactivation sweep, so they
