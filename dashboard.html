@@ -164,6 +164,7 @@
   .dd-notes { margin: 0 0 var(--space-2); }
   .dd-notes textarea { min-height: 84px; font-size: 14px; }
   .mc-bulk { margin-top: 8px; }
+  .mc-note { display: block; margin-top: 6px; color: var(--color-text-muted); font-size: 12px; }
   /* Review column + sortable scorecard */
   table.scorecard th[data-sort] { cursor: pointer; user-select: none; }
   table.scorecard th[data-sort]:hover { color: var(--color-text-primary); }
@@ -1308,18 +1309,20 @@
   let ops = null;
   const NOT_ASSIGNABLE = new Set(['Independent Rep Firm', 'Competitor', 'Supplier']);
   async function loadOpsData() {
-    const [accts, zips, blocking, manualContacts, reps, skipped, lastPipe, lastEdu, sellAny, lastRuns, lastOkRun] = await Promise.all([
+    const [accts, zips, blocking, manualContacts, reps, skipped, lastPipe, lastEdu, sellAny, lastRuns, lastOkRun, lastEduBatch] = await Promise.all([
       AudacData.all(client.from('crm_accounts').select('name_key, source, rep_firm_id, relationship_type, state_code, is_active, last_synced_at').order('external_id')),
       client.from('rep_firm_zip_ranges').select('state_code'),
       client.from('crm_contacts').select('external_id', { count: 'exact', head: true }).eq('blocks_pipeline_sync', true),
       client.from('crm_contacts').select('external_id', { count: 'exact', head: true }).eq('source', 'manual'),
-      client.from('profiles').select('id, rep_firm_id, crm_contact_external_id, full_name').eq('role', 'rep').eq('is_active', true),
+      client.from('profiles').select('id, rep_firm_id, crm_contact_external_id, full_name, email').eq('role', 'rep').eq('is_active', true),
       client.from('rep_firm_aliases').select('id', { count: 'exact', head: true }).is('rep_firm_id', null),
       client.from('pipeline_entries').select('uploaded_at').not('crm_id', 'is', null).order('uploaded_at', { ascending: false }).limit(1),
       client.from('education_records').select('uploaded_at').order('uploaded_at', { ascending: false }).limit(1),
       client.from('sellout_records').select('id', { count: 'exact', head: true }),
       AudacSync.latest(client, 1),
       AudacSync.lastOk(client),
+      // Also counts imports that added nothing new (all rows already known).
+      client.from('data_import_batches').select('created_at').eq('source', 'education').is('undone_at', null).order('created_at', { ascending: false }).limit(1),
     ]);
     const accounts = accts.data || [];
     const covered = new Set([...firmsCache.flatMap(f => f.states || []), ...(zips.data || []).map(z => z.state_code)]);
@@ -1353,8 +1356,9 @@
       repsLeft: repRows.filter(r => goneSet.has(r.crm_contact_external_id)).length,
       skippedAliases: skipped.count || 0,
       lastPipeSync: maxIso(lastOkRun?.finished_at, lastPipe.data?.[0]?.uploaded_at),
-      lastEduImport: lastEdu.data?.[0]?.uploaded_at || null,
+      lastEduImport: maxIso(lastEduBatch.data?.[0]?.created_at, lastEdu.data?.[0]?.uploaded_at),
       selloutInUse: (sellAny.count || 0) > 0,
+      repEmailsByFirm: repRows.reduce((m, r) => { if (r.rep_firm_id && r.email) (m[r.rep_firm_id] ||= []).push(r.email); return m; }, {}),
     };
   }
 
@@ -1449,7 +1453,7 @@
         : { state: 'off', main: '<b>Import sell-out</b> <span class="chip">Not in use yet</span>', sub: 'Monthly AVL sell-out. Optional until it’s part of the process.', href: '/admin#sellout', action: 'Open' },
       { state: silent.length ? 'todo' : 'ok',
         main: `<b>Rep activity</b>: ${plural(acts, 'activity', 'activities')} from ${withActivity.length} of ${total} firms`,
-        sub: silent.length ? `Nothing logged by ${firmLinks(silent)}${running ? '' : '. Remind them before you finalize'}.` : 'Every firm logged activity.', href: '/admin#activities', action: 'Search' },
+        sub: silent.length ? `Nothing logged by ${firmLinks(silent)}${running ? '' : '. Remind them before you finalize'}.${remindButtonHtml(silent)}` : 'Every firm logged activity.', href: '/admin#activities', action: 'Search' },
       running
         ? { state: 'off', main: '<b>Review &amp; finalize</b>', sub: `${monthLabel(m)} is still running. The review is on the 1st.`, href: '', action: '' }
         : { state: finalized === total && total ? 'ok' : 'todo',
@@ -1470,6 +1474,46 @@
       ${st.syncButton ? `<button type="button" class="ops-action" data-sync-now>${st.action} →</button>` : st.href ? `<a class="ops-action" href="${st.href}">${st.action} →</a>` : '<span></span>'}</li>`).join('');
     list.querySelectorAll('[data-open-firm]').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); openDrilldown(a.dataset.openFirm); }));
   }
+
+  // ---------- Reminder to firms that logged nothing ----------
+  // Opens a ready-to-send mail (reps in BCC) in the manager's own mail app,
+  // so it goes out from their own address and lands in their Sent folder.
+  function silentRecipients(silent) {
+    const emails = [...new Set(silent.flatMap(r => ops.repEmailsByFirm[r.rep_firm_id] || []))];
+    const noAccount = silent.filter(r => !(ops.repEmailsByFirm[r.rep_firm_id] || []).length).map(r => r.firm_name);
+    return { emails, noAccount };
+  }
+
+  function remindButtonHtml(silent) {
+    const { emails, noAccount } = silentRecipients(silent);
+    if (!emails.length) return ` <span class="mc-note">None of these firms has a rep account to remind.</span>`;
+    return `<button type="button" class="audac-btn-outline mc-bulk" data-remind-silent>Remind ${plural(silent.length - noAccount.length, 'firm')} by email</button>`
+      + (noAccount.length ? `<span class="mc-note">No rep account to email: ${noAccount.map(escapeHtml).join(', ')}.</span>` : '');
+  }
+
+  function remindSilentFirms() {
+    const m = monthInput.value;
+    const silent = scorecardCache.filter(r => Number(r.activity_count) === 0);
+    const { emails } = silentRecipients(silent);
+    if (!emails.length) return;
+    const running = m >= localMonth();
+    const subject = `Reminder: log your ${monthLabel(m)} activity in the AUDAC Rep Portal`;
+    const body = [
+      'Hi,',
+      '',
+      `We haven't received any activity from your firm for ${monthLabel(m)} yet.`,
+      running
+        ? `Please log your visits, trainings and calls before the end of the month. We review ${monthLabel(m)} on the 1st.`
+        : `We're closing the ${monthLabel(m)} review now, so please log your visits, trainings and calls as soon as possible.`,
+      '',
+      `Log them here: ${location.origin}/home`,
+      'Already tracking them in your own CRM? Upload that export in one go via Import.',
+      '',
+      'Thanks,',
+    ].join('\n');
+    location.href = `mailto:?bcc=${emails.map(encodeURIComponent).join(',')}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  }
+  document.getElementById('mc-steps').addEventListener('click', (e) => { if (e.target.closest('[data-remind-silent]')) remindSilentFirms(); });
 
   // ---------- Review notes: edited in the drilldown, saved automatically ----------
   let notesFirmId = null, notesTimer = null;

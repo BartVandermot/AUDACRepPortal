@@ -1834,7 +1834,13 @@
       duplicateCount = candidates.length - freshCandidates.length;
       backfilledCount = backfillPatches.length;
 
-      if (duplicateCount > 0) {
+      // Nothing new at all: no question to ask (backfill only fills blanks).
+      if (duplicateCount > 0 && freshCandidates.length === 0) {
+        if (backfillPatches.length) {
+          await Promise.all(backfillPatches.map(({ id, patch }) => client.from(sourceConfig.table).update(patch).eq('id', id)));
+        }
+        candidates = [];
+      } else if (duplicateCount > 0) {
         const plainSkipCount = duplicateCount - backfilledCount;
         const proceed = confirm(
           `${duplicateCount} of ${candidates.length} row(s) in this file already appear to be imported ` +
@@ -1856,10 +1862,23 @@
       }
     }
 
+    // A file with nothing new is still a completed import -- e.g. a month
+    // without new certificates. Recorded as an empty batch so the dashboard's
+    // month-close checklist can mark this step done.
     if (!candidates.length) {
-      statusEl.className = 'upload-status warn';
-      statusEl.textContent = `No new rows to import — all ${duplicateCount} row(s) in this file already exist` +
-        (backfilledCount ? `. Filled in missing details on ${backfilledCount} of them.` : '.');
+      await client.from('data_import_batches').insert({
+        source: sourceConfig.source,
+        file_name: uploadState[sourceConfig.source].fileName || null,
+        reporting_month: sourceConfig.reportingMonthFrom ? null : month,
+        row_count: 0,
+        imported_by: currentUser.id,
+        imported_by_email: currentUser.email || null,
+      });
+      statusEl.className = 'upload-status ok';
+      statusEl.textContent = `Nothing new — all ${duplicateCount} row(s) in this file were already imported` +
+        (backfilledCount ? `; filled in missing details on ${backfilledCount} of them.` : '.') +
+        ' The import is recorded, so the month-close checklist marks it done.';
+      await reloadImportSource(sourceConfig.source);
       return;
     }
 
@@ -1985,6 +2004,7 @@
           <span class="ih-meta">${b.row_count} row${b.row_count === 1 ? '' : 's'}${b.reporting_month ? ` · ${b.reporting_month}` : ''} · ${fmt(b.created_at)}${b.imported_by_email ? ` · ${escapeHtml(b.imported_by_email)}` : ''}</span>
           ${b.undone_at
             ? `<span class="ih-undone ih-action">Undone ${fmt(b.undone_at)}</span>`
+            : !b.row_count ? '<span class="ih-undone ih-action">Nothing new</span>'
             : `<button type="button" class="link-btn danger ih-action" data-undo-import="${b.id}">Undo import</button>`}
         </li>`).join('')}
       </ul>`;
