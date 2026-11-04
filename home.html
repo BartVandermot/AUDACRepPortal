@@ -198,6 +198,12 @@
     let { data: profile } = await client.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
     if (profile?.role === 'manager') { window.location.href = '/dashboard'; return; }
     if (profile?.role === 'executive') { window.location.href = '/executive'; return; }
+    if (profile?.is_active === false) {
+      document.getElementById('headline').textContent = 'This account is no longer active.';
+      document.querySelector('.bento').innerHTML = '<div class="notice info" style="grid-column:1/-1;">Your portal account has been deactivated, so you can’t log activities anymore. Everything you logged before is kept. If this is a mistake, contact AUDAC.</div>';
+      $('page').setAttribute('aria-busy', 'false');
+      return;
+    }
 
     // A rep who arrived via their firm's signup link gets tied to that firm here
     // (same hand-off form.html does -- login now lands reps on /home).

@@ -161,6 +161,9 @@
   .mc-progress { height: 6px; border-radius: 999px; background: var(--color-bg-raised); border: 1px solid var(--color-border); overflow: hidden; margin-top: 6px; max-width: 260px; }
   .mc-progress i { display: block; height: 100%; background: var(--color-success); }
   .ops-allclear { color: var(--color-text-secondary); font-size: 14px; margin: 0; }
+  .dd-notes { margin: 0 0 var(--space-2); }
+  .dd-notes textarea { min-height: 84px; font-size: 14px; }
+  .mc-bulk { margin-top: 8px; }
   /* Review column + sortable scorecard */
   table.scorecard th[data-sort] { cursor: pointer; user-select: none; }
   table.scorecard th[data-sort]:hover { color: var(--color-text-primary); }
@@ -242,6 +245,12 @@
         <button class="audac-btn-outline" id="close-drilldown-btn">Close</button>
         <span id="finalize-status" style="font-size:12px;color:#999;align-self:center;"></span>
       </div>
+    </div>
+
+    <div class="dd-notes">
+      <label for="dd-notes" class="dd-sub-title" style="display:block; margin-top:0;">Review notes</label>
+      <textarea id="dd-notes" placeholder="Talking points, agreements and follow-ups for this firm’s review. Saved automatically, and included in the agenda."></textarea>
+      <div class="hint" id="dd-notes-status"></div>
     </div>
 
     <div class="dd-sub-title">Activity Log</div>
@@ -517,6 +526,9 @@
     currentReviewRow = review.data || null;
     const locked = !!(currentReviewRow && currentReviewRow.is_finalized);
     renderFinalizeUI(locked);
+    notesFirmId = firmId;
+    document.getElementById('dd-notes').value = currentReviewRow?.notes || '';
+    document.getElementById('dd-notes-status').textContent = '';
 
     const repByCreator = await fetchRepsByCreator(acts.data || []);
     const ddActivity = document.getElementById('dd-activity');
@@ -524,7 +536,7 @@
     wireActivityRows(ddActivity, acts.data || [], refreshAfterActivityChange);
     pipelineCacheById = new Map((pipe.data || []).map(p => [String(p.id), p]));
     const ddPipeline = document.getElementById('dd-pipeline');
-    ddPipeline.innerHTML = renderPipelineTable(pipe.data || [], acts.data || []);
+    ddPipeline.innerHTML = renderPipelineTable(pipe.data || [], acts.data || [], locked);
     wirePipelineRows(ddPipeline);
     document.getElementById('dd-education').innerHTML = renderEducationTable(edu.data || []);
     document.getElementById('dd-dormant').innerHTML = renderDormantTable(dormantByFirm.get(firmId) || []);
@@ -745,7 +757,7 @@
       <div style="text-align:center;">
         ${a.url ? `<a href="${a.url}" target="_blank" rel="noopener"><img src="${a.url}" alt="${escapeHtml(a.file_name || '')}" style="width:100px; height:100px; object-fit:cover; border-radius:4px; border:1px solid #ddd; display:block;"></a>` : '<div class="empty-note">Preview unavailable</div>'}
         <div style="font-size:11px; color:#999; max-width:100px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(a.file_name || '')}</div>
-        <button type="button" class="link-btn danger" data-delete-attachment="${a.id}" data-storage-path="${escapeHtml(a.storage_path)}" style="font-size:11px;">Delete</button>
+        ${currentReviewRow?.is_finalized ? '' : `<button type="button" class="link-btn danger" data-delete-attachment="${a.id}" data-storage-path="${escapeHtml(a.storage_path)}" style="font-size:11px;">Delete</button>`}
       </div>
     `).join('')}</div>`;
 
@@ -888,7 +900,7 @@
   // status is null on older rows (CSV imports predate this column, and the
   // sync's first version was Open-only) -- treated as Open throughout, same
   // as the RAG scorecard's own pipeline aggregation does.
-  function renderPipelineTable(rows, activityRows) {
+  function renderPipelineTable(rows, activityRows, locked = false) {
     if (!rows.length) return '<div class="empty-note">No pipeline entries for this period.</div>';
     const activityOptions = (activityRows || []).map(a =>
       `<option value="${a.id}">${a.entry_date} — ${escapeHtml(a.account_name)} (${a.activity_type})</option>`
@@ -905,7 +917,7 @@
       <td><span class="rag-badge ${badgeClass}">${escapeHtml(status)}</span></td>
       <td>${escapeHtml(r.stage || '')}</td>
       <td>${fmtMoney(shownValue)}</td><td>${r.expected_close_date || ''}</td><td>${r.actual_close_date || ''}</td>
-      <td><select class="pipeline-link-select" data-pipeline-link="${r.id}">
+      <td><select class="pipeline-link-select" data-pipeline-link="${r.id}"${locked ? ' disabled title="This month is finalized"' : ''}>
         <option value="">— none —</option>${activityOptions}
       </select></td></tr>
     `;
@@ -1300,7 +1312,7 @@
       client.from('rep_firm_zip_ranges').select('state_code'),
       client.from('crm_contacts').select('external_id', { count: 'exact', head: true }).eq('blocks_pipeline_sync', true),
       client.from('crm_contacts').select('external_id', { count: 'exact', head: true }).eq('source', 'manual'),
-      client.from('profiles').select('id, rep_firm_id, crm_contact_external_id, full_name').eq('role', 'rep'),
+      client.from('profiles').select('id, rep_firm_id, crm_contact_external_id, full_name').eq('role', 'rep').eq('is_active', true),
       client.from('rep_firm_aliases').select('id', { count: 'exact', head: true }).is('rep_firm_id', null),
       client.from('pipeline_entries').select('uploaded_at').not('crm_id', 'is', null).order('uploaded_at', { ascending: false }).limit(1),
       client.from('education_records').select('uploaded_at').order('uploaded_at', { ascending: false }).limit(1),
@@ -1315,6 +1327,12 @@
     const manual = accounts.filter(a => a.source === 'manual');
     const unassigned = accounts.filter(a => !a.rep_firm_id && a.is_active !== false && a.source !== 'manual' && !NOT_ASSIGNABLE.has(a.relationship_type));
     const repRows = reps.data || [];
+    // Active reps whose linked CRM contact was deactivated in Dynamics: most likely left their firm.
+    const linkedIds = repRows.map(r => r.crm_contact_external_id).filter(Boolean);
+    const { data: goneContacts } = linkedIds.length
+      ? await client.from('crm_contacts').select('external_id').in('external_id', linkedIds).eq('is_active', false)
+      : { data: [] };
+    const goneSet = new Set((goneContacts || []).map(c => c.external_id));
     const rowSync = synced.reduce((m, a) => (a.last_synced_at && (!m || a.last_synced_at > m) ? a.last_synced_at : m), null);
     const maxIso = (...xs) => xs.filter(Boolean).sort().pop() || null;
     ops = {
@@ -1331,6 +1349,7 @@
       repsNoLink: repRows.filter(r => r.rep_firm_id && !r.crm_contact_external_id).length,
       repsNoName: repRows.filter(r => !r.full_name).length,
       repsAttention: repRows.filter(r => !r.rep_firm_id || !r.crm_contact_external_id || !r.full_name).length,
+      repsLeft: repRows.filter(r => goneSet.has(r.crm_contact_external_id)).length,
       skippedAliases: skipped.count || 0,
       lastPipeSync: maxIso(lastOkRun?.finished_at, lastPipe.data?.[0]?.uploaded_at),
       lastEduImport: lastEdu.data?.[0]?.uploaded_at || null,
@@ -1381,6 +1400,11 @@
       sub: [ops.repsNoFirm && `${ops.repsNoFirm} without a firm`, ops.repsNoLink && `${ops.repsNoLink} not linked to their CRM contact`, ops.repsNoName && `${ops.repsNoName} without a name`].filter(Boolean).join(' · '),
       href: '/reps?view=attention', action: 'Open',
     });
+    if (ops.repsLeft) items.push({
+      state: 'todo', main: `<b class="ops-count">${plural(ops.repsLeft, 'rep')}</b> left their firm according to Dynamics`,
+      sub: 'Their CRM contact was deactivated. Deactivate their portal account so they stop counting.',
+      href: '/reps?view=left', action: 'Review',
+    });
     if (ops.skippedAliases) items.push({
       state: 'off', main: `<b class="ops-count">${plural(ops.skippedAliases, 'company name')}</b> from imports set to “Skip”`,
       sub: 'Their education, pipeline and sell-out rows are ignored. Check none of them is actually a rep firm.',
@@ -1429,7 +1453,7 @@
         ? { state: 'off', main: '<b>Review &amp; finalize</b>', sub: `${monthLabel(m)} is still running. The review is on the 1st.`, href: '', action: '' }
         : { state: finalized === total && total ? 'ok' : 'todo',
             main: `<b>Review &amp; finalize</b>: ${finalized} of ${total} firms finalized`,
-            sub: `${started ? `${started} in progress. ` : ''}Open a firm, generate the agenda, add notes, then finalize. Sort the scorecard by <b>Review</b> to see what’s left.<div class="mc-progress"><i style="width:${total ? Math.round(finalized / total * 100) : 0}%"></i></div>`,
+            sub: `${started ? `${started} in progress. ` : ''}Open a firm, add review notes (or generate the agenda), then finalize. Sort the scorecard by <b>Review</b> to see what’s left.<div class="mc-progress"><i style="width:${total ? Math.round(finalized / total * 100) : 0}%"></i></div>${started ? `<button type="button" class="audac-btn-outline mc-bulk" data-finalize-reviewed>Finalize ${started} reviewed firm${started === 1 ? '' : 's'}</button>` : ''}`,
             href: '', action: '' },
     ];
 
@@ -1445,6 +1469,54 @@
       ${st.syncButton ? `<button type="button" class="ops-action" data-sync-now>${st.action} →</button>` : st.href ? `<a class="ops-action" href="${st.href}">${st.action} →</a>` : '<span></span>'}</li>`).join('');
     list.querySelectorAll('[data-open-firm]').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); openDrilldown(a.dataset.openFirm); }));
   }
+
+  // ---------- Review notes: edited in the drilldown, saved automatically ----------
+  let notesFirmId = null, notesTimer = null;
+  async function saveNotes(firmId, month, notes) {
+    const status = document.getElementById('dd-notes-status');
+    status.textContent = 'Saving…';
+    let error;
+    const existing = reviewByFirm.get(firmId);
+    if (existing || currentReviewRow) {
+      ({ error } = await client.from('monthly_reviews').update({ notes }).eq('rep_firm_id', firmId).eq('reporting_month', month));
+    } else {
+      const row = scorecardCache.find(r => r.rep_firm_id === firmId);
+      const ins = await client.from('monthly_reviews').insert({ rep_firm_id: firmId, reporting_month: month, notes, rag_status: row?.rag_status || null, created_by: currentUser.id }).select('*').single();
+      error = ins.error;
+      if (!error && notesFirmId === firmId) currentReviewRow = ins.data;
+    }
+    if (error) { status.textContent = 'Could not save notes: ' + error.message; return; }
+    status.textContent = 'Saved';
+    const r = reviewByFirm.get(firmId) || { rep_firm_id: firmId, is_finalized: false, agenda_generated_at: null };
+    reviewByFirm.set(firmId, { ...r, notes });
+    renderScorecard();
+    renderMonthClose();
+  }
+  document.getElementById('dd-notes').addEventListener('input', (e) => {
+    clearTimeout(notesTimer);
+    const firmId = notesFirmId, month = monthInput.value, notes = e.target.value;
+    document.getElementById('dd-notes-status').textContent = 'Unsaved changes…';
+    notesTimer = setTimeout(() => saveNotes(firmId, month, notes), 900);
+  });
+
+  // ---------- Finalize every firm whose review is in progress ----------
+  async function finalizeReviewed() {
+    const m = monthInput.value;
+    const ready = scorecardCache.filter(r => { const v = reviewByFirm.get(r.rep_firm_id); return v && !v.is_finalized && (v.agenda_generated_at || (v.notes || '').trim()); });
+    if (!ready.length) return;
+    if (!confirm(`Finalize the ${monthLabel(m)} review for these ${ready.length} firm${ready.length === 1 ? '' : 's'}?
+
+${ready.map(r => '• ' + r.firm_name).join('\n')}
+
+Their activity entries for ${monthLabel(m)} get locked until re-opened.`)) return;
+    const { error } = await client.from('monthly_reviews')
+      .update({ is_finalized: true, finalized_at: new Date().toISOString(), finalized_by: currentUser.id })
+      .eq('reporting_month', m).in('rep_firm_id', ready.map(r => r.rep_firm_id));
+    if (error) { alert('Could not finalize: ' + error.message); return; }
+    await refreshReviewState();
+    if (selectedFirmId) openDrilldown(selectedFirmId, { scroll: false });
+  }
+  document.addEventListener('click', (e) => { if (e.target.closest('[data-finalize-reviewed]')) finalizeReviewed(); });
 
   // "Sync now": the same full server-side run as the nightly job; progress is
   // shown in place, then the work list, checklist and scorecard refresh.

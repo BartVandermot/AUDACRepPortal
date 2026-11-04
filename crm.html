@@ -56,6 +56,7 @@
   h2.section-title { font-size: 15px; font-weight: 700; color: var(--audac-black); text-transform: uppercase; letter-spacing: .5px; margin: 40px 0 14px; padding-top: 20px; border-top: 1px solid var(--color-border); }
   .manual-override-badge { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; padding: 2px 8px; border-radius: 10px; background-color: rgba(255,255,255,0.06); color: var(--color-text-muted); margin-left: 8px; }
   .merge-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+  input.merge-search { min-height: 32px; padding: 5px 10px; font-size: 13px; max-width: 220px; }
   select.merge-target-select { font-family: 'Montserrat', sans-serif; font-size: 11.5px; padding: 4px 6px; border: 1px solid var(--color-border-strong); border-radius: 3px; max-width: 200px; }
   button.merge-btn { background: var(--audac-gold); color: #000; border: none; padding: 4px 10px; font-family: 'Montserrat', sans-serif; font-weight: 700; font-size: 10.5px; text-transform: uppercase; letter-spacing: .3px; cursor: pointer; border-radius: 3px; }
   button.merge-btn:disabled { background-color: rgba(255,255,255,0.06); color: var(--color-text-muted); cursor: not-allowed; }
@@ -410,6 +411,7 @@
     const total = accountsCache.length;
     const matched = accountsCache.filter(a => a.rep_firm_id).length;
     const manual = accountsCache.filter(a => a.source === 'manual').length;
+    const readyToMerge = accountsCache.filter(a => a.source === 'manual' && (dataverseAccountsByNameKey.get(a.name_key) || []).length).length;
     const totalContacts = [...contactCountByAccount.values()].reduce((s, n) => s + n, 0);
     document.getElementById('kpi-row').innerHTML = `
       <div class="kpi-tile"><div class="kpi-label">Accounts Synced</div><div class="kpi-value">${total}</div></div>
@@ -417,6 +419,7 @@
       <div class="kpi-tile"><div class="kpi-label">Unassigned</div><div class="kpi-value">${total - matched}</div></div>
       <div class="kpi-tile"><div class="kpi-label">Contacts Synced</div><div class="kpi-value">${totalContacts}</div></div>
       <div class="kpi-tile"><div class="kpi-label">Manually Added — Needs CRM Import</div><div class="kpi-value">${manual}</div></div>
+      <div class="kpi-tile"><div class="kpi-label">Ready to Merge</div><div class="kpi-value">${readyToMerge}</div></div>
     `;
   }
 
@@ -578,13 +581,39 @@
   // and this manual row is now a stale duplicate waiting to be merged away.
   function accountMergeRowHtml(a) {
     const candidates = dataverseAccountsByNameKey.get(a.name_key) || [];
-    if (!candidates.length) return '';
+    // No record with the exact same name -- let the manager find it in
+    // Dynamics by any part of its name/city (e.g. "Inc." vs no "Inc.").
+    if (!candidates.length) return mergeSearchHtml('account', a.external_id);
     const opts = ['<option value="">Possible match — merge into…</option>']
       .concat(candidates.map(c => `<option value="${c.external_id}">${escapeHtml(c.name)}${c.city ? ` (${escapeHtml(c.city)}${c.state_code ? ', ' + escapeHtml(c.state_code) : ''})` : ''}</option>`)).join('');
     return `<div class="merge-row"><select class="merge-target-select" data-merge-type="account" data-manual="${a.external_id}">${opts}</select><button type="button" class="merge-btn" data-merge-type="account" data-manual="${a.external_id}" disabled>Merge</button></div>`;
   }
 
+  // Search-to-merge: a datalist of every CRM-synced record of that type.
+  let mergeLabelToId = { account: new Map(), contact: new Map() };
+  function buildMergeDatalists() {
+    const acc = accountsCache.filter(a => a.source !== 'manual').map(a => [`${a.name}${a.city ? ' · ' + a.city : ''}${a.state_code ? ', ' + a.state_code : ''}`, a.external_id]);
+    const con = allContactsCache.filter(c => c.source !== 'manual').map(c => [`${c.full_name || '(no name)'}${c.email ? ' · ' + c.email : ''}`, c.external_id]);
+    mergeLabelToId = { account: new Map(acc), contact: new Map(con) };
+    const html = (pairs) => pairs.map(([label]) => `<option value="${escapeHtml(label)}"></option>`).join('');
+    let dl = document.getElementById('merge-accounts-list');
+    if (!dl) { dl = document.createElement('datalist'); dl.id = 'merge-accounts-list'; document.body.appendChild(dl); }
+    dl.innerHTML = html(acc);
+    dl = document.getElementById('merge-contacts-list');
+    if (!dl) { dl = document.createElement('datalist'); dl.id = 'merge-contacts-list'; document.body.appendChild(dl); }
+    dl.innerHTML = html(con);
+  }
+  function mergeSearchHtml(type, manualId) {
+    return `<div class="merge-row"><input type="text" class="merge-search" list="merge-${type}s-list" data-merge-type="${type}" data-manual="${manualId}" placeholder="Find its Dynamics record…" aria-label="Find the Dynamics ${type} to merge into"><button type="button" class="merge-btn" data-merge-type="${type}" data-manual="${manualId}" disabled>Merge</button></div>`;
+  }
+
   function wireMergeControls(container, type) {
+    container.querySelectorAll(`input.merge-search[data-merge-type="${type}"]`).forEach(inp => {
+      inp.addEventListener('input', () => {
+        const btn = container.querySelector(`button.merge-btn[data-merge-type="${type}"][data-manual="${inp.dataset.manual}"]`);
+        if (btn) btn.disabled = !mergeLabelToId[type].has(inp.value);
+      });
+    });
     container.querySelectorAll(`select.merge-target-select[data-merge-type="${type}"]`).forEach(sel => {
       sel.addEventListener('change', () => {
         const btn = container.querySelector(`button.merge-btn[data-merge-type="${type}"][data-manual="${sel.dataset.manual}"]`);
@@ -594,7 +623,9 @@
     container.querySelectorAll(`button.merge-btn[data-merge-type="${type}"]`).forEach(btn => {
       btn.addEventListener('click', () => {
         const sel = container.querySelector(`select.merge-target-select[data-merge-type="${type}"][data-manual="${btn.dataset.manual}"]`);
-        if (sel?.value) mergeManualRecord(type, btn.dataset.manual, sel.value);
+        const inp = container.querySelector(`input.merge-search[data-merge-type="${type}"][data-manual="${btn.dataset.manual}"]`);
+        const target = sel?.value || (inp && mergeLabelToId[type].get(inp.value));
+        if (target) mergeManualRecord(type, btn.dataset.manual, target);
       });
     });
   }
@@ -731,7 +762,7 @@
     const byName = nameKey ? (dataverseContactsByAccountNameKey.get(nameKey) || []) : [];
     const seen = new Set();
     const candidates = [...byEmail, ...byName].filter(cc => !seen.has(cc.external_id) && seen.add(cc.external_id));
-    if (!candidates.length) return '';
+    if (!candidates.length) return mergeSearchHtml('contact', c.external_id);
     const opts = ['<option value="">Possible match — merge into…</option>']
       .concat(candidates.map(cc => `<option value="${cc.external_id}">${escapeHtml(cc.full_name || cc.email || '(no name)')}</option>`)).join('');
     return `<div class="merge-row"><select class="merge-target-select" data-merge-type="contact" data-manual="${c.external_id}">${opts}</select><button type="button" class="merge-btn" data-merge-type="contact" data-manual="${c.external_id}" disabled>Merge</button></div>`;
@@ -804,7 +835,7 @@
     if (statusFilter === 'active') rows = rows.filter(c => c.is_active !== false);
     else if (statusFilter === 'inactive') rows = rows.filter(c => c.is_active === false);
     if (needsReviewOnly()) {
-      rows = rows.filter(c => !c.rep_firm_id || c.blocks_pipeline_sync);
+      rows = rows.filter(c => !c.rep_firm_id || c.blocks_pipeline_sync || c.source === 'manual');
       // A blocking contact is actively costing real pipeline data every sync
       // -- worth seeing before the much larger pile of merely-unassigned
       // dealer contacts who were never going to be reps anyway.
@@ -997,6 +1028,7 @@
       contactCountByAccount.set(c.parent_account_external_id, (contactCountByAccount.get(c.parent_account_external_id) || 0) + 1);
     });
 
+    buildMergeDatalists();
     dataverseAccountsByNameKey = new Map();
     accountsCache.filter(a => a.source !== 'manual').forEach(a => {
       const list = dataverseAccountsByNameKey.get(a.name_key) || [];

@@ -137,6 +137,8 @@
         <select id="attention-filter">
           <option value="">All reps</option>
           <option value="attention">Needs attention (no firm, no CRM link or no name)</option>
+          <option value="left">Left their firm in CRM (contact deactivated)</option>
+          <option value="inactive">Deactivated reps</option>
         </select>
       </div>
     </div>
@@ -147,7 +149,7 @@
       <table class="rep-table">
         <thead>
           <tr>
-            <th>Full Name</th><th>Email</th><th>Rep Firm</th><th>Territory</th><th>Admin</th><th>Signed Up</th>
+            <th>Full Name</th><th>Email</th><th>Rep Firm</th><th>Territory</th><th>Admin</th><th>Signed Up</th><th>Status</th>
           </tr>
         </thead>
         <tbody id="reps-body"></tbody>
@@ -202,20 +204,29 @@
     window.location.href = '/login';
   });
 
+  // A rep whose linked CRM contact was deactivated in Dynamics has most likely
+  // left their firm -- surfaced so they can be deactivated here too.
+  function leftInCrm(r) { const c = crmContactFor(r); return r.is_active !== false && !!c && c.is_active === false; }
+
   function renderKpis() {
-    const total = repsCache.length;
-    const assigned = repsCache.filter(r => r.rep_firm_id).length;
-    const admins = repsCache.filter(r => r.is_rep_admin).length;
+    const active = repsCache.filter(r => r.is_active !== false);
+    const total = active.length;
+    const assigned = active.filter(r => r.rep_firm_id).length;
+    const admins = active.filter(r => r.is_rep_admin).length;
+    const left = repsCache.filter(leftInCrm).length;
+    const deactivated = repsCache.length - total;
     // Only counts reps assigned to a firm -- an unassigned rep has no CRM
     // contacts to link against yet, so flagging them here too would just be
     // restating "Unassigned" under a different label.
-    const awaitingCrmLink = repsCache.filter(r => r.rep_firm_id && !r.crm_contact_external_id).length;
+    const awaitingCrmLink = active.filter(r => r.rep_firm_id && !r.crm_contact_external_id).length;
     document.getElementById('kpi-row').innerHTML = `
       <div class="kpi-tile"><div class="kpi-label">Reps Signed Up</div><div class="kpi-value">${total}</div></div>
       <div class="kpi-tile"><div class="kpi-label">Firm Assigned</div><div class="kpi-value">${assigned}</div></div>
       <div class="kpi-tile"><div class="kpi-label">Unassigned</div><div class="kpi-value">${total - assigned}</div></div>
       <div class="kpi-tile"><div class="kpi-label">Firm Admins</div><div class="kpi-value">${admins}</div></div>
       <div class="kpi-tile"><div class="kpi-label">Awaiting CRM Link</div><div class="kpi-value">${awaitingCrmLink}</div></div>
+      ${left ? `<div class="kpi-tile"><div class="kpi-label">Left Firm in CRM</div><div class="kpi-value" style="color:var(--color-warning)">${left}</div></div>` : ''}
+      <div class="kpi-tile"><div class="kpi-label">Deactivated</div><div class="kpi-value">${deactivated}</div></div>
     `;
   }
 
@@ -252,8 +263,12 @@
     let rows = repsCache.filter(r => matchesSearch(r, q));
     if (firmFilter === '__unassigned') rows = rows.filter(r => !r.rep_firm_id);
     else if (firmFilter) rows = rows.filter(r => r.rep_firm_id === firmFilter);
-    if (document.getElementById('attention-filter').value === 'attention') {
-      rows = rows.filter(r => !r.rep_firm_id || !r.crm_contact_external_id || !r.full_name);
+    const show = document.getElementById('attention-filter').value;
+    if (show === 'inactive') rows = rows.filter(r => r.is_active === false);
+    else {
+      rows = rows.filter(r => r.is_active !== false); // deactivated reps only under "Deactivated reps"
+      if (show === 'attention') rows = rows.filter(r => !r.rep_firm_id || !r.crm_contact_external_id || !r.full_name);
+      if (show === 'left') rows = rows.filter(leftInCrm);
     }
 
     document.getElementById('result-count').textContent = `Showing ${rows.length} of ${repsCache.length} reps`;
@@ -285,6 +300,9 @@
           </label>
         </td>
         <td>${r.created_at ? new Date(r.created_at).toLocaleDateString() : ''}</td>
+        <td style="white-space:nowrap;">${r.is_active === false
+          ? `<span class="muted">Deactivated</span> <button type="button" class="link-btn" data-set-active="${r.id}" data-value="1">Reactivate</button>`
+          : `${leftInCrm(r) ? '<span class="mismatch-flag" title="This person\x27s contact was deactivated in Dynamics -- they probably left the firm.">⚠ Left in CRM</span> ' : '<span class="muted">Active</span> '}<button type="button" class="link-btn danger" data-set-active="${r.id}" data-value="0">Deactivate</button>`}</td>
       </tr>
     `;
     }).join('');
@@ -304,6 +322,25 @@
     tbody.querySelectorAll('.admin-toggle').forEach(cb => {
       cb.addEventListener('change', () => setAdmin(cb.dataset.rep, cb.checked));
     });
+    tbody.querySelectorAll('[data-set-active]').forEach(btn => {
+      btn.addEventListener('click', () => setActive(btn.dataset.setActive, btn.dataset.value === '1'));
+    });
+  }
+
+  // Deactivate instead of delete: the rep's logged activity keeps its name and
+  // history; they just can't log or import anymore and leave the work lists.
+  async function setActive(repId, active) {
+    const rep = repsCache.find(r => r.id === repId);
+    const who = rep?.full_name || rep?.email || 'this rep';
+    if (!active && !confirm(`Deactivate ${who}?
+
+They can no longer log or import activities. Everything they logged stays, under their name. You can reactivate them later.`)) return;
+    const patch = active ? { is_active: true } : { is_active: false, is_rep_admin: false };
+    const { error } = await client.from('profiles').update(patch).eq('id', repId);
+    if (error) { alert('Could not update: ' + error.message); return; }
+    if (rep) Object.assign(rep, patch);
+    renderKpis();
+    renderReps();
   }
 
   async function saveTerritoryNote(repId, note) {
@@ -504,8 +541,8 @@
   async function loadAll() {
     const [firmsRes, repsRes, contactsRes, accountsRes] = await Promise.all([
       client.from('rep_firms').select('id, name, crm_account_external_id').eq('status', 'active').order('name'),
-      client.from('profiles').select('id, email, full_name, rep_firm_id, is_rep_admin, created_at, territory_note, crm_contact_external_id').eq('role', 'rep').order('created_at', { ascending: false }),
-      client.from('crm_contacts').select('external_id, full_name, email, parent_account_external_id').order('full_name'),
+      client.from('profiles').select('id, email, full_name, rep_firm_id, is_rep_admin, created_at, territory_note, crm_contact_external_id, is_active').eq('role', 'rep').order('created_at', { ascending: false }),
+      client.from('crm_contacts').select('external_id, full_name, email, parent_account_external_id, is_active').order('full_name'),
       client.from('crm_accounts').select('external_id, name, city, state_code, relationship_type'),
     ]);
 
@@ -554,8 +591,9 @@
     document.getElementById('user-email').textContent = g.profile.email;
     await loadAll();
     // Deep link from the dashboard work list: /reps?view=attention
-    if (new URLSearchParams(location.search).get('view') === 'attention') {
-      document.getElementById('attention-filter').value = 'attention';
+    const view = new URLSearchParams(location.search).get('view');
+    if (['attention', 'left', 'inactive'].includes(view)) {
+      document.getElementById('attention-filter').value = view;
       renderReps();
       document.getElementById('attention-filter').scrollIntoView({ block: 'center' });
     }

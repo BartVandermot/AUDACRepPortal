@@ -595,12 +595,23 @@
       }
     }
 
+    if (currentProfile?.is_active === false) { showDeactivated(); return; }
     if (isRep && currentProfile?.rep_firm_id) lockFirmToProfile(currentProfile.rep_firm_id);
     document.getElementById('name-prompt-bar').hidden = !!currentProfile?.full_name;
     updateSignedInGreeting();
     restoreDraft();
     refreshMonthNotes();
     await loadMySubmissions();
+  }
+
+  // A deactivated rep (left their firm) can sign in but not log anything.
+  function showDeactivated() {
+    document.getElementById('signed-in-area').hidden = true;
+    const gate = document.getElementById('signin-gate');
+    gate.querySelector('h2').textContent = 'This account is no longer active';
+    gate.querySelector('p:not(.eyebrow)').textContent = 'Your portal account has been deactivated, so you can’t log activities anymore. Everything you logged before is kept. If this is a mistake, contact AUDAC.';
+    document.getElementById('gate-signin-btn').hidden = true;
+    gate.hidden = false;
   }
 
   function updateSignedInGreeting() {
