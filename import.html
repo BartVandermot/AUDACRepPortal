@@ -678,7 +678,8 @@
           if (m.contact_external_id) r.data.contact_external_id = m.contact_external_id;
         }
       }
-      const dupIdx = new Set(dupRes.data);
+      // setof integer: PostgREST may return [3, 7] or [{find_duplicate_activities: 3}, …] -- accept both.
+      const dupIdx = new Set((dupRes.data || []).map(x => (x !== null && typeof x === 'object') ? Number(Object.values(x)[0]) : Number(x)));
       valid.forEach((r, i) => { if (dupIdx.has(i)) r.dupReason = 'Already in the portal'; });
 
       state.preview = rows;
