@@ -155,6 +155,8 @@
   .ops-main .ops-sub a { color: var(--color-gold-light); }
   .ops-action { white-space: nowrap; font-size: 13px; font-weight: 600; color: var(--color-gold-light); text-decoration: none; padding: 2px 0; }
   .ops-action:hover { text-decoration: underline; }
+  button.ops-action { background: none; border: 0; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; padding: 2px 0; }
+  button.ops-action:disabled { color: var(--color-text-muted); cursor: default; text-decoration: none; }
   .ops-count { font-variant-numeric: tabular-nums; }
   .mc-progress { height: 6px; border-radius: 999px; background: var(--color-bg-raised); border: 1px solid var(--color-border); overflow: hidden; margin-top: 6px; max-width: 260px; }
   .mc-progress i { display: block; height: 100%; background: var(--color-success); }
@@ -263,6 +265,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="/assets/audac-shell.js"></script>
+<script src="/assets/audac-sync.js"></script>
 <script>
   const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
@@ -1292,7 +1295,7 @@
   let ops = null;
   const NOT_ASSIGNABLE = new Set(['Independent Rep Firm', 'Competitor', 'Supplier']);
   async function loadOpsData() {
-    const [accts, zips, blocking, manualContacts, reps, skipped, lastPipe, lastEdu, sellAny] = await Promise.all([
+    const [accts, zips, blocking, manualContacts, reps, skipped, lastPipe, lastEdu, sellAny, lastRuns, lastOkRun] = await Promise.all([
       client.from('crm_accounts').select('name_key, source, rep_firm_id, relationship_type, state_code, is_active, last_synced_at'),
       client.from('rep_firm_zip_ranges').select('state_code'),
       client.from('crm_contacts').select('external_id', { count: 'exact', head: true }).eq('blocks_pipeline_sync', true),
@@ -1302,6 +1305,8 @@
       client.from('pipeline_entries').select('uploaded_at').not('crm_id', 'is', null).order('uploaded_at', { ascending: false }).limit(1),
       client.from('education_records').select('uploaded_at').order('uploaded_at', { ascending: false }).limit(1),
       client.from('sellout_records').select('id', { count: 'exact', head: true }),
+      AudacSync.latest(client, 1),
+      AudacSync.lastOk(client),
     ]);
     const accounts = accts.data || [];
     const covered = new Set([...firmsCache.flatMap(f => f.states || []), ...(zips.data || []).map(z => z.state_code)]);
@@ -1310,8 +1315,12 @@
     const manual = accounts.filter(a => a.source === 'manual');
     const unassigned = accounts.filter(a => !a.rep_firm_id && a.is_active !== false && a.source !== 'manual' && !NOT_ASSIGNABLE.has(a.relationship_type));
     const repRows = reps.data || [];
+    const rowSync = synced.reduce((m, a) => (a.last_synced_at && (!m || a.last_synced_at > m) ? a.last_synced_at : m), null);
+    const maxIso = (...xs) => xs.filter(Boolean).sort().pop() || null;
     ops = {
-      lastCrmSync: synced.reduce((m, a) => (a.last_synced_at && (!m || a.last_synced_at > m) ? a.last_synced_at : m), null),
+      lastRun: lastRuns[0] || null,
+      lastOkRun,
+      lastCrmSync: maxIso(lastOkRun?.finished_at, rowSync),
       blocking: blocking.count || 0,
       manualAccounts: manual.length,
       manualContacts: manualContacts.count || 0,
@@ -1323,7 +1332,7 @@
       repsNoName: repRows.filter(r => !r.full_name).length,
       repsAttention: repRows.filter(r => !r.rep_firm_id || !r.crm_contact_external_id || !r.full_name).length,
       skippedAliases: skipped.count || 0,
-      lastPipeSync: lastPipe.data?.[0]?.uploaded_at || null,
+      lastPipeSync: maxIso(lastOkRun?.finished_at, lastPipe.data?.[0]?.uploaded_at),
       lastEduImport: lastEdu.data?.[0]?.uploaded_at || null,
       selloutInUse: (sellAny.count || 0) > 0,
     };
@@ -1339,11 +1348,15 @@
     if (!ops) return;
     const items = [];
     const syncAge = ops.lastCrmSync ? (Date.now() - new Date(ops.lastCrmSync)) / 86400000 : Infinity;
-    items.push({
-      state: syncAge < 7 ? 'ok' : syncAge < 30 ? 'todo' : 'bad', always: true,
-      main: `CRM last synced <b>${agoText(ops.lastCrmSync)}</b>`,
-      sub: 'Accounts, contacts and their firm assignments come from Dynamics. Sync at least weekly and before the review.',
-      href: '/crm', action: 'Sync',
+    const failed = ops.lastRun?.status === 'error';
+    items.push(failed ? {
+      state: 'bad', main: `The last CRM sync <b>failed</b> (${AudacSync.ago(ops.lastRun.finished_at || ops.lastRun.started_at)})`,
+      sub: escapeHtml(ops.lastRun.error || 'Unknown error'), syncButton: true, action: 'Retry',
+    } : {
+      state: syncAge < 2 ? 'ok' : syncAge < 7 ? 'todo' : 'bad',
+      main: `CRM synced <b>${AudacSync.ago(ops.lastCrmSync)}</b>${ops.lastOkRun ? ` (${ops.lastOkRun.trigger === 'scheduled' ? 'nightly' : 'manual'})` : ''}`,
+      sub: `Accounts, contacts and opportunities come from Dynamics automatically, ${AudacSync.NIGHTLY_LABEL}.`,
+      syncButton: true, action: 'Sync now',
     });
     if (ops.blocking) items.push({
       state: 'bad', main: `<b class="ops-count">${plural(ops.blocking, 'contact')}</b> ${ops.blocking === 1 ? 'blocks' : 'block'} the pipeline sync`,
@@ -1379,7 +1392,7 @@
     chip.textContent = open ? `${open} open` : 'All clear';
     document.getElementById('wl-items').innerHTML = items.map(i => `
       <li>${ICO[i.state]}<span class="ops-main">${i.main}${i.sub ? `<span class="ops-sub">${i.sub}</span>` : ''}</span>
-      <a class="ops-action" href="${i.href}">${i.action} →</a></li>`).join('');
+      ${i.syncButton ? `<button type="button" class="ops-action" data-sync-now>${i.action} →</button>` : `<a class="ops-action" href="${i.href}">${i.action} →</a>`}</li>`).join('');
   }
 
   // "Month close": the review-day checklist for the selected month, in the
@@ -1401,9 +1414,9 @@
     const firmLinks = (rows) => rows.slice(0, 6).map(r => `<a href="#" data-open-firm="${r.rep_firm_id}">${escapeHtml(r.firm_name)}</a>`).join(', ') + (rows.length > 6 ? ` +${rows.length - 6} more` : '');
     const steps = [
       { state: doneAfter(ops.lastCrmSync, m) || (running && ops.lastCrmSync && (Date.now() - new Date(ops.lastCrmSync)) < 7 * 86400000) ? 'ok' : 'todo',
-        main: '<b>Sync the CRM</b>', sub: `Last sync ${agoText(ops.lastCrmSync)}.`, href: '/crm', action: 'Sync' },
+        main: '<b>Sync the CRM</b>', sub: `Last sync ${agoText(ops.lastCrmSync)} · runs ${AudacSync.NIGHTLY_LABEL}.`, syncButton: true, action: 'Sync now' },
       { state: doneAfter(ops.lastPipeSync, m) ? 'ok' : 'todo',
-        main: '<b>Sync opportunities</b>', sub: `Last opportunity sync ${agoText(ops.lastPipeSync)} · ${plural(newOpps, 'new opportunity', 'new opportunities')} in ${monthLabel(m)}.`, href: '/admin#pipeline', action: 'Open' },
+        main: '<b>Sync opportunities</b>', sub: `Part of the same sync · last ${agoText(ops.lastPipeSync)} · ${plural(newOpps, 'new opportunity', 'new opportunities')} in ${monthLabel(m)}.`, href: '/admin#pipeline', action: 'Details' },
       { state: doneAfter(ops.lastEduImport, m) ? 'ok' : 'todo',
         main: '<b>Import education</b>', sub: `Last import ${agoText(ops.lastEduImport)} · ${plural(certs, 'certificate')} in ${monthLabel(m)}.`, href: '/admin#education', action: 'Import' },
       ops.selloutInUse
@@ -1429,9 +1442,33 @@
     const list = document.getElementById('mc-steps');
     list.innerHTML = steps.map(st => `
       <li>${ICO[st.state]}<span class="ops-main">${st.main}<span class="ops-sub">${st.sub}</span></span>
-      ${st.href ? `<a class="ops-action" href="${st.href}">${st.action} →</a>` : '<span></span>'}</li>`).join('');
+      ${st.syncButton ? `<button type="button" class="ops-action" data-sync-now>${st.action} →</button>` : st.href ? `<a class="ops-action" href="${st.href}">${st.action} →</a>` : '<span></span>'}</li>`).join('');
     list.querySelectorAll('[data-open-firm]').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); openDrilldown(a.dataset.openFirm); }));
   }
+
+  // "Sync now": the same full server-side run as the nightly job; progress is
+  // shown in place, then the work list, checklist and scorecard refresh.
+  let syncing = false;
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-sync-now]');
+    if (!btn || syncing) return;
+    syncing = true;
+    const all = () => document.querySelectorAll('[data-sync-now]');
+    all().forEach(b => { b.disabled = true; });
+    const sub = btn.closest('li')?.querySelector('.ops-sub');
+    try {
+      const run = await AudacSync.run(client, (r) => { all().forEach(b => { b.textContent = AudacSync.progressText(r); }); });
+      if (sub) sub.textContent = AudacSync.describe(run);
+      await loadOpsData();
+      renderWorklist();
+      await loadScorecard();
+    } catch (err) {
+      if (sub) sub.textContent = 'Sync failed: ' + err.message;
+      all().forEach(b => { b.disabled = false; b.textContent = 'Retry →'; });
+    } finally {
+      syncing = false;
+    }
+  });
 
   // ---------- Init ----------
   (async function init() {

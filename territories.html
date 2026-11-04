@@ -107,6 +107,10 @@
 </header>
 
 <main class="page">
+  <div class="notice info" id="recalc-banner" hidden style="display:flex; gap:var(--space-3); align-items:center; flex-wrap:wrap;">
+    <span id="recalc-text" style="flex:1; min-width:240px;">Territory saved. Accounts and their contacts move to their new firm at the next CRM sync (tonight), or recalculate now.</span>
+    <button type="button" class="audac-btn" id="recalc-btn">Recalculate now</button>
+  </div>
   <div id="loading-note">Loading rep firms…</div>
 
   <div id="content" style="display:none;">
@@ -225,6 +229,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="/assets/audac-shell.js"></script>
+<script src="/assets/audac-sync.js"></script>
 <script>
   const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
@@ -506,6 +511,7 @@
     if (firm) firm.states = checked;
     saveNote.style.color = 'var(--green)';
     saveNote.textContent = 'Saved.';
+    showRecalcBanner();
     renderFirms();
     renderUncoveredAlert();
     openStatesPanel(editingFirmId);
@@ -618,6 +624,7 @@
     editingSplitId = null;
     document.getElementById('split-panel').style.display = 'none';
     await loadZipRanges();
+    showRecalcBanner();
   });
 
   async function deleteSplit(id) {
@@ -625,7 +632,33 @@
     const { error } = await client.from('rep_firm_zip_ranges').delete().eq('id', id);
     if (error) { alert('Could not delete: ' + error.message); return; }
     await loadZipRanges();
+    showRecalcBanner();
   }
+
+  // Firm assignment of accounts is computed by the CRM sync from these
+  // territories -- after a change, offer to run it now instead of waiting
+  // for the nightly run.
+  function showRecalcBanner() {
+    const banner = document.getElementById('recalc-banner');
+    document.getElementById('recalc-text').textContent = 'Territory saved. Accounts and their contacts move to their new firm at the next CRM sync (tonight), or recalculate now.';
+    const btn = document.getElementById('recalc-btn');
+    btn.hidden = false; btn.disabled = false; btn.textContent = 'Recalculate now';
+    banner.hidden = false;
+  }
+  document.getElementById('recalc-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('recalc-btn');
+    const text = document.getElementById('recalc-text');
+    btn.disabled = true;
+    try {
+      const run = await AudacSync.run(client, (r) => { btn.textContent = AudacSync.progressText(r); });
+      text.textContent = AudacSync.describe(run);
+      btn.hidden = true;
+      await loadFirms(); // refreshes the uncovered-accounts check against the new assignments
+    } catch (err) {
+      text.textContent = 'Recalculation failed: ' + err.message;
+      btn.disabled = false; btn.textContent = 'Try again';
+    }
+  });
 
   async function loadZipRanges() {
     const { data, error } = await client.from('rep_firm_zip_ranges').select('id, rep_firm_id, state_code, zip3_start, zip3_end');

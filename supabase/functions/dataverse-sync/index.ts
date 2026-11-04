@@ -8,8 +8,10 @@
 //
 // Processes one small page per invocation (Edge Functions have a per-call CPU
 // budget; pulling a whole org's worth of records in one call blew through
-// it). The caller drives the pagination loop: POST { phase, cursor } and keep
-// calling with the returned nextCursor until done=true. Phase order matters:
+// it). Either the caller drives the pagination loop (POST { phase, cursor },
+// repeat with nextCursor until done=true), or POST { chain: true } starts a
+// server-side chained run of all three phases, logged in sync_runs (used by
+// the nightly pg_cron job and the "Sync now" buttons). Phase order matters:
 // "accounts" first -- "contacts" resolves rep firm via its parent account in
 // crm_accounts; "opportunities" resolves rep firm via (in priority order) its
 // Involved Installer account, the Contact's own resolved firm via
@@ -295,45 +297,13 @@ async function getCounts(): Promise<Record<string, any>> {
   };
 }
 
-Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
-  try {
-    const authHeader = req.headers.get("Authorization") || "";
-    const jwt = authHeader.replace(/^Bearer\s+/i, "");
-    if (!jwt) return jsonResponse({ error: "Missing Authorization header" }, 401);
+type Phase = "accounts" | "contacts" | "opportunities";
 
-    const svc = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
-
-    const { data: userData, error: userErr } = await svc.auth.getUser(jwt);
-    if (userErr || !userData?.user) return jsonResponse({ error: "Invalid session" }, 401);
-
-    const { data: profile } = await svc.from("profiles").select("role").eq("id", userData.user.id).maybeSingle();
-    if (!profile || profile.role !== "manager") return jsonResponse({ error: "Manager role required" }, 403);
-
-    let payload: { phase?: string; cursor?: string | null; syncStartedAt?: string } = {};
-    try {
-      payload = await req.json();
-    } catch {
-      // no body -> start accounts phase from the beginning
-    }
-
-    if (payload.phase === "count") {
-      return jsonResponse(await getCounts());
-    }
-
-    const phase = payload.phase === "contacts" ? "contacts" : payload.phase === "opportunities" ? "opportunities" : "accounts";
-    const cursor = payload.cursor || null;
-    // The same value the caller sends on every page of one logical sync run
-    // (set once, before the first request) -- lets the final page tell "every
-    // active account/contact just re-confirmed by this run" from "hasn't been
-    // seen by any run since before this one started," i.e. deactivated in
-    // Dataverse since the last sync. Left undefined by an older/other caller,
-    // the sweep below simply doesn't run rather than guessing -- never
-    // deactivating anything on a false assumption.
-    const syncStartedAt = payload.syncStartedAt || null;
-
+// One page of one phase -- the unit of work both the browser-driven loops and
+// the server-side chained run (below) are built from. Returns the page result
+// (done / nextCursor / counters) instead of an HTTP response.
+// deno-lint-ignore no-explicit-any
+async function runPage(svc: any, phase: Phase, cursor: string | null, syncStartedAt: string | null, updatedBy: string | null): Promise<Record<string, any>> {
     const token = await getDataverseToken();
 
     if (phase === "accounts") {
@@ -452,7 +422,7 @@ Deno.serve(async (req: Request) => {
             rep_firm_overridden: !!overridden,
             is_active: true,
             last_synced_at: syncStartedAt || new Date().toISOString(),
-            updated_by: userData.user.id,
+            updated_by: updatedBy,
             updated_at: new Date().toISOString(),
           };
         });
@@ -479,7 +449,7 @@ Deno.serve(async (req: Request) => {
         deactivated = staleRows?.length || 0;
       }
 
-      return jsonResponse({
+      return ({
         phase: "accounts",
         done: !nextLink,
         nextCursor: nextLink,
@@ -541,7 +511,7 @@ Deno.serve(async (req: Request) => {
             rep_firm_overridden: !!overridden,
             is_active: true,
             last_synced_at: syncStartedAt || new Date().toISOString(),
-            updated_by: userData.user.id,
+            updated_by: updatedBy,
             updated_at: new Date().toISOString(),
           };
         });
@@ -564,7 +534,7 @@ Deno.serve(async (req: Request) => {
         deactivated = staleRows?.length || 0;
       }
 
-      return jsonResponse({
+      return ({
         phase: "contacts",
         done: !nextLink,
         nextCursor: nextLink,
@@ -718,7 +688,7 @@ Deno.serve(async (req: Request) => {
         await svc.from("crm_contacts").update({ blocks_pipeline_sync: false }).in("external_id", [...resolvedContactIds]);
       }
 
-      return jsonResponse({
+      return ({
         phase: "opportunities",
         done: !nextLink,
         nextCursor: nextLink,
@@ -733,6 +703,180 @@ Deno.serve(async (req: Request) => {
         filterLevel,
       });
     }
+}
+
+// ---------------------------------------------------------------------------
+// Server-side chained runs (nightly schedule + "Sync now" buttons).
+//
+// A full sync is ~20 pages across three phases; each page must run in its own
+// invocation (per-call CPU budget, see the header). So a run is a chain: every
+// hop processes one page in the background (EdgeRuntime.waitUntil), records
+// progress in sync_runs, then POSTs the next hop to this same function. Hops
+// and the pg_cron trigger authenticate with a shared secret that lives only in
+// Supabase Vault (read via the service-role-only crm_sync_secret() RPC) --
+// never in code or env. People still authenticate with a manager session.
+// verify_jwt stays ON for this function: secret-only callers also send the
+// project's public anon JWT so the gateway lets them through, and the secret
+// check below is what actually authorizes them.
+// ---------------------------------------------------------------------------
+declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
+const SELF_URL = `${SUPABASE_URL}/functions/v1/dataverse-sync`;
+const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") || "";
+const RUN_STALE_MS = 30 * 60 * 1000;
+const NEXT_PHASE: Record<Phase, Phase | null> = { accounts: "contacts", contacts: "opportunities", opportunities: null };
+
+let cachedSecret: string | null = null;
+// deno-lint-ignore no-explicit-any
+async function getSyncSecret(svc: any): Promise<string | null> {
+  if (cachedSecret) return cachedSecret;
+  const { data, error } = await svc.rpc("crm_sync_secret");
+  if (error || !data) return null;
+  cachedSecret = String(data);
+  return cachedSecret;
+}
+function safeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+// deno-lint-ignore no-explicit-any
+async function callHop(svc: any, hop: Record<string, unknown>): Promise<void> {
+  const secret = await getSyncSecret(svc);
+  if (!secret) throw new Error("Sync secret missing from Vault");
+  const res = await fetch(SELF_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-sync-secret": secret, Authorization: `Bearer ${ANON_KEY}`, apikey: ANON_KEY },
+    body: JSON.stringify({ chain: true, ...hop }),
+  });
+  if (!res.ok) throw new Error(`Next sync step failed to start: ${res.status} ${await res.text()}`);
+}
+
+// deno-lint-ignore no-explicit-any
+async function startRun(svc: any, trigger: "scheduled" | "manual", startedBy: string | null): Promise<{ runId: string; alreadyRunning: boolean }> {
+  const { data: running } = await svc.from("sync_runs").select("id, updated_at").eq("status", "running").order("started_at", { ascending: false }).limit(1);
+  const current = running?.[0];
+  if (current) {
+    if (Date.now() - new Date(current.updated_at).getTime() < RUN_STALE_MS) return { runId: current.id, alreadyRunning: true };
+    const now = new Date().toISOString();
+    await svc.from("sync_runs").update({ status: "error", error: "Stopped responding (no progress for 30 minutes)", finished_at: now, updated_at: now }).eq("id", current.id);
+  }
+  const startedAt = new Date().toISOString();
+  const { data, error } = await svc.from("sync_runs")
+    .insert({ trigger, started_by: startedBy, started_at: startedAt, updated_at: startedAt, status: "running", phase: "accounts", pages: 0, summary: {} })
+    .select("id").single();
+  if (error) throw new Error(`Could not start sync run: ${error.message}`);
+  EdgeRuntime.waitUntil(callHop(svc, { runId: data.id, phase: "accounts", cursor: null, syncStartedAt: startedAt, updatedBy: startedBy })
+    .catch((e) => failRun(svc, data.id, e)));
+  return { runId: data.id, alreadyRunning: false };
+}
+
+// deno-lint-ignore no-explicit-any
+async function failRun(svc: any, runId: string, err: unknown) {
+  const now = new Date().toISOString();
+  await svc.from("sync_runs").update({ status: "error", error: String((err as Error)?.message || err).slice(0, 2000), finished_at: now, updated_at: now }).eq("id", runId);
+}
+
+// Adds this page's numeric counters into the run summary, per phase.
+// deno-lint-ignore no-explicit-any
+function mergeSummary(summary: Record<string, any>, phase: Phase, result: Record<string, any>) {
+  const cur = summary[phase] || {};
+  for (const [k, v] of Object.entries(result)) {
+    if (typeof v === "number") cur[k] = (cur[k] || 0) + v;
+  }
+  if (result.filterLevel) cur.filterLevel = result.filterLevel;
+  summary[phase] = cur;
+  return summary;
+}
+
+// deno-lint-ignore no-explicit-any
+async function runHop(svc: any, hop: { runId: string; phase: Phase; cursor: string | null; syncStartedAt: string; updatedBy: string | null }) {
+  try {
+    const { data: run } = await svc.from("sync_runs").select("status, summary, pages").eq("id", hop.runId).single();
+    if (!run || run.status !== "running") return; // run was stopped or marked dead meanwhile
+    const result = await runPage(svc, hop.phase, hop.cursor, hop.syncStartedAt, hop.updatedBy);
+    const summary = mergeSummary(run.summary || {}, hop.phase, result);
+    const nextPhase = result.done ? NEXT_PHASE[hop.phase] : hop.phase;
+    const now = new Date().toISOString();
+    if (nextPhase) {
+      await svc.from("sync_runs").update({ summary, pages: (run.pages || 0) + 1, phase: nextPhase, updated_at: now }).eq("id", hop.runId);
+      await callHop(svc, { runId: hop.runId, phase: nextPhase, cursor: result.done ? null : result.nextCursor, syncStartedAt: hop.syncStartedAt, updatedBy: hop.updatedBy });
+    } else {
+      const { count } = await svc.from("crm_contacts").select("external_id", { count: "exact", head: true }).eq("blocks_pipeline_sync", true);
+      summary.blockingContacts = count ?? null;
+      await svc.from("sync_runs").update({ summary, pages: (run.pages || 0) + 1, phase: "done", status: "ok", finished_at: now, updated_at: now }).eq("id", hop.runId);
+    }
+  } catch (err) {
+    await failRun(svc, hop.runId, err);
+  }
+}
+
+Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+  try {
+    const svc = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+
+    // deno-lint-ignore no-explicit-any
+    let payload: any = {};
+    try {
+      payload = await req.json();
+    } catch {
+      // no body -> start accounts phase from the beginning
+    }
+
+    // Who's calling: the scheduler / a chained hop (shared secret, checked
+    // first -- their Authorization is just the public anon JWT the gateway
+    // needs), or a person (must hold a manager session).
+    const secretHeader = req.headers.get("x-sync-secret") || "";
+    let managerId: string | null = null;
+    let viaSecret = false;
+    if (secretHeader) {
+      const expected = await getSyncSecret(svc);
+      if (!expected || !safeEqual(secretHeader, expected)) return jsonResponse({ error: "Invalid sync secret" }, 401);
+      viaSecret = true;
+    } else {
+      const jwt = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+      if (!jwt) return jsonResponse({ error: "Missing Authorization header" }, 401);
+      const { data: userData, error: userErr } = await svc.auth.getUser(jwt);
+      if (userErr || !userData?.user) return jsonResponse({ error: "Invalid session" }, 401);
+      const { data: profile } = await svc.from("profiles").select("role").eq("id", userData.user.id).maybeSingle();
+      if (!profile || profile.role !== "manager") return jsonResponse({ error: "Manager role required" }, 403);
+      managerId = userData.user.id;
+    }
+
+    // Chained full runs.
+    if (payload.chain) {
+      if (payload.runId) {
+        if (!viaSecret) return jsonResponse({ error: "Sync steps can only be started by the sync itself" }, 403);
+        const phase: Phase = payload.phase === "contacts" ? "contacts" : payload.phase === "opportunities" ? "opportunities" : "accounts";
+        EdgeRuntime.waitUntil(runHop(svc, { runId: String(payload.runId), phase, cursor: payload.cursor || null, syncStartedAt: String(payload.syncStartedAt), updatedBy: payload.updatedBy || null }));
+        return jsonResponse({ accepted: true }, 202);
+      }
+      const run = await startRun(svc, viaSecret ? "scheduled" : "manual", managerId);
+      return jsonResponse(run, run.alreadyRunning ? 200 : 202);
+    }
+
+    // Classic one-page calls (browser-driven loops): managers only.
+    if (!managerId) return jsonResponse({ error: "Manager role required" }, 403);
+
+    if (payload.phase === "count") {
+      return jsonResponse(await getCounts());
+    }
+
+    const phase: Phase = payload.phase === "contacts" ? "contacts" : payload.phase === "opportunities" ? "opportunities" : "accounts";
+    const cursor = payload.cursor || null;
+    // The same value the caller sends on every page of one logical sync run
+    // (set once, before the first request) -- lets the final page tell "every
+    // active account/contact just re-confirmed by this run" from "hasn't been
+    // seen by any run since before this one started," i.e. deactivated in
+    // Dataverse since the last sync. Left undefined by an older/other caller,
+    // the sweep simply doesn't run rather than guessing -- never deactivating
+    // anything on a false assumption.
+    const syncStartedAt = payload.syncStartedAt || null;
+    return jsonResponse(await runPage(svc, phase, cursor, syncStartedAt, managerId));
   } catch (err) {
     return jsonResponse({ error: String((err as Error)?.message || err) }, 500);
   }

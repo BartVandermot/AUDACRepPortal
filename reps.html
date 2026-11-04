@@ -162,6 +162,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="/assets/audac-shell.js"></script>
+<script src="/assets/audac-sync.js"></script>
 <script>
   const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
@@ -476,26 +477,9 @@
     renderRepFirmAccounts();
   }
 
-  async function invokeCrmSync(body) {
-    const { data, error } = await client.functions.invoke('dataverse-sync', { body });
-    if (error || data?.error) {
-      // supabase-js hides the actual response body behind a generic message on non-2xx;
-      // the real error is in error.context (the raw Response), so unwrap it if present.
-      let detail = data?.error || error?.message || 'Unknown error';
-      if (error?.context && typeof error.context.json === 'function') {
-        try {
-          const respBody = await error.context.json();
-          if (respBody?.error) detail = respBody.error;
-        } catch (_) { /* keep generic message if body isn't JSON */ }
-      }
-      throw new Error(detail);
-    }
-    return data;
-  }
-
-  // Same accounts+contacts sync as the "Sync from CRM" button on Data Admin --
-  // offered here too since this page is where that data actually gets used
-  // (rep firm accounts and their people), not just where it lands.
+  // The same full server-side sync as Accounts & Contacts and the nightly job
+  // (accounts -> contacts -> opportunities, logged in sync_runs) -- offered here
+  // too since this page is where rep firm accounts and their people get used.
   async function runCrmSync() {
     const btn = document.getElementById('sync-crm-btn');
     const statusEl = document.getElementById('sync-status');
@@ -503,25 +487,9 @@
     statusEl.style.color = '';
     statusEl.textContent = '';
     try {
-      let cursor = null, accTotal = 0;
-      do {
-        btn.textContent = `Syncing accounts… (${accTotal} so far)`;
-        const res = await invokeCrmSync({ phase: 'accounts', cursor });
-        accTotal += res.processed;
-        cursor = res.nextCursor;
-      } while (cursor);
-
-      cursor = null;
-      let conTotal = 0;
-      do {
-        btn.textContent = `Syncing contacts… (${conTotal} so far)`;
-        const res = await invokeCrmSync({ phase: 'contacts', cursor });
-        conTotal += res.processed;
-        cursor = res.nextCursor;
-      } while (cursor);
-
-      statusEl.style.color = 'var(--green)';
-      statusEl.textContent = `Synced ${accTotal} account(s) and ${conTotal} contact(s) from CRM.`;
+      const run = await AudacSync.run(client, (r) => { btn.textContent = AudacSync.progressText(r); });
+      statusEl.style.color = run.status === 'ok' ? 'var(--green)' : 'var(--red)';
+      statusEl.textContent = AudacSync.describe(run);
       await loadAll();
     } catch (err) {
       statusEl.style.color = 'var(--red)';

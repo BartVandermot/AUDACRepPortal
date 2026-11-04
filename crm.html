@@ -251,6 +251,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="/assets/audac-shell.js"></script>
+<script src="/assets/audac-sync.js"></script>
 <script>
   const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
@@ -355,64 +356,19 @@
     return data;
   }
 
+  // Full sync = the same server-side run the nightly job does (accounts ->
+  // contacts -> opportunities, logged in sync_runs), not a browser-driven loop:
+  // it keeps going if this tab is closed, and the dashboard sees the result.
   async function runCrmSync() {
     const statusEl = document.getElementById('crm-sync-status');
     const btn = document.getElementById('sync-crm-btn');
     btn.disabled = true;
     statusEl.style.color = '';
     statusEl.textContent = '';
-
     try {
-      const filterNote = (level) => level === 'full' ? '' :
-        level === 'active_only' ? ' [country filter unavailable — active records only]' :
-        level === 'none' ? ' [WARNING: no server-side filter applied — pulled the full table]' : '';
-
-      // Sent unchanged on every page of a phase's run -- lets the final page
-      // tell "confirmed active by this run" from "not seen since before it
-      // started" (deactivated in Dataverse since the last sync) without any
-      // server-side state between these stateless invocations.
-      const accSyncStartedAt = new Date().toISOString();
-      let cursor = null;
-      let accTotal = 0, accMatchedByParent = 0, accMatchedByState = 0, accOutOfTerritory = 0, accNoState = 0, accPreservedOverrides = 0, accDeactivated = 0, accLevel = 'full';
-      let firstAccountsPage = true;
-      do {
-        btn.textContent = `Syncing accounts… (${accTotal} so far)`;
-        const res = await invokeCrmSync({ phase: 'accounts', cursor, syncStartedAt: accSyncStartedAt });
-        accTotal += res.processed;
-        accMatchedByParent += res.matchedByParent || 0;
-        accMatchedByState += res.matchedByState || 0;
-        accOutOfTerritory += res.outOfTerritory;
-        accNoState += res.noState;
-        accPreservedOverrides += res.preservedOverrides || 0;
-        accDeactivated += res.deactivated || 0;
-        if (firstAccountsPage) { accLevel = res.filterLevel || 'full'; firstAccountsPage = false; }
-        cursor = res.nextCursor;
-      } while (cursor);
-
-      const conSyncStartedAt = new Date().toISOString();
-      cursor = null;
-      let conTotal = 0, conMatched = 0, conPreservedOverrides = 0, conDeactivated = 0, conLevel = 'full';
-      let firstContactsPage = true;
-      do {
-        btn.textContent = `Syncing contacts… (${conTotal} so far)`;
-        const res = await invokeCrmSync({ phase: 'contacts', cursor, syncStartedAt: conSyncStartedAt });
-        conTotal += res.processed;
-        conMatched += res.matchedToFirm;
-        conPreservedOverrides += res.preservedOverrides || 0;
-        conDeactivated += res.deactivated || 0;
-        if (firstContactsPage) { conLevel = res.filterLevel || 'full'; firstContactsPage = false; }
-        cursor = res.nextCursor;
-      } while (cursor);
-
-      const accMatched = accMatchedByParent + accMatchedByState;
-      statusEl.style.color = (accLevel === 'none' || conLevel === 'none') ? 'var(--red)' : accMatched ? 'var(--green)' : 'var(--amber)';
-      statusEl.textContent =
-        `Synced ${accTotal} account(s)${filterNote(accLevel)} — ${accMatched} matched to a rep firm ` +
-        `(${accMatchedByParent} via parent/own account, ${accMatchedByState} via state, ${accPreservedOverrides} kept as manually corrected), ` +
-        `${accOutOfTerritory} outside configured territories, ${accNoState} missing/unrecognized state, ${accDeactivated} no longer active in CRM. ` +
-        `Synced ${conTotal} contact(s)${filterNote(conLevel)} — ${conMatched} have a rep firm ` +
-        `(${conPreservedOverrides} kept as manually corrected, the rest inherited from their account), ${conDeactivated} no longer active in CRM.`;
-
+      const run = await AudacSync.run(client, (r) => { btn.textContent = AudacSync.progressText(r); });
+      statusEl.style.color = run.status === 'ok' ? 'var(--green)' : 'var(--red)';
+      statusEl.textContent = AudacSync.describe(run);
       await loadAll();
     } catch (err) {
       statusEl.style.color = 'var(--red)';
@@ -1070,7 +1026,15 @@
     const latestTimestamp = [...accountsCache, ...allContactsCache]
       .map(r => r.updated_at).filter(Boolean).sort().pop();
     const agoText = timeAgo(latestTimestamp);
-    document.getElementById('last-updated-note').textContent = agoText ? `Data last updated ${agoText}` : '';
+    // The real last full sync (sync_runs), not the newest edit on any row.
+    AudacSync.latest(client, 1).then(([run]) => {
+      const note = document.getElementById('last-updated-note');
+      if (!run) { note.textContent = agoText ? `Data last updated ${agoText}` : ''; return; }
+      const when = AudacSync.ago(run.finished_at || run.started_at);
+      note.textContent = run.status === 'error' ? `Last sync failed ${when}: ${run.error || ''}`
+        : run.status === 'running' ? 'A sync is running now…'
+        : `Last full sync ${when} (${run.trigger === 'scheduled' ? 'nightly' : 'manual'}) · runs ${AudacSync.NIGHTLY_LABEL}`;
+    });
 
     const updatedByIds = [...new Set([...accountsCache, ...allContactsCache].map(r => r.updated_by).filter(Boolean))];
     if (updatedByIds.length) {
