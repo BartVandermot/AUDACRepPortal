@@ -225,6 +225,41 @@ table.detail td { color: var(--color-text-primary); }
 .bottom-nav { display: none; }
 .mobile-only { display: none !important; }
 
+/* ---------- Sidebar head + collapsible icon rail (desktop) ---------- */
+.sidebar-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: 0 var(--space-1) var(--space-5) var(--space-3); }
+.sidebar-head .brand { padding: 0; }
+.nav-toggle {
+  width: 36px; height: 36px; flex: none; display: grid; place-items: center; cursor: pointer;
+  background: transparent; border: 1px solid transparent; border-radius: 10px; color: var(--color-text-muted);
+}
+.nav-toggle:hover { color: var(--color-text-primary); background: rgba(255,255,255,0.05); border-color: var(--color-border); }
+.nav-toggle svg { width: 20px; height: 20px; }
+.nav-item .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html.nav-collapsed { --sidebar-w: 72px; }
+html.nav-collapsed .sidebar { padding-left: var(--space-2); padding-right: var(--space-2); }
+html.nav-collapsed .sidebar-head { flex-direction: column; padding: 0 0 var(--space-4); }
+html.nav-collapsed .sidebar-head .brand span, html.nav-collapsed .nav-section, html.nav-collapsed .nav-item .label,
+html.nav-collapsed .profile .who { display: none; }
+html.nav-collapsed .sidebar-head .brand { display: none; }
+html.nav-collapsed .nav-item { justify-content: center; padding: 0; }
+html.nav-collapsed .profile { flex-direction: column; padding: var(--space-2); gap: var(--space-2); }
+
+/* ---------- Pointer devices (laptop/desktop): denser shell ---------- */
+@media (pointer: fine) and (min-width: 761px) {
+  :root { --sidebar-w: 224px; }
+  html.nav-collapsed { --sidebar-w: 68px; }
+  .sidebar { padding-top: var(--space-5); padding-bottom: var(--space-4); }
+  .sidebar .brand b { font-size: 16px; letter-spacing: 3px; }
+  .nav-item { min-height: 38px; font-size: 14px; gap: 10px; }
+  .nav-item svg { width: 18px; height: 18px; }
+  .profile { padding: var(--space-2); gap: var(--space-2); }
+  .profile .avatar { width: 32px; height: 32px; font-size: 12px; }
+  .profile b { font-size: 13px; line-height: 18px; }
+  .topbar { padding: var(--space-4) var(--space-6) 0; }
+  .topbar h1 { font-size: 22px; line-height: 28px; }
+  .page { padding: var(--space-4) var(--space-6) var(--space-8); }
+}
+
 @media (max-width: 760px) {
   .app-shell { grid-template-columns: 1fr; }
   .sidebar { display: none; }

@@ -24,6 +24,8 @@
     down: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m6 9 6 6 6-6"/>',
     check: '<path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="m5 12.5 4.5 4.5L19 7.5"/>',
     lock: '<path fill="none" stroke="currentColor" stroke-width="1.8" d="M7 11V8a5 5 0 0 1 10 0v3M5.5 11h13v9h-13z"/>',
+    collapse: '<path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M4 4h16v16H4zM9 4v16M15.5 9.5 13 12l2.5 2.5"/>',
+    expand: '<path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M4 4h16v16H4zM9 4v16M13 9.5l2.5 2.5-2.5 2.5"/>',
     spark: '<path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M12 3v4M12 17v4M3 12h4M17 12h4"/>',
   };
   const icon = (name, attrs = '') => `<svg viewBox="0 0 24 24" aria-hidden="true" ${attrs}>${ICONS[name] || ''}</svg>`;
@@ -69,15 +71,36 @@
   let user = null;
   let section = '';
 
+  // Collapsible sidebar (icon rail), like the AUDAC Touch 2 menu. The choice
+  // is remembered per browser; with no choice yet, narrower laptop screens
+  // start collapsed so the working area gets the room.
+  const COLLAPSE_KEY = 'audac_nav_collapsed';
+  let collapsed = (() => {
+    try { const v = localStorage.getItem(COLLAPSE_KEY); if (v !== null) return v === '1'; } catch { /* storage blocked */ }
+    return window.innerWidth < 1440;
+  })();
+  function applyCollapsed() { document.documentElement.classList.toggle('nav-collapsed', collapsed); }
+  applyCollapsed();
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#app-nav-toggle')) return;
+    collapsed = !collapsed;
+    try { localStorage.setItem(COLLAPSE_KEY, collapsed ? '1' : '0'); } catch { /* ignore */ }
+    applyCollapsed();
+    render();
+  });
+
   function render() {
     const nav = NAVS[navKey] || NAVS.rep;
     const items = [...nav.items, ...extraItems];
     const side = document.getElementById('app-sidebar');
     if (side) {
       side.innerHTML = `
-        <a class="brand" href="${nav.home}"><b>AUDAC</b><span>${esc(nav.label)}</span></a>
+        <div class="sidebar-head">
+          <a class="brand" href="${nav.home}"><b>AUDAC</b><span>${esc(nav.label)}</span></a>
+          <button type="button" class="nav-toggle" id="app-nav-toggle" aria-label="${collapsed ? 'Expand menu' : 'Collapse menu'}" title="${collapsed ? 'Expand menu' : 'Collapse menu'}" aria-expanded="${!collapsed}">${icon(collapsed ? 'expand' : 'collapse')}</button>
+        </div>
         <div class="nav-section" id="app-nav-section"></div>
-        ${items.map(n => `<a class="nav-item" href="${n.href}"${n.key === active ? ' aria-current="page"' : ''}>${icon(n.icon)}${esc(n.label)}</a>`).join('')}
+        ${items.map(n => `<a class="nav-item" href="${n.href}" title="${esc(n.label)}"${n.key === active ? ' aria-current="page"' : ''}>${icon(n.icon)}<span class="label">${esc(n.label)}</span></a>`).join('')}
         <div class="grow"></div>
         <div class="profile" id="app-profile" hidden>
           <span class="avatar" id="app-avatar"></span>

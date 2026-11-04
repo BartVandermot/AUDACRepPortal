@@ -155,3 +155,41 @@ tr.activity-edit-row textarea { font-size: 14px; }
 .legend-item:hover { color: var(--color-text-primary); }
 .map-legend .legend-swatch.conflict-demo { background: repeating-linear-gradient(45deg, var(--color-danger), var(--color-danger) 4px, var(--color-bg) 4px, var(--color-bg) 8px); }
 .map-legend .legend-swatch.split-demo { background: linear-gradient(to right, #8b8c90 50%, #4a4b4f 50%); }
+
+/* 11. Laptop/desktop density for the manager & executive pages.
+   These are data-heavy working pages used with a mouse: more rows on screen,
+   less scrolling. Phones/touch keep the roomier sizes above. */
+@media (pointer: fine) and (min-width: 761px) {
+  body { font-size: 14px; line-height: 20px; }
+  main.page { max-width: none; padding: var(--space-4) var(--space-6) var(--space-8); }
+  h2.section-title { font-size: 15px; line-height: 20px; margin: var(--space-6) 0 var(--space-3); padding-top: var(--space-4); }
+  .upload-hint, .result-count, .empty-note { font-size: 13px; line-height: 19px; max-width: 980px; }
+  .upload-hint { margin-bottom: var(--space-3); }
+
+  table.detail, table.scorecard, table.crm-table, table.rep-table, table.territory-table, table.split-table { font-size: 13px; line-height: 18px; }
+  table.detail th, table.scorecard th, table.crm-table th, table.rep-table th, table.territory-table th, table.split-table th { padding: 8px 12px; font-size: 11px; }
+  table.detail td, table.scorecard td, table.crm-table td, table.rep-table td, table.territory-table td, table.split-table td { padding: 6px 12px; }
+
+  button.audac-btn, button.audac-btn-outline { min-height: 36px; padding: 0 var(--space-3); font-size: 13px; border-radius: 10px; }
+  table button.audac-btn, table button.audac-btn-outline { min-height: 30px; padding: 0 10px; font-size: 12.5px; }
+  .link-btn { font-size: 12.5px; }
+
+  table input, table select, .edit-grid input, .edit-grid select, .bulk-bar select, .mapping-grid select,
+  select.firm-assign, select.merge-target-select, select.mapping-firm-select, select.crm-contact-login-assign,
+  input.territory-input, input.link-account-input, .split-form input, .split-form select, .toolbar input, .toolbar select {
+    min-height: 32px; padding-top: 5px; padding-bottom: 5px; font-size: 13px; border-radius: 8px;
+  }
+  input[type="month"], input[type="date"] { min-height: 36px; padding-top: 6px; padding-bottom: 6px; font-size: 13px; }
+  .toolbar { margin-bottom: var(--space-3); gap: var(--space-3); }
+  label { font-size: 13px; line-height: 18px; margin-bottom: 4px; }
+
+  .kpi-row { gap: var(--space-3); margin-bottom: var(--space-4); }
+  .kpi-tile { padding: 10px 14px; }
+  .kpi-tile .kpi-value { font-size: 20px; line-height: 26px; }
+  .kpi-grid { gap: var(--space-3); }
+  .alert-row { padding: 8px 12px; font-size: 13px; }
+  #drilldown, #split-panel, #states-panel { padding: var(--space-4) var(--space-5); }
+  .tab-bar { margin-bottom: var(--space-4); }
+  .tab-btn { padding: 8px 12px; font-size: 13px; }
+  .rag-badge, .status-badge, .badge-parent { font-size: 10.5px; padding: 2px 9px; }
+}
