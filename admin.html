@@ -487,6 +487,17 @@
   function currentMonthValue() {
     return new Date().toISOString().slice(0, 7);
   }
+  // Same rule as the dashboard: the month under review is the one that just
+  // ended, until every active firm's review for it is finalized -- then the
+  // running month takes over.
+  async function reviewMonth() {
+    const cur = currentMonthValue();
+    const [y, m] = cur.split('-').map(Number);
+    const prev = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`;
+    const { data } = await client.from('monthly_reviews').select('rep_firm_id').eq('reporting_month', prev).eq('is_finalized', true);
+    const done = new Set((data || []).map(r => r.rep_firm_id));
+    return firmsCache.length && firmsCache.every(f => done.has(f.id)) ? cur : prev;
+  }
   function todayISO() {
     return new Date().toISOString().slice(0, 10);
   }
@@ -2516,8 +2527,8 @@
     AudacSync.showAlert(client);
     currentUser = g.user;
     document.getElementById('user-email').textContent = g.profile.email;
-    importMonthInput.value = currentMonthValue();
     await loadFirms();
+    importMonthInput.value = new URLSearchParams(location.search).get('month') || await reviewMonth();
     wireUploadInputs();
     populateActivitySearchFilters();
     populateAuditSearchFilters();

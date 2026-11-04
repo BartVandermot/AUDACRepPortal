@@ -1445,15 +1445,15 @@
       { state: doneAfter(ops.lastCrmSync, m) || (running && ops.lastCrmSync && (Date.now() - new Date(ops.lastCrmSync)) < 7 * 86400000) ? 'ok' : 'todo',
         main: '<b>Sync the CRM</b>', sub: `Last sync ${agoText(ops.lastCrmSync)} · runs ${AudacSync.NIGHTLY_LABEL}.`, syncButton: true, action: 'Sync now' },
       { state: doneAfter(ops.lastPipeSync, m) ? 'ok' : 'todo',
-        main: '<b>Sync opportunities</b>', sub: `Part of the same sync · last ${agoText(ops.lastPipeSync)} · ${plural(newOpps, 'new opportunity', 'new opportunities')} in ${monthLabel(m)}.`, href: '/admin#pipeline', action: 'Details' },
+        main: '<b>Sync opportunities</b>', sub: `Part of the same sync · last ${agoText(ops.lastPipeSync)} · ${plural(newOpps, 'new opportunity', 'new opportunities')} in ${monthLabel(m)}.`, href: `/admin?month=${m}#pipeline`, action: 'Details' },
       { state: doneAfter(ops.lastEduImport, m) ? 'ok' : 'todo',
-        main: '<b>Import education</b>', sub: `Last import ${agoText(ops.lastEduImport)} · ${plural(certs, 'certificate')} in ${monthLabel(m)}.`, href: '/admin#education', action: 'Import' },
+        main: '<b>Import education</b>', sub: `Last import ${agoText(ops.lastEduImport)} · ${plural(certs, 'certificate')} in ${monthLabel(m)}.`, href: `/admin?month=${m}#education`, action: 'Import' },
       ops.selloutInUse
-        ? { state: sellFirms ? 'ok' : 'todo', main: '<b>Import sell-out</b>', sub: sellFirms ? `${plural(sellFirms, 'firm')} with sell-out in ${monthLabel(m)}.` : `No sell-out imported for ${monthLabel(m)} yet.`, href: '/admin#sellout', action: 'Import' }
-        : { state: 'off', main: '<b>Import sell-out</b> <span class="chip">Not in use yet</span>', sub: 'Monthly AVL sell-out. Optional until it’s part of the process.', href: '/admin#sellout', action: 'Open' },
+        ? { state: sellFirms ? 'ok' : 'todo', main: '<b>Import sell-out</b>', sub: sellFirms ? `${plural(sellFirms, 'firm')} with sell-out in ${monthLabel(m)}.` : `No sell-out imported for ${monthLabel(m)} yet.`, href: `/admin?month=${m}#sellout`, action: 'Import' }
+        : { state: 'off', main: '<b>Import sell-out</b> <span class="chip">Not in use yet</span>', sub: 'Monthly AVL sell-out. Optional until it’s part of the process.', href: `/admin?month=${m}#sellout`, action: 'Open' },
       { state: silent.length ? 'todo' : 'ok',
         main: `<b>Rep activity</b>: ${plural(acts, 'activity', 'activities')} from ${withActivity.length} of ${total} firms`,
-        sub: silent.length ? `Nothing logged by ${firmLinks(silent)}${running ? '' : '. Remind them before you finalize'}.${remindButtonHtml(silent)}` : 'Every firm logged activity.', href: '/admin#activities', action: 'Search' },
+        sub: silent.length ? `Nothing logged by ${firmLinks(silent)}${running ? '' : '. Remind them before you finalize'}.${remindButtonHtml(silent)}` : 'Every firm logged activity.', href: `/admin?month=${m}#activities`, action: 'Search' },
       running
         ? { state: 'off', main: '<b>Review &amp; finalize</b>', sub: `${monthLabel(m)} is still running. The review is on the 1st.`, href: '', action: '' }
         : { state: finalized === total && total ? 'ok' : 'todo',
