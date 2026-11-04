@@ -587,7 +587,7 @@
     if (!candidates.length) return mergeSearchHtml('account', a.external_id);
     const opts = ['<option value="">Possible match — merge into…</option>']
       .concat(candidates.map(c => `<option value="${c.external_id}">${escapeHtml(c.name)}${c.city ? ` (${escapeHtml(c.city)}${c.state_code ? ', ' + escapeHtml(c.state_code) : ''})` : ''}</option>`)).join('');
-    return `<div class="merge-row"><select class="merge-target-select" data-merge-type="account" data-manual="${a.external_id}">${opts}</select><button type="button" class="merge-btn" data-merge-type="account" data-manual="${a.external_id}" disabled>Merge</button></div>`;
+    return `<div class="merge-row"><select class="merge-target-select" data-merge-type="account" data-manual="${a.external_id}">${opts}</select><button type="button" class="merge-btn" data-merge-type="account" data-manual="${a.external_id}" disabled>Merge</button>${deleteManualBtn('account', a.external_id)}</div>`;
   }
 
   // Search-to-merge: a datalist of every CRM-synced record of that type.
@@ -605,7 +605,7 @@
     dl.innerHTML = html(con);
   }
   function mergeSearchHtml(type, manualId) {
-    return `<div class="merge-row"><input type="text" class="merge-search" list="merge-${type}s-list" data-merge-type="${type}" data-manual="${manualId}" placeholder="Find its Dynamics record…" aria-label="Find the Dynamics ${type} to merge into"><button type="button" class="merge-btn" data-merge-type="${type}" data-manual="${manualId}" disabled>Merge</button></div>`;
+    return `<div class="merge-row"><input type="text" class="merge-search" list="merge-${type}s-list" data-merge-type="${type}" data-manual="${manualId}" placeholder="Find its Dynamics record…" aria-label="Find the Dynamics ${type} to merge into"><button type="button" class="merge-btn" data-merge-type="${type}" data-manual="${manualId}" disabled>Merge</button>${deleteManualBtn(type, manualId)}</div>`;
   }
 
   function wireMergeControls(container, type) {
@@ -629,6 +629,36 @@
         if (target) mergeManualRecord(type, btn.dataset.manual, target);
       });
     });
+    container.querySelectorAll(`button[data-delete-manual="${type}"]`).forEach(btn => {
+      btn.addEventListener('click', () => deleteManualRecord(type, btn.dataset.manual));
+    });
+  }
+
+  // Test records and typos a rep added by hand never need to reach Dynamics.
+  // Only for manual rows; the database itself refuses while logged activity,
+  // pipeline or a portal login still points at the record (foreign keys), so a
+  // real customer can't be lost this way -- merge those instead.
+  function deleteManualBtn(type, id) {
+    return `<button type="button" class="link-btn danger" data-delete-manual="${type}" data-manual="${id}" title="Delete this manually added ${type} (test records, typos)">Delete</button>`;
+  }
+
+  async function deleteManualRecord(type, externalId) {
+    const rec = type === 'account' ? accountsCache.find(a => a.external_id === externalId) : allContactsCache.find(c => c.external_id === externalId);
+    if (!rec || rec.source !== 'manual') return;
+    const name = type === 'account' ? rec.name : (rec.full_name || rec.email || 'this contact');
+    if (type === 'account') {
+      const kids = allContactsCache.filter(c => c.parent_account_external_id === externalId);
+      if (kids.length) { alert(`"${name}" still has ${kids.length} contact${kids.length === 1 ? '' : 's'} under it. Delete or merge ${kids.length === 1 ? 'that contact' : 'those contacts'} first.`); return; }
+    }
+    if (!confirm(`Delete the manually added ${type} "${name}"? Use this for test records and typos only. This can't be undone.`)) return;
+    const table = type === 'account' ? 'crm_accounts' : 'crm_contacts';
+    const { error } = await client.from(table).delete().eq('external_id', externalId).eq('source', 'manual');
+    if (error) {
+      const inUse = error.code === '23503' || /foreign key/i.test(error.message);
+      alert(inUse ? `"${name}" is used by logged activity, pipeline or a portal login, so it can't be deleted. If it's a real ${type}, merge it into its Dynamics record instead.` : `Could not delete: ${error.message}`);
+      return;
+    }
+    await loadAll();
   }
 
   // Re-points everything that referenced the manual row onto the real one and
@@ -766,7 +796,7 @@
     if (!candidates.length) return mergeSearchHtml('contact', c.external_id);
     const opts = ['<option value="">Possible match — merge into…</option>']
       .concat(candidates.map(cc => `<option value="${cc.external_id}">${escapeHtml(cc.full_name || cc.email || '(no name)')}</option>`)).join('');
-    return `<div class="merge-row"><select class="merge-target-select" data-merge-type="contact" data-manual="${c.external_id}">${opts}</select><button type="button" class="merge-btn" data-merge-type="contact" data-manual="${c.external_id}" disabled>Merge</button></div>`;
+    return `<div class="merge-row"><select class="merge-target-select" data-merge-type="contact" data-manual="${c.external_id}">${opts}</select><button type="button" class="merge-btn" data-merge-type="contact" data-manual="${c.external_id}" disabled>Merge</button>${deleteManualBtn('contact', c.external_id)}</div>`;
   }
 
   function wireContactFirmSelects(container) {
