@@ -196,9 +196,11 @@ table.detail td { color: var(--color-text-primary); }
   display: flex; flex-direction: column; gap: var(--space-1);
   border-width: 0 1px 0 0; border-radius: 0; box-shadow: none;
 }
-.sidebar .brand { display: flex; align-items: baseline; gap: var(--space-2); padding: 0 var(--space-3) var(--space-6); text-decoration: none; color: var(--color-text-primary); }
+.sidebar .brand { display: flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-3) var(--space-6); text-decoration: none; color: var(--color-text-primary); }
 .sidebar .brand b { font-size: 18px; letter-spacing: 4px; font-weight: 700; }
 .sidebar .brand span { font-size: 12px; line-height: 16px; color: var(--color-text-muted); }
+/* The AUDAC logo is black on transparent: inverted to white on the dark canvas. */
+.brand-logo { display: block; width: auto; height: 40px; filter: invert(1); }
 .nav-section { font-size: 12px; line-height: 16px; color: var(--color-text-muted); padding: var(--space-3) var(--space-3) var(--space-2); }
 .nav-item {
   display: flex; align-items: center; gap: var(--space-3); min-height: 44px; padding: 0 var(--space-3);
@@ -240,7 +242,7 @@ html.nav-collapsed .sidebar { padding-left: var(--space-2); padding-right: var(-
 html.nav-collapsed .sidebar-head { flex-direction: column; padding: 0 0 var(--space-4); }
 html.nav-collapsed .sidebar-head .brand span, html.nav-collapsed .nav-section, html.nav-collapsed .nav-item .label,
 html.nav-collapsed .profile .who { display: none; }
-html.nav-collapsed .sidebar-head .brand { display: none; }
+html.nav-collapsed .sidebar-head .brand .brand-logo { height: 32px; }
 html.nav-collapsed .nav-item { justify-content: center; padding: 0; }
 html.nav-collapsed .profile { flex-direction: column; padding: var(--space-2); gap: var(--space-2); }
 

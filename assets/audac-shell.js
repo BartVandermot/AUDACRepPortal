@@ -96,7 +96,7 @@
     if (side) {
       side.innerHTML = `
         <div class="sidebar-head">
-          <a class="brand" href="${nav.home}"><b>AUDAC</b><span>${esc(nav.label)}</span></a>
+          <a class="brand" href="${nav.home}" title="AUDAC ${esc(nav.label)}"><img class="brand-logo" src="/assets/audac-logo.webp" alt="AUDAC" width="37" height="40"><span>${esc(nav.label)}</span></a>
           <button type="button" class="nav-toggle" id="app-nav-toggle" aria-label="${collapsed ? 'Expand menu' : 'Collapse menu'}" title="${collapsed ? 'Expand menu' : 'Collapse menu'}" aria-expanded="${!collapsed}">${icon(collapsed ? 'expand' : 'collapse')}</button>
         </div>
         <div class="nav-section" id="app-nav-section"></div>
