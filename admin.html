@@ -299,8 +299,8 @@
     <div class="upload-hint">Reps report a won, lost or moved deal on their My territory page. Change the deal in Dynamics, then mark the update as processed. The next sync brings the change into the portal.</div>
     <div id="deal-updates"></div>
 
-    <div class="dd-sub-title" style="margin-top:22px;" id="lead-followups-title">Leads that turned into business</div>
-    <div class="upload-hint">A rep reported a quote or a win on a lead AUDAC forwarded. Create (or qualify it into) an opportunity in Dynamics, then mark it processed. All other follow-ups are on <a href="/reps#leads">Reps, Lead follow-up</a>.</div>
+    <div class="dd-sub-title" style="margin-top:22px;" id="lead-followups-title">Lead follow-ups from reps</div>
+    <div class="upload-hint">A rep reported on a lead that is still “Forwarded” in Dynamics. Made contact: qualify the lead in Dynamics (convert it to an account and contact). Not interested: disqualify it. The next sync takes it off this list; Mark processed does that right away. Rates per firm are on <a href="/reps#leads">Reps, Lead follow-up</a>.</div>
     <div id="lead-followups"></div>
 
     <div class="dd-sub-title" style="margin-top:22px;">Synced Opportunities</div>
@@ -1389,28 +1389,36 @@
     }));
   }
 
-  // ---------- Lead follow-ups that need an opportunity in Dynamics ----------
+  // ---------- Lead follow-ups to process in Dynamics ----------
+  // Only follow-ups on leads still "Forwarded" in Dynamics: once the lead is
+  // qualified or disqualified there, it drops off by itself after the sync.
+  const LEAD_OUTCOMES = { contacted: 'Contacted', meeting: 'Meeting or demo planned', project: 'Project or quote', not_relevant: 'Not interested / not relevant' };
   async function loadLeadFollowups() {
     const box = document.getElementById('lead-followups');
-    const { data, error } = await client.from('lead_followups').select('id, lead_external_id, rep_firm_id, outcome, note, created_at, submitted_by_name, crm_leads(full_name, company, city, state_code)').in('outcome', ['quoted', 'won']).is('handled_at', null).order('created_at');
+    const { data, error } = await client.from('lead_followups')
+      .select('id, lead_external_id, rep_firm_id, outcome, note, created_at, submitted_by_name, crm_leads!inner(full_name, company, city, state_code, crm_status_reason)')
+      .eq('crm_leads.crm_status_reason', 'Forwarded').is('handled_at', null).order('created_at', { ascending: false });
     if (error) { box.innerHTML = `<div class="empty-note">Could not load lead follow-ups: ${escapeHtml(error.message)}</div>`; return; }
-    const rows = data || [];
-    if (!rows.length) { box.innerHTML = '<div class="empty-note">No quoted or won leads waiting.</div>'; return; }
+    const latest = new Map();
+    (data || []).forEach(u => { if (!latest.has(u.lead_external_id)) latest.set(u.lead_external_id, u); }); // newest per lead
+    const rows = [...latest.values()];
+    if (!rows.length) { box.innerHTML = '<div class="empty-note">No lead follow-ups waiting.</div>'; return; }
     const firmName = (id) => firmsCache.find(f => f.id === id)?.name || '';
     box.innerHTML = `<div style="overflow-x:auto;"><table class="detail"><thead><tr>
-        <th>Reported</th><th>Firm</th><th>Lead</th><th>Outcome</th><th>Note</th><th>From</th><th></th>
+        <th>Reported</th><th>Firm</th><th>Lead</th><th>Outcome</th><th>Note</th><th>To do in Dynamics</th><th></th>
       </tr></thead><tbody>${rows.map(u => { const l = u.crm_leads || {}; return `<tr>
         <td>${new Date(u.created_at).toLocaleDateString()}</td>
         <td>${escapeHtml(firmName(u.rep_firm_id))}</td>
         <td>${escapeHtml([l.company, l.full_name].filter(Boolean).join(' · '))}<div class="muted" style="font-size:12px;">${escapeHtml([l.city, l.state_code].filter(Boolean).join(', '))}</div></td>
-        <td><span class="status-badge ${u.outcome === 'won' ? 'won' : 'open'}">${u.outcome === 'won' ? 'Won' : 'Quote sent'}</span></td>
+        <td><span class="status-badge ${u.outcome === 'project' ? 'won' : u.outcome === 'not_relevant' ? 'lost' : 'open'}">${escapeHtml(LEAD_OUTCOMES[u.outcome] || u.outcome)}</span><div class="muted" style="font-size:12px;">${escapeHtml(u.submitted_by_name || '')}</div></td>
         <td>${escapeHtml(u.note || '')}</td>
-        <td>${escapeHtml(u.submitted_by_name || '')}</td>
-        <td><button type="button" class="link-btn" data-handle-lead="${u.id}">Mark processed</button></td>
+        <td>${u.outcome === 'not_relevant' ? 'Disqualify the lead' : 'Qualify: account + contact' + (u.outcome === 'project' ? ', plus an opportunity' : '')}</td>
+        <td><button type="button" class="link-btn" data-handle-lead="${escapeHtml(u.lead_external_id)}">Mark processed</button></td>
       </tr>`; }).join('')}</tbody></table></div>`;
     box.querySelectorAll('[data-handle-lead]').forEach(btn => btn.addEventListener('click', async () => {
       btn.disabled = true;
-      const { error: e2 } = await client.from('lead_followups').update({ handled_at: new Date().toISOString(), handled_by: currentUser.id }).eq('id', btn.dataset.handleLead);
+      const { error: e2 } = await client.from('lead_followups').update({ handled_at: new Date().toISOString(), handled_by: currentUser.id })
+        .eq('lead_external_id', btn.dataset.handleLead).is('handled_at', null);
       if (e2) { alert('Could not update: ' + e2.message); btn.disabled = false; return; }
       loadLeadFollowups();
     }));

@@ -1454,7 +1454,7 @@
       client.from('data_import_batches').select('created_at').eq('source', 'education').is('undone_at', null).order('created_at', { ascending: false }).limit(1),
       client.from('deal_status_updates').select('id', { count: 'exact', head: true }).is('handled_at', null),
       client.rpc('get_rep_usage'),
-      client.from('lead_followups').select('id', { count: 'exact', head: true }).in('outcome', ['quoted', 'won']).is('handled_at', null),
+      client.from('lead_followups').select('lead_external_id, crm_leads!inner(crm_status_reason)').eq('crm_leads.crm_status_reason', 'Forwarded').is('handled_at', null),
     ]);
     const usageRows = (usage.data || []).filter(u => u.is_active !== false);
     const firmsWithReps = new Set(usageRows.map(u => u.rep_firm_id).filter(Boolean));
@@ -1499,7 +1499,7 @@
       lastEduImport: maxIso(lastEduBatch.data?.[0]?.created_at, lastEdu.data?.[0]?.uploaded_at),
       selloutInUse: (sellAny.count || 0) > 0,
       dealUpdates: dealUpdates.count || 0,
-      leadWins: leadWins.count || 0,
+      leadWins: new Set((leadWins.data || []).map(f => f.lead_external_id)).size,
       firmsNoReps: firmsCache.filter(f => !firmsWithReps.has(f.id)).length,
       firmsQuiet: firmsCache.filter(f => firmsWithReps.has(f.id) && !((lastActByFirm.get(f.id) || '') >= quietCutoff)).length,
       repEmailsByFirm: repRows.reduce((m, r) => { if (r.rep_firm_id && r.email) (m[r.rep_firm_id] ||= []).push(r.email); return m; }, {}),
@@ -1555,8 +1555,8 @@
       href: '/admin#pipeline', action: 'Process',
     });
     if (ops.leadWins) items.push({
-      state: 'todo', main: `<b class="ops-count">${plural(ops.leadWins, 'lead')}</b> reported quoted or won by reps`,
-      sub: 'Leads AUDAC forwarded that turned into business. Create the opportunity in Dynamics, then mark them processed.',
+      state: 'todo', main: `<b class="ops-count">${plural(ops.leadWins, 'lead')}</b> followed up by reps, to process in Dynamics`,
+      sub: 'Made contact: qualify the lead (account + contact). Not interested: disqualify it. The next sync takes them off the list.',
       href: '/admin#pipeline', action: 'Process',
     });
     if (ops.firmsQuiet) items.push({

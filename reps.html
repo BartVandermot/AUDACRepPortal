@@ -107,10 +107,10 @@
     </div>
 
     <h2 class="section-title" id="leads">Lead follow-up</h2>
-    <p class="upload-hint">Leads AUDAC forwarded to each firm in the last 6 months (status “Forwarded” in Dynamics), and how many the firm reported back on via My territory. Lowest follow-up rate first.</p>
+    <p class="upload-hint">Leads actually handed to each firm: forwarded with the firm as Parent Account in Dynamics, or trade-show visitors from its territory. Web enquiries that went to AVL Media Group are not counted. A lead counts as followed up once the rep reported on it in My territory, or once it is Qualified in Dynamics. Lowest follow-up rate first.</p>
     <div style="overflow-x:auto;">
       <table class="rep-table">
-        <thead><tr><th>Rep Firm</th><th>Forwarded (6 months)</th><th>Followed up</th><th>Rate</th><th>Quote sent</th><th>Won</th><th>Oldest waiting</th></tr></thead>
+        <thead><tr><th>Rep Firm</th><th>Leads handed over</th><th>Followed up</th><th>Rate</th><th>Meeting or demo</th><th>Project or quote</th><th>Oldest waiting</th></tr></thead>
         <tbody id="leads-body"><tr><td colspan="7" class="empty-note">Loading…</td></tr></tbody>
       </table>
     </div>
@@ -593,37 +593,40 @@ They can no longer log or import activities. Everything they logged stays, under
   }
 
   // ---------- Lead follow-up per firm ----------
-  const LEAD_OUTCOMES = { contacted: 'Contacted', quoted: 'Quote sent', won: 'Won', lost: 'Lost', not_relevant: 'Not relevant' };
+  // route comes from the database (crm_lead_route): rep = forwarded to the firm,
+  // trade_show = booth visitor of its territory; info/support/junk are not the rep's.
+  const LEAD_OUTCOMES = { contacted: 'Contacted', meeting: 'Meeting or demo planned', project: 'Project or quote', not_relevant: 'Not interested / not relevant' };
   async function loadLeadFollowup() {
     const body = document.getElementById('leads-body');
-    const since = new Date(Date.now() - 183 * 86400000).toISOString();
     const [leadsRes, fuRes] = await Promise.all([
-      AudacData.all(client.from('crm_leads').select('external_id, rep_firm_id, created_on, full_name, company').eq('crm_status_reason', 'Forwarded').gte('created_on', since).order('external_id')),
-      AudacData.all(client.from('lead_followups').select('lead_external_id, rep_firm_id, outcome, note, created_at, submitted_by_name').order('created_at', { ascending: false }).order('id')),
+      AudacData.all(client.from('crm_leads').select('external_id, rep_firm_id, created_on, full_name, company, crm_status_reason, route:crm_lead_route').in('crm_status_reason', ['Forwarded', 'Qualified']).order('external_id')),
+      AudacData.all(client.from('lead_followups').select('id, lead_external_id, rep_firm_id, outcome, note, created_at, submitted_by_name').order('created_at', { ascending: false }).order('id')),
     ]);
     if (leadsRes.error || fuRes.error) { body.innerHTML = `<tr><td colspan="7" class="empty-note">Could not load leads: ${escapeHtml((leadsRes.error || fuRes.error).message)}</td></tr>`; return; }
-    const leads = leadsRes.data || [], fus = fuRes.data || [];
+    const leads = (leadsRes.data || []).filter(l => l.route === 'rep' || l.route === 'trade_show');
+    const fus = fuRes.data || [];
     const latest = new Map();
     fus.forEach(f => { if (!latest.has(f.lead_external_id)) latest.set(f.lead_external_id, f); }); // newest first
+    const isDone = (l) => latest.has(l.external_id) || l.crm_status_reason === 'Qualified';
     const daysSince = (iso) => Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
     const rows = firmsCache.map(f => {
       const fl = leads.filter(l => l.rep_firm_id === f.id);
-      const done = fl.filter(l => latest.has(l.external_id));
-      const waiting = fl.filter(l => !latest.has(l.external_id)).map(l => l.created_on).sort();
-      const out = (o) => done.filter(l => latest.get(l.external_id).outcome === o).length;
-      return { f, n: fl.length, done: done.length, rate: fl.length ? done.length / fl.length : null, quoted: out('quoted'), won: out('won'), oldest: waiting[0] || null };
+      const done = fl.filter(isDone);
+      const waiting = fl.filter(l => !isDone(l)).map(l => l.created_on).sort();
+      const out = (o) => fl.filter(l => latest.get(l.external_id)?.outcome === o).length;
+      return { f, n: fl.length, done: done.length, rate: fl.length ? done.length / fl.length : null, meeting: out('meeting'), project: out('project'), oldest: waiting[0] || null };
     }).filter(r => r.n).sort((a, b) => a.rate - b.rate || b.n - a.n);
     body.innerHTML = rows.length ? rows.map(r => `<tr>
       <td><b>${escapeHtml(r.f.name)}</b></td>
       <td>${r.n}</td>
       <td>${r.done}</td>
       <td><span class="chip ${r.rate >= 0.8 ? 'ok' : r.rate >= 0.4 ? 'warn' : 'danger'}">${Math.round(r.rate * 100)}%</span></td>
-      <td>${r.quoted || '—'}</td>
-      <td>${r.won || '—'}</td>
+      <td>${r.meeting || '—'}</td>
+      <td>${r.project || '—'}</td>
       <td>${r.oldest ? `${daysSince(r.oldest)} days` : '—'}</td>
-    </tr>`).join('') : '<tr><td colspan="7" class="empty-note">No leads forwarded in the last 6 months.</td></tr>';
+    </tr>`).join('') : '<tr><td colspan="7" class="empty-note">No leads handed to rep firms yet.</td></tr>';
     const firmName = (id) => firmsCache.find(f => f.id === id)?.name || '';
-    const leadById = new Map(leads.map(l => [l.external_id, l]));
+    const leadById = new Map((leadsRes.data || []).map(l => [l.external_id, l]));
     const recent = fus.slice(0, 12);
     document.getElementById('lead-notes').innerHTML = recent.length ? `
       <h3 class="card-title" style="margin:20px 0 8px; font-size:15px;">Latest follow-ups</h3>
@@ -631,7 +634,7 @@ They can no longer log or import activities. Everything they logged stays, under
       ${recent.map(f => { const l = leadById.get(f.lead_external_id); return `<tr>
         <td>${new Date(f.created_at).toLocaleDateString()}</td>
         <td>${escapeHtml(firmName(f.rep_firm_id))}</td>
-        <td>${escapeHtml(l ? (l.company || l.full_name || '') : '(older lead)')}</td>
+        <td>${escapeHtml(l ? (l.company || l.full_name || '') : '')}</td>
         <td>${escapeHtml(LEAD_OUTCOMES[f.outcome] || f.outcome)}</td>
         <td>${escapeHtml(f.note || '')}</td>
         <td>${escapeHtml(f.submitted_by_name || '')}</td></tr>`; }).join('')}

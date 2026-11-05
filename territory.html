@@ -68,7 +68,7 @@
     </header>
 
     <main class="page" id="page" aria-busy="true">
-      <p class="intro" id="intro">Your key accounts, the leads AUDAC forwarded and your firm’s deals, straight from AUDAC’s CRM.</p>
+      <p class="intro" id="intro">Your key accounts, the leads handed to your firm and your firm’s deals, straight from AUDAC’s CRM.</p>
       <div id="gate"></div>
 
       <section class="section surface-card" id="key-section" aria-labelledby="key-h">
@@ -233,55 +233,77 @@
     if (b) openUpdateForm(b.dataset.update);
   });
 
-  // ---------- Leads (forwarded by AUDAC; the rep reports what happened) ----------
-  const OUTCOMES = { contacted: 'Contacted', quoted: 'Quote sent', won: 'Won', lost: 'Lost', not_relevant: 'Not relevant' };
-  const OUTCOME_CHIP = { contacted: 'gold', quoted: 'gold', won: 'ok', lost: '', not_relevant: '' };
-  const LEAD_FRESH_DAYS = 183; // 6 months: keeps the June 2026 trade-show leads in view
+  // ---------- Leads ----------
+  // route (decided in the database, crm_lead_route):
+  //   rep        = AUDAC forwarded the lead to this firm (Parent Account = the rep firm)
+  //   trade_show = booth visitor from this territory, handed to the firm after the show
+  //   info       = web enquiry AVL Media Group answered: for information, no follow-up asked
+  // "Qualified" in AUDAC's CRM = turned into an account + contact after the rep made contact.
+  const OUTCOMES = { contacted: 'Contacted', meeting: 'Meeting or demo planned', project: 'Project or quote', not_relevant: 'Not interested / not relevant' };
+  const OUTCOME_CHIP = { contacted: 'gold', meeting: 'gold', project: 'ok', not_relevant: '' };
+  const LEAD_FRESH_DAYS = 183; // older ones without follow-up go in a collapsed list
   let leadsCache = [];
   const leadDay = (l) => String(l.created_on || '').slice(0, 10);
+  const isMine = (l) => l.route === 'rep' || l.route === 'trade_show';
+  const followedUp = (l) => !!l.outcome || l.crm_status_reason === 'Qualified';
+
+  function originLine(l) {
+    if (l.route === 'trade_show') {
+      const show = /infocomm/i.test(l.subject || '') ? 'InfoComm' : 'a trade show';
+      return `Visited the AUDAC booth at ${show} ${String(l.created_on || '').slice(0, 4)}`;
+    }
+    if (l.route === 'info') return `Web enquiry · answered by AVL Media Group · ${fmtDate(leadDay(l))}`;
+    return `Forwarded to you by AUDAC · ${fmtDate(leadDay(l))}`;
+  }
 
   function leadItem(l) {
+    const mine = isMine(l);
     const age = l.created_on ? daysAgo(leadDay(l)) : null;
-    const late = !l.outcome && age !== null && age > 7;
+    const late = mine && !followedUp(l) && age !== null && age > 7;
     const place = [l.city, l.state_code].filter(Boolean).join(', ');
     const who = l.company && l.full_name ? `${esc(l.full_name)} · ${esc(l.company)}` : esc(l.company || l.full_name || '(no name)');
-    const meta = [place, l.source, l.created_on ? `received ${fmtDate(leadDay(l))}` : ''].filter(Boolean).map(esc).join(' · ');
     const contact = [
       l.email ? `<a href="mailto:${esc(l.email)}">${esc(l.email)}</a>` : '',
       l.phone ? `<a href="tel:${esc(String(l.phone).replace(/[^\d+]/g, ''))}">${esc(l.phone)}</a>` : '',
     ].filter(Boolean).join('');
-    const ask = [l.subject, l.description].filter(Boolean).join(' — ');
+    // Trade-show leads carry the list name as subject ("INFOCOMM US LEADS 2026"): not worth repeating.
+    const ask = [l.route === 'trade_show' ? null : l.subject, l.description].filter(Boolean).join(' — ');
     const status = l.outcome
-      ? `<span class="chip ${OUTCOME_CHIP[l.outcome] || ''}">${esc(OUTCOMES[l.outcome] || l.outcome)} · ${esc(fmtDate(String(l.outcome_at).slice(0, 10)))}</span>` : '';
+      ? `<span class="chip ${OUTCOME_CHIP[l.outcome] || ''}">${esc(OUTCOMES[l.outcome] || l.outcome)} · ${esc(fmtDate(String(l.outcome_at).slice(0, 10)))}</span>`
+      : l.crm_status_reason === 'Qualified' ? `<span class="chip ok">${AudacShell.icon('check')}Followed up</span>` : '';
     return `<li data-lead="${esc(l.external_id)}">
-      <div><b>${who}</b><span class="sub">${meta}</span>
+      <div><b>${who}</b><span class="sub">${esc([place, originLine(l)].filter(Boolean).join(' · '))}</span>
         ${contact ? `<span class="lead-contact">${contact}</span>` : ''}
         ${ask ? `<p class="lead-desc">${esc(ask.length > 220 ? ask.slice(0, 220) + '…' : ask)}</p>` : ''}
         ${l.outcome_note ? `<span class="sub">Your note: ${esc(l.outcome_note)}</span>` : ''}
-        ${late ? `<span class="sub warn">Received ${age} days ago, no follow-up reported yet</span>` : ''}</div>
-      <div class="actions">${status}<button type="button" class="button-secondary" data-lead-update="${esc(l.external_id)}">${l.outcome ? 'Update' : 'Report follow-up'}</button></div>
+        ${late ? `<span class="sub warn">No follow-up reported yet</span>` : ''}</div>
+      <div class="actions">${status}${mine ? `<button type="button" class="button-secondary" data-lead-update="${esc(l.external_id)}">${l.outcome ? 'Update' : 'Report follow-up'}</button>` : ''}</div>
     </li>`;
   }
 
   function renderLeads() {
-    const rows = leadsCache;
-    if (!rows.length) {
-      $('leads-sub').textContent = 'No leads have been forwarded to your firm yet. When AUDAC passes on an enquiry from your territory, it shows up here.';
+    const mine = leadsCache.filter(isMine);
+    const info = leadsCache.filter(l => l.route === 'info');
+    if (!mine.length && !info.length) {
+      $('leads-sub').textContent = 'No leads for your firm yet. When AUDAC forwards an enquiry from your territory to you, it shows up here.';
       $('leads-list').innerHTML = '';
       return;
     }
-    const isClosed = (l) => ['won', 'lost', 'not_relevant'].includes(l.outcome);
-    const todo = rows.filter(l => !l.outcome);
+    const todo = mine.filter(l => !followedUp(l));
     const fresh = todo.filter(l => !l.created_on || daysAgo(leadDay(l)) <= LEAD_FRESH_DAYS);
     const older = todo.filter(l => !fresh.includes(l));
-    const working = rows.filter(l => l.outcome && !isClosed(l));
-    const closed = rows.filter(isClosed);
-    $('leads-sub').textContent = `${rows.length} lead${rows.length === 1 ? '' : 's'} forwarded to your firm` +
-      (todo.length ? ` · ${todo.length} without a follow-up` : ' · all followed up') +
-      '. Contact them, then tell AUDAC what came of it — that’s how we know which leads turn into business.';
+    const done = mine.filter(followedUp);
+    $('leads-sub').textContent = mine.length
+      ? `${mine.length} lead${mine.length === 1 ? '' : 's'} handed to your firm` +
+        (todo.length ? ` · ${todo.length} waiting for your follow-up` : ' · all followed up') +
+        '. Contact them, then tell AUDAC what came of it: AUDAC turns them into accounts in its CRM, and that is how we see which leads turn into business.'
+      : 'No leads have been forwarded to your firm yet.';
     const group = (title, list) => list.length ? `<p class="group-title">${title}</p><ul class="list">${list.map(leadItem).join('')}</ul>` : '';
-    $('leads-list').innerHTML = group('Waiting for your follow-up', fresh) + group('In progress', working) + group('Closed', closed) +
-      (older.length ? `<details class="older"><summary>${older.length} older lead${older.length === 1 ? '' : 's'} (more than 6 months) without a follow-up</summary><ul class="list">${older.map(leadItem).join('')}</ul></details>` : '');
+    $('leads-list').innerHTML = group('Waiting for your follow-up', fresh) + group('Followed up', done) +
+      (older.length ? `<details class="older"><summary>${older.length} older lead${older.length === 1 ? '' : 's'} (more than 6 months) without a follow-up</summary><ul class="list">${older.map(leadItem).join('')}</ul></details>` : '') +
+      (info.length ? `<details class="older"><summary>${info.length} web enquir${info.length === 1 ? 'y' : 'ies'} from your territory, answered by AVL Media Group (for your information)</summary>
+        <p class="empty">AUDAC passed these to AVL Media Group, which replied to the customer. No follow-up is asked from you, but you may know the company.</p>
+        <ul class="list">${info.map(leadItem).join('')}</ul></details>` : '');
   }
 
   function openLeadForm(id) {
@@ -294,7 +316,7 @@
     form.innerHTML = `
       <div class="field"><label for="l-outcome">What happened?</label>
         <select id="l-outcome">${Object.entries(OUTCOMES).map(([k, v]) => `<option value="${k}"${k === (l.outcome || 'contacted') ? ' selected' : ''}>${v}</option>`).join('')}</select></div>
-      <div class="field"><label for="l-note">Note for AUDAC (optional)</label><textarea id="l-note" placeholder="e.g. site visit planned, quoted 2x XMP44, or not a fit: residential"></textarea></div>
+      <div class="field"><label for="l-note">Note for AUDAC (optional)</label><textarea id="l-note" placeholder="e.g. demo at their office on the 12th, quoting a school project, or not a fit: residential only"></textarea></div>
       <p class="form-msg" id="l-msg" hidden></p>
       <div class="form-actions"><button type="button" class="button-secondary" id="l-cancel">Cancel</button><button type="submit" class="button-primary" id="l-send">Save</button></div>`;
     li.appendChild(form);
@@ -335,7 +357,7 @@
       return;
     }
     try { localStorage.setItem('audac_seen_territory', '1'); } catch { /* private mode */ }
-    $('intro').textContent = `${firm.name}: your key accounts, the leads AUDAC forwarded and your firm’s deals, straight from AUDAC’s CRM.`;
+    $('intro').textContent = `${firm.name}: your key accounts, the leads handed to your firm and your firm’s deals, straight from AUDAC’s CRM.`;
     const [keyRes, dealRes, leadRes] = await Promise.all([client.rpc('get_my_key_accounts'), client.rpc('get_my_deals'), client.rpc('get_my_leads')]);
     if (leadRes.error) $('leads-sub').textContent = 'Could not load leads: ' + leadRes.error.message; else { leadsCache = leadRes.data || []; renderLeads(); }
     if (keyRes.error) $('key-sub').textContent = 'Could not load key accounts: ' + keyRes.error.message; else renderKeyAccounts(keyRes.data || []);

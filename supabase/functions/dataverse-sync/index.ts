@@ -836,10 +836,16 @@ async function runPage(svc: any, phase: Phase, cursor: string | null, syncStarte
         filterLevel,
       });
     } else {
-      // Leads: resolved to a rep firm like accounts -- the linked account's
-      // firm first, then Canada -> PAG Canada, then state (or ZIP) with the
-      // split-state ZIP ranges. Follow-ups reps report live in the portal
-      // (lead_followups), so a lead is never deleted here.
+      // Leads: the lead's Parent Account is who AUDAC forwarded it to (the
+      // "Forward Lead" e-mail template names it). When that is a rep firm's
+      // own account, the lead belongs to that firm. Otherwise (Intellimix,
+      // or nothing, e.g. trade-show lists) the territory decides: Canada ->
+      // PAG Canada, else state (or ZIP) with the split-state ZIP ranges. The
+      // parent account is NOT resolved through crm_accounts.rep_firm_id: the
+      // Canadian Intellimix account sits under PAG Canada there, which sent
+      // US web leads to PAG. Which leads a rep is asked to follow up on is
+      // decided in SQL (crm_lead_route). Never deleted here: follow-ups
+      // live in lead_followups.
       let rows: any[], nextLink: string | null, filterLevel: string | null;
       if (cursor) {
         const page = await fetchOnePage(cursor, token);
@@ -850,15 +856,12 @@ async function runPage(svc: any, phase: Phase, cursor: string | null, syncStarte
         rows = first.rows; nextLink = first.nextLink; filterLevel = first.filterLevel;
       }
 
-      const { data: firms } = await svc.from("rep_firms").select("id, states").eq("status", "active");
+      const { data: firms } = await svc.from("rep_firms").select("id, states, crm_account_external_id").eq("status", "active");
       const firmsCache = firms || [];
+      const firmByOwnAccount = new Map<string, string>(
+        firmsCache.filter((f: any) => f.crm_account_external_id).map((f: any) => [f.crm_account_external_id, f.id]),
+      );
       const { data: zipRanges } = await svc.from("rep_firm_zip_ranges").select("rep_firm_id, state_code, zip3_start, zip3_end");
-      const parentIds = [...new Set(rows.map((r: any) => r._parentaccountid_value).filter(Boolean))];
-      let parentFirmById = new Map<string, string | null>();
-      if (parentIds.length) {
-        const { data: parents } = await svc.from("crm_accounts").select("external_id, rep_firm_id").in("external_id", parentIds);
-        parentFirmById = new Map((parents || []).map((p: any) => [p.external_id, p.rep_firm_id]));
-      }
       function firmForState(stateCode: string | null, zip: string | null): string | null {
         if (!stateCode) return null;
         const ranges = (zipRanges || []).filter((z: any) => z.state_code === stateCode);
@@ -877,7 +880,7 @@ async function runPage(svc: any, phase: Phase, cursor: string | null, syncStarte
         const isCanada = r._scp_countrylookup_value === COUNTRY_GUID_CA;
         const zip = r.address1_postalcode || null;
         const stateCode = isCanada ? null : (normalizeState(r.address1_stateorprovince) || stateFromZip(zip));
-        const repFirmId = (r._parentaccountid_value && parentFirmById.get(r._parentaccountid_value))
+        const repFirmId = (r._parentaccountid_value && firmByOwnAccount.get(r._parentaccountid_value))
           || (isCanada ? PAG_CANADA_FIRM_ID : firmForState(stateCode, zip));
         if (repFirmId) matched++; else unassigned++;
         const fmt = (k: string) => r[`${k}@OData.Community.Display.V1.FormattedValue`] ?? null;
@@ -899,6 +902,7 @@ async function runPage(svc: any, phase: Phase, cursor: string | null, syncStarte
           crm_status: fmt("statecode"),
           crm_status_reason: fmt("statuscode"),
           created_on: r.createdon || null,
+          parent_account_external_id: r._parentaccountid_value || null,
           rep_firm_id: repFirmId || null,
           last_synced_at: syncStartedAt || now,
         };
