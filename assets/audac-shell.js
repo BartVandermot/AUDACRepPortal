@@ -190,7 +190,7 @@
     const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     let W = 0, H = 0, dpr = 1;
     function size() {
-      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      dpr = Math.min(window.devicePixelRatio || 1, 1.5); // soft glow: full retina resolution not needed
       W = window.innerWidth; H = window.innerHeight;
       cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -210,16 +210,28 @@
             0.28 * Math.sin(2 * Math.PI * wv.f2 * u + t * wv.s2 + wv.p * 0.6));
           if (i === 0) ctx.moveTo(u * W, y); else ctx.lineTo(u * W, y);
         }
-        const g = ctx.createLinearGradient(0, 0, W, 0);
-        g.addColorStop(0, 'rgba(217,166,83,0)');
-        g.addColorStop(0.18, `rgba(217,166,83,${wv.alpha})`);
-        g.addColorStop(0.5, `rgba(238,200,134,${Math.min(1, wv.alpha * 1.15)})`);
-        g.addColorStop(0.82, `rgba(217,166,83,${wv.alpha})`);
-        g.addColorStop(1, 'rgba(217,166,83,0)');
-        ctx.strokeStyle = g;
-        ctx.lineWidth = wv.w;
-        ctx.stroke();
+        // Glow: a wide soft halo, a tighter inner glow, then the bright core.
+        // Additive blending makes crossings flare up a little, like light.
+        ctx.globalCompositeOperation = 'lighter';
+        for (const [widthMul, alphaMul] of GLOW_PASSES) {
+          ctx.strokeStyle = waveGradient(wv.alpha * alphaMul);
+          ctx.lineWidth = wv.w * widthMul;
+          ctx.stroke();
+        }
+        ctx.globalCompositeOperation = 'source-over';
       }
+    }
+    // [line width multiplier, alpha multiplier]: wide faint strokes under a
+    // thin bright core. (canvas shadowBlur looks similar but costs ~10x more.)
+    const GLOW_PASSES = [[12, 0.035], [6, 0.07], [2.6, 0.18], [1, 1]];
+    function waveGradient(alpha) {
+      const g = ctx.createLinearGradient(0, 0, W, 0);
+      g.addColorStop(0, 'rgba(217,166,83,0)');
+      g.addColorStop(0.18, `rgba(217,166,83,${alpha})`);
+      g.addColorStop(0.5, `rgba(238,200,134,${Math.min(1, alpha * 1.15)})`);
+      g.addColorStop(0.82, `rgba(217,166,83,${alpha})`);
+      g.addColorStop(1, 'rgba(217,166,83,0)');
+      return g;
     }
     size();
     window.addEventListener('resize', () => { size(); if (reduce) draw(12); });
