@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AUDAC Rep Portal — Resources</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/audac-ui.css">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="AUDAC Reps">
+<meta name="theme-color" content="#0b0c0e">
+<style>
+  .intro { margin: 0 0 var(--space-5); font-size: 14px; line-height: 21px; color: var(--color-text-secondary); max-width: 70ch; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: var(--space-4); margin-bottom: var(--space-5); }
+  .tile { display: flex; flex-direction: column; gap: 6px; padding: var(--space-5); text-decoration: none; color: inherit; transition: transform .15s ease; }
+  .tile:hover { transform: translateY(-2px); }
+  .tile:focus-visible { outline: 2px solid var(--color-gold); outline-offset: 2px; }
+  .tile b { font-size: 15.5px; line-height: 22px; font-weight: 650; color: var(--color-text-primary); }
+  .tile span { font-size: 13.5px; line-height: 20px; color: var(--color-text-secondary); }
+  .tile .go { margin-top: auto; padding-top: 6px; font-size: 13px; font-weight: 600; color: var(--color-gold); }
+  .tile.featured { border: 1px solid rgba(217,166,83,0.35); }
+
+  .section { padding: var(--space-6); margin-bottom: var(--space-4); }
+  .section > p.sub { margin: var(--space-1) 0 var(--space-4); font-size: 14px; line-height: 21px; color: var(--color-text-secondary); max-width: 70ch; }
+  .ask { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-3); max-width: 640px; }
+  .ask textarea { min-height: 120px; }
+  .ask .route { margin: 0; font-size: 13px; color: var(--color-text-muted); }
+  .ask .form-actions { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
+  .ask .button-primary { width: auto; padding: 0 22px; }
+  .msg { margin: 0; font-size: 13.5px; line-height: 20px; }
+  .msg.ok { color: var(--color-success); }
+  .msg.err { color: var(--color-danger); }
+  .questions { list-style: none; margin: var(--space-5) 0 0; padding: 0; }
+  .questions li { padding: var(--space-3) 0; border-top: 1px solid var(--color-border); display: grid; grid-template-columns: 1fr auto; gap: 4px var(--space-3); }
+  .questions li:first-child { border-top: 0; }
+  .questions .q { font-size: 14px; line-height: 21px; color: var(--color-text-primary); white-space: pre-line; overflow-wrap: anywhere; }
+  .questions .meta { font-size: 12.5px; color: var(--color-text-muted); }
+  @media (max-width: 760px) { .section { padding: var(--space-5); } }
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <aside class="sidebar glass-floating" id="app-sidebar" aria-label="Main menu"></aside>
+  <div class="app-content">
+    <header class="topbar">
+      <h1>Resources</h1>
+      <span class="spacer"></span>
+      <button type="button" class="icon-btn mobile-only" id="mobile-signout" aria-label="Sign out" title="Sign out"></button>
+    </header>
+
+    <main class="page" id="page">
+      <p class="intro">Everything you need around AUDAC in one place: product information, training, and a direct line to AUDAC.</p>
+
+      <div class="tiles">
+        <!-- Competitor cross-reference tile: added once the tool data is protected (not a public file). -->
+        <a class="tile surface-card" href="https://audac.eu/noram/" target="_blank" rel="noopener">
+          <b>AUDAC products (North America)</b>
+          <span>The full product range with datasheets, manuals and specifications.</span>
+          <span class="go">audac.eu/noram ↗</span>
+        </a>
+        <a class="tile surface-card" href="https://education.audac.eu/" target="_blank" rel="noopener">
+          <b>AUDAC Education</b>
+          <span>Online training and certification. Certificates from your firm count in your monthly review.</span>
+          <span class="go">education.audac.eu ↗</span>
+        </a>
+        <a class="tile surface-card" href="https://audac.eu/noram/support" target="_blank" rel="noopener">
+          <b>Support & downloads</b>
+          <span>Software, firmware, drawings and frequently asked questions.</span>
+          <span class="go">audac.eu/noram/support ↗</span>
+        </a>
+        <a class="tile surface-card" href="https://avlmediagroup.com/" target="_blank" rel="noopener">
+          <b>AVL Media Group</b>
+          <span>AUDAC's distributor in the US and Canada: pricing, stock and orders.</span>
+          <span class="go">avlmediagroup.com ↗</span>
+        </a>
+      </div>
+
+      <section class="section surface-card" id="ask" aria-labelledby="ask-h">
+        <h2 class="card-title" id="ask-h">Ask AUDAC</h2>
+        <p class="sub">A technical question, a product you can't find, or something about this portal? Ask it here. Your question is saved in the portal so it can't get lost, and your mail app opens with a ready-to-send e-mail to the right person.</p>
+        <form class="ask" id="ask-form">
+          <div class="field">
+            <label for="ask-topic">Topic</label>
+            <select id="ask-topic"></select>
+          </div>
+          <p class="route" id="ask-route"></p>
+          <div class="field">
+            <label for="ask-message">Your question</label>
+            <textarea id="ask-message" maxlength="4000" required placeholder="e.g. Can the NOVA8 be controlled from a Q-SYS core, and is there a plugin?"></textarea>
+          </div>
+          <p class="msg" id="ask-msg" hidden></p>
+          <div class="form-actions">
+            <button type="submit" class="button-primary" id="ask-send">Send question</button>
+          </div>
+        </form>
+        <ul class="questions" id="ask-list" hidden></ul>
+      </section>
+    </main>
+  </div>
+</div>
+<nav class="bottom-nav glass-floating" id="app-bottom-nav" aria-label="Main menu"></nav>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/assets/audac-shell.js"></script>
+<script>
+  const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
+  const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  AudacShell.mount('resources');
+  const signOut = async () => { await client.auth.signOut(); window.location.href = '/login'; };
+  AudacShell.onSignOut(signOut);
+  $('mobile-signout').innerHTML = AudacShell.icon('out');
+  $('mobile-signout').addEventListener('click', signOut);
+
+  // Who answers what (agreed with Bart, 2026-11-05). Change addresses here only.
+  const ASK_ROUTES = {
+    technical: { label: 'Technical question (products, system design, programming)', to: 'jperry@avlmediagroup.com', cc: 'bart@pvs.global', who: 'Jay Perry (AVL Media Group), with AUDAC in copy' },
+    commercial: { label: 'Pricing, stock or orders', to: 'bart@pvs.global', cc: '', who: 'AUDAC' },
+    portal: { label: 'This portal (login, logging, leads)', to: 'bart@pvs.global', cc: '', who: 'AUDAC' },
+    other: { label: 'Something else', to: 'bart@pvs.global', cc: '', who: 'AUDAC' },
+  };
+  $('ask-topic').innerHTML = Object.entries(ASK_ROUTES).map(([k, r]) => `<option value="${k}">${esc(r.label)}</option>`).join('');
+  const showRoute = () => { $('ask-route').textContent = `Goes to ${ASK_ROUTES[$('ask-topic').value].who}.`; };
+  $('ask-topic').addEventListener('change', showRoute);
+  showRoute();
+
+  let me = null;
+  const fmtDate = (iso) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+  async function loadQuestions() {
+    const { data, error } = await client.from('rep_questions').select('id, created_at, topic, message, status, answered_at')
+      .eq('user_id', me.id).order('created_at', { ascending: false }).limit(10);
+    const list = $('ask-list');
+    if (error || !data || !data.length) { list.hidden = true; return; }
+    list.innerHTML = `<p class="group-title" style="margin:0 0 4px;">Your questions</p>` + data.map(q => `<li>
+      <div><div class="q">${esc(q.message.length > 240 ? q.message.slice(0, 240) + '…' : q.message)}</div>
+        <div class="meta">${esc(fmtDate(q.created_at))} · ${esc(ASK_ROUTES[q.topic]?.label || q.topic)}</div></div>
+      <div>${q.status === 'answered' ? `<span class="chip ok">${AudacShell.icon('check')}Answered</span>` : '<span class="chip">Open</span>'}</div>
+    </li>`).join('');
+    list.hidden = false;
+  }
+
+  $('ask-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const topic = $('ask-topic').value, message = $('ask-message').value.trim();
+    const msg = $('ask-msg'), btn = $('ask-send');
+    if (!message) { msg.hidden = false; msg.className = 'msg err'; msg.textContent = 'Type your question first.'; return; }
+    const route = ASK_ROUTES[topic];
+    btn.disabled = true; btn.textContent = 'Sending…';
+    const { error } = await client.from('rep_questions').insert({ topic, message, sent_to: route.to });
+    btn.disabled = false; btn.textContent = 'Send question';
+    if (error) { msg.hidden = false; msg.className = 'msg err'; msg.textContent = 'Could not save your question: ' + error.message; return; }
+    msg.hidden = false; msg.className = 'msg ok';
+    msg.textContent = 'Saved: AUDAC sees your question in the portal. Your mail app opens now to send it by e-mail as well; if it doesn’t, that’s fine.';
+    $('ask-message').value = '';
+    loadQuestions();
+    const firstLine = message.split('\n')[0].slice(0, 60);
+    const subject = `[Rep Portal] ${route.label.split(' (')[0]}: ${firstLine}`;
+    const body = `${message.slice(0, 1800)}\n\n— ${me.name}${me.firm ? ', ' + me.firm : ''}\n(Sent from the AUDAC Rep Portal)`;
+    location.href = `mailto:${encodeURIComponent(route.to)}?${route.cc ? `cc=${encodeURIComponent(route.cc)}&` : ''}subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  });
+
+  (async function init() {
+    const { data: { session } } = await client.auth.getSession();
+    if (!session) { window.location.href = '/login'; return; }
+    const { data: profile } = await client.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
+    if (profile && profile.role !== 'rep') AudacShell.mount('resources', { nav: profile.role === 'executive' ? 'executive' : 'manager' });
+    const { data: firms } = await client.from('rep_firms').select('id, name');
+    const firm = (firms || []).find(f => f.id === profile?.rep_firm_id);
+    me = { id: session.user.id, name: profile?.full_name || session.user.email, firm: firm?.name || '' };
+    AudacShell.setUser({ name: me.name, sub: firm ? firm.name : session.user.email });
+    AudacShell.setSection(firm ? firm.name : '');
+    if (location.hash === '#ask') $('ask').scrollIntoView();
+    loadQuestions();
+  })().catch(err => { $('page').insertAdjacentHTML('afterbegin', `<div class="notice error">Couldn’t load this page: ${esc(err.message || err)}. Refresh to try again.</div>`); });
+</script>
+</body>
+</html>

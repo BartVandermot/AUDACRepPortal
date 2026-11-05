@@ -29,6 +29,7 @@
     spark: '<path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M12 3v4M12 17v4M3 12h4M17 12h4"/>',
     left: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m14.5 6-6 6 6 6"/>',
     right: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m9.5 6 6 6-6 6"/>',
+    book: '<path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5zM5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3M9 7h6"/>',
   };
   const icon = (name, attrs = '') => `<svg viewBox="0 0 24 24" aria-hidden="true" ${attrs}>${ICONS[name] || ''}</svg>`;
 
@@ -40,7 +41,9 @@
         { key: 'log', href: '/form', label: 'Log activity', short: 'Log', icon: 'plus' },
         { key: 'territory', href: '/territory', label: 'My territory', short: 'Territory', icon: 'map' },
         { key: 'submissions', href: '/form#my-submissions-section', label: 'My submissions', short: 'Submissions', icon: 'list' },
-        { key: 'import', href: '/import', label: 'Import CRM export', short: 'Import', icon: 'upload' },
+        { key: 'resources', href: '/resources', label: 'Resources', short: 'Resources', icon: 'book' },
+        // Importing a CRM export is a desktop job; keeps the phone bar at five items.
+        { key: 'import', href: '/import', label: 'Import CRM export', short: 'Import', icon: 'upload', desktopOnly: true },
       ],
     },
     manager: {

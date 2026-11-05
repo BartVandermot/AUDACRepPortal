@@ -1500,7 +1500,7 @@
   let ops = null;
   const NOT_ASSIGNABLE = new Set(['Independent Rep Firm', 'Competitor', 'Supplier']);
   async function loadOpsData() {
-    const [accts, zips, blocking, manualContacts, reps, skipped, lastPipe, lastEdu, sellAny, lastRuns, lastOkRun, lastEduBatch, dealUpdates, usage, leadWins, leadRows, leadFus] = await Promise.all([
+    const [accts, zips, blocking, manualContacts, reps, skipped, lastPipe, lastEdu, sellAny, lastRuns, lastOkRun, lastEduBatch, dealUpdates, usage, leadWins, leadRows, leadFus, openQuestions] = await Promise.all([
       AudacData.all(client.from('crm_accounts').select('name_key, source, rep_firm_id, relationship_type, state_code, country_code, is_active, last_synced_at').order('external_id')),
       client.from('rep_firm_zip_ranges').select('state_code'),
       client.from('crm_contacts').select('external_id', { count: 'exact', head: true }).eq('blocks_pipeline_sync', true),
@@ -1519,6 +1519,7 @@
       client.from('lead_followups').select('lead_external_id, outcome, created_at, crm_leads!inner(crm_status_reason)').eq('crm_leads.crm_status_reason', 'Forwarded').is('handled_at', null).order('created_at', { ascending: false }),
       AudacData.all(client.from('crm_leads').select('external_id, rep_firm_id, created_on, full_name, company, city, state_code, crm_status_reason, route:crm_lead_route').order('external_id')),
       AudacData.all(client.from('lead_followups').select('id, lead_external_id, rep_firm_id, outcome, note, created_at, submitted_by_name').order('created_at', { ascending: false }).order('id')),
+      client.from('rep_questions').select('id', { count: 'exact', head: true }).eq('status', 'open'),
     ]);
     {
       const latest = new Map(), byLead = new Map();
@@ -1577,6 +1578,7 @@
       lastEduImport: maxIso(lastEduBatch.data?.[0]?.created_at, lastEdu.data?.[0]?.uploaded_at),
       selloutInUse: (sellAny.count || 0) > 0,
       dealUpdates: dealUpdates.count || 0,
+      openQuestions: openQuestions.count || 0,
       // Newest report per lead; "not interested" needs nothing in Dynamics (Forwarded = already disqualified).
       leadWins: (() => { const m = new Map(); (leadWins.data || []).forEach(f => { if (!m.has(f.lead_external_id)) m.set(f.lead_external_id, f.outcome); }); return [...m.values()].filter(o => o !== 'not_relevant').length; })(),
       firmsNoReps: firmsCache.filter(f => !firmsWithReps.has(f.id)).length,
@@ -1632,6 +1634,11 @@
       state: 'todo', main: `<b class="ops-count">${plural(ops.dealUpdates, 'deal update')}</b> from reps to process`,
       sub: 'Won, lost or moved deals reported on My territory. Change them in Dynamics, then mark them processed.',
       href: '/admin#pipeline', action: 'Process',
+    });
+    if (ops.openQuestions) items.push({
+      state: 'todo', main: `<b class="ops-count">${plural(ops.openQuestions, 'question')}</b> from reps not answered yet`,
+      sub: 'Asked via Ask AUDAC. Technical ones also went to Jay Perry by e-mail, with you in CC.',
+      href: '/reps#questions', action: 'Open',
     });
     if (ops.leadWins) items.push({
       state: 'todo', main: `<b class="ops-count">${plural(ops.leadWins, 'lead')}</b> contacted by reps, to qualify in Dynamics`,

@@ -116,6 +116,14 @@
     </div>
     <div id="lead-notes"></div>
 
+    <h2 class="section-title" id="questions">Questions from reps</h2>
+    <p class="upload-hint">Asked via “Ask AUDAC” on the reps’ Resources page. They were also e-mailed from the rep’s own mail app (technical questions to Jay Perry with you in CC; everything else to you). Mark a question answered once it’s handled.</p>
+    <div id="questions-box"><div class="empty-note">Loading…</div></div>
+
+    <h2 class="section-title" id="crossref">Competitor cross-reference: what reps look up</h2>
+    <p class="upload-hint">From the cross-reference tool in the portal, last 90 days. Opened = a rep opened that competitor product to see the AUDAC alternative. Input for the competitor-matching project.</p>
+    <div id="crossref-box"><div class="empty-note">Loading…</div></div>
+
     <h2 class="section-title">Rep Firms &amp; Their CRM Contacts</h2>
     <p class="upload-hint">Each rep firm's own CRM account (its Independent Rep Firm record in Dataverse — not one of the dealer accounts they sell to) and the individual people under it. Click a firm to see its people, and link one to their portal login there. If a firm shows no CRM account yet, search for and link the right one. Use "Copy Link" to get that firm's own sign-up link to send its reps — it takes them straight to the sign-up screen with that firm already selected, no manual picking required.</p>
 
@@ -647,6 +655,49 @@ They can no longer log or import activities. Everything they logged stays, under
       </tbody></table></div>` : '<p class="upload-hint" style="margin-top:12px;">No follow-ups reported by reps yet.</p>';
   }
 
+  // ---------- Questions from reps (Ask AUDAC) ----------
+  const QUESTION_TOPICS = { technical: 'Technical', commercial: 'Pricing, stock or orders', portal: 'Portal', other: 'Other' };
+  async function loadQuestions() {
+    const box = document.getElementById('questions-box');
+    const { data, error } = await client.from('rep_questions').select('*').order('status').order('created_at', { ascending: false }).limit(50);
+    if (error) { box.innerHTML = `<div class="empty-note">Could not load questions: ${escapeHtml(error.message)}</div>`; return; }
+    const rows = data || [];
+    if (!rows.length) { box.innerHTML = '<div class="empty-note">No questions from reps yet.</div>'; return; }
+    const firmName = (id) => firmsCache.find(f => f.id === id)?.name || '';
+    box.innerHTML = `<div style="overflow-x:auto;"><table class="rep-table"><thead><tr><th>Asked</th><th>Rep</th><th>Topic</th><th>Question</th><th>Status</th><th></th></tr></thead><tbody>${rows.map(q => `<tr>
+      <td>${new Date(q.created_at).toLocaleDateString()}</td>
+      <td><b>${escapeHtml(q.submitted_by_name || '')}</b><div class="muted" style="font-size:12px;">${escapeHtml(firmName(q.rep_firm_id))}</div></td>
+      <td>${escapeHtml(QUESTION_TOPICS[q.topic] || q.topic)}<div class="muted" style="font-size:12px;">to ${escapeHtml(q.sent_to || '')}</div></td>
+      <td style="white-space:pre-line; max-width:420px;">${escapeHtml(q.message)}</td>
+      <td>${q.status === 'answered' ? '<span class="chip ok">Answered</span>' : '<span class="chip warn">Open</span>'}</td>
+      <td style="white-space:nowrap;">${q.submitted_by_email ? `<a class="link-btn" href="mailto:${encodeURIComponent(q.submitted_by_email)}?subject=${encodeURIComponent('Re: your question in the AUDAC Rep Portal')}&body=${encodeURIComponent('\n\n> ' + q.message.split('\n').join('\n> '))}">Reply</a> · ` : ''}${q.status === 'open' ? `<button type="button" class="link-btn" data-answer="${q.id}">Mark answered</button>` : `<button type="button" class="link-btn" data-reopen="${q.id}">Reopen</button>`}</td>
+    </tr>`).join('')}</tbody></table></div>`;
+    box.querySelectorAll('[data-answer],[data-reopen]').forEach(btn => btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      const answered = !!btn.dataset.answer;
+      const { error: e2 } = await client.from('rep_questions')
+        .update(answered ? { status: 'answered', answered_at: new Date().toISOString(), answered_by: currentUser.id } : { status: 'open', answered_at: null, answered_by: null })
+        .eq('id', btn.dataset.answer || btn.dataset.reopen);
+      if (e2) { alert('Could not update: ' + e2.message); btn.disabled = false; return; }
+      loadQuestions();
+    }));
+  }
+
+  // ---------- Cross-reference lookups ----------
+  async function loadCrossref() {
+    const box = document.getElementById('crossref-box');
+    const since = new Date(Date.now() - 90 * 86400000).toISOString();
+    const { data, error } = await AudacData.all(client.from('crossref_lookups').select('kind, query, brand, model, audac, rep_firm_id, created_at').gte('created_at', since).not('rep_firm_id', 'is', null).order('id'));
+    if (error) { box.innerHTML = `<div class="empty-note">Could not load lookups: ${escapeHtml(error.message)}</div>`; return; }
+    const rows = data || [];
+    if (!rows.length) { box.innerHTML = '<div class="empty-note">No lookups by reps in the last 90 days.</div>'; return; }
+    const tally = (list, key) => { const m = new Map(); list.forEach(r => { const k = key(r); if (!k) return; const e = m.get(k) || { n: 0, firms: new Set() }; e.n++; e.firms.add(r.rep_firm_id); m.set(k, e); }); return [...m.entries()].sort((a, b) => b[1].n - a[1].n).slice(0, 15); };
+    const opened = tally(rows.filter(r => r.kind === 'open'), r => `${r.brand} ${r.model} → ${r.audac}`);
+    const searched = tally(rows.filter(r => r.kind === 'search'), r => (r.query || '').toLowerCase());
+    const table = (title, list) => `<div style="flex:1 1 320px; min-width:0;"><h3 class="card-title" style="margin:0 0 8px; font-size:15px;">${title}</h3>${list.length ? `<table class="rep-table"><thead><tr><th>Item</th><th>Times</th><th>Firms</th></tr></thead><tbody>${list.map(([k, e]) => `<tr><td>${escapeHtml(k)}</td><td>${e.n}</td><td>${e.firms.size}</td></tr>`).join('')}</tbody></table>` : '<div class="empty-note">Nothing yet.</div>'}</div>`;
+    box.innerHTML = `<div style="display:flex; gap:24px; flex-wrap:wrap;">${table('Most opened pairings', opened)}${table('Most searched terms', searched)}</div>`;
+  }
+
   async function loadAll() {
     const [firmsRes, repsRes, contactsRes, accountsRes] = await Promise.all([
       client.from('rep_firms').select('id, name, crm_account_external_id').eq('status', 'active').order('name'),
@@ -702,6 +753,8 @@ They can no longer log or import activities. Everything they logged stays, under
     await loadAll();
     loadUsage();
     loadLeadFollowup();
+    loadQuestions();
+    loadCrossref();
     // Deep link from the dashboard work list: /reps?view=attention
     const view = new URLSearchParams(location.search).get('view');
     if (['attention', 'left', 'inactive'].includes(view)) {

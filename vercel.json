@@ -47,6 +47,21 @@
     {
       "source": "/territory",
       "destination": "/territory.html"
+    },
+    {
+      "source": "/resources",
+      "destination": "/resources.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/tools/(.*)",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow"
+        }
+      ]
     }
   ]
 }
