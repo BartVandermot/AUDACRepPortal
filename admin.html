@@ -300,7 +300,7 @@
     <div id="deal-updates"></div>
 
     <div class="dd-sub-title" style="margin-top:22px;" id="lead-followups-title">Lead follow-ups from reps</div>
-    <div class="upload-hint">A rep reported on a lead that is still “Forwarded” in Dynamics. Made contact: qualify the lead in Dynamics (convert it to an account and contact). Not interested: disqualify it. The next sync takes it off this list; Mark processed does that right away. Rates per firm are on <a href="/reps#leads">Reps, Lead follow-up</a>.</div>
+    <div class="upload-hint">A rep made contact with a lead that is still “Forwarded” in Dynamics. Forwarded leads are already disqualified there, so open the lead, <b>Reactivate</b> it, then <b>Qualify</b> it (account + contact; with an opportunity when the rep reports a project). The next sync takes it off this list; Mark processed does that right away. “Not interested” needs nothing in Dynamics: the lead is already closed. Rates per firm and all notes are on <a href="/reps#leads">Reps, Lead follow-up</a>.</div>
     <div id="lead-followups"></div>
 
     <div class="dd-sub-title" style="margin-top:22px;">Synced Opportunities</div>
@@ -1398,10 +1398,11 @@
     const { data, error } = await client.from('lead_followups')
       .select('id, lead_external_id, rep_firm_id, outcome, note, created_at, submitted_by_name, crm_leads!inner(full_name, company, city, state_code, crm_status_reason)')
       .eq('crm_leads.crm_status_reason', 'Forwarded').is('handled_at', null).order('created_at', { ascending: false });
+    // Newest report per lead; a lead whose latest report is "not interested" needs nothing in Dynamics.
     if (error) { box.innerHTML = `<div class="empty-note">Could not load lead follow-ups: ${escapeHtml(error.message)}</div>`; return; }
     const latest = new Map();
     (data || []).forEach(u => { if (!latest.has(u.lead_external_id)) latest.set(u.lead_external_id, u); }); // newest per lead
-    const rows = [...latest.values()];
+    const rows = [...latest.values()].filter(u => u.outcome !== 'not_relevant');
     if (!rows.length) { box.innerHTML = '<div class="empty-note">No lead follow-ups waiting.</div>'; return; }
     const firmName = (id) => firmsCache.find(f => f.id === id)?.name || '';
     box.innerHTML = `<div style="overflow-x:auto;"><table class="detail"><thead><tr>
@@ -1412,7 +1413,7 @@
         <td>${escapeHtml([l.company, l.full_name].filter(Boolean).join(' · '))}<div class="muted" style="font-size:12px;">${escapeHtml([l.city, l.state_code].filter(Boolean).join(', '))}</div></td>
         <td><span class="status-badge ${u.outcome === 'project' ? 'won' : u.outcome === 'not_relevant' ? 'lost' : 'open'}">${escapeHtml(LEAD_OUTCOMES[u.outcome] || u.outcome)}</span><div class="muted" style="font-size:12px;">${escapeHtml(u.submitted_by_name || '')}</div></td>
         <td>${escapeHtml(u.note || '')}</td>
-        <td>${u.outcome === 'not_relevant' ? 'Disqualify the lead' : 'Qualify: account + contact' + (u.outcome === 'project' ? ', plus an opportunity' : '')}</td>
+        <td>Reactivate, then Qualify: account + contact${u.outcome === 'project' ? ' + opportunity' : ''}</td>
         <td><button type="button" class="link-btn" data-handle-lead="${escapeHtml(u.lead_external_id)}">Mark processed</button></td>
       </tr>`; }).join('')}</tbody></table></div>`;
     box.querySelectorAll('[data-handle-lead]').forEach(btn => btn.addEventListener('click', async () => {
