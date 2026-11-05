@@ -160,6 +160,7 @@
   /* Account health in the firm drilldown */
   .ah-meter { font-size: 13px; color: var(--color-text-secondary); margin: 2px 0 10px; max-width: 420px; }
   .ah-meter b { color: var(--color-text-primary); }
+  .lead-wait { display: block; font-size: 11.5px; color: var(--color-warning); }
   .ah-label { font-size: 12px; font-weight: 650; color: var(--color-text-secondary); margin: 12px 0 4px; }
   .ah-other summary { cursor: pointer; font-size: 12.5px; color: var(--color-text-muted); margin-top: 12px; }
   .key-tag { display: inline-block; font-size: 10.5px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--color-border); color: var(--color-text-muted); margin-left: 6px; }
@@ -256,7 +257,7 @@
     <thead>
       <tr>
         <th data-sort="firm_name">Firm</th><th data-sort="activity_count">Activities</th><th data-sort="demo_gear_count">Demo Gear Used</th><th data-sort="open_pipeline_value_usd">Open Pipeline</th><th data-sort="new_pipeline_value_usd">New Pipeline (Month)</th>
-        <th data-sort="education_count">Education Certs</th><th>Sell-out MoM</th><th data-sort="rag">RAG</th><th data-sort="review">Review</th>
+        <th data-sort="education_count">Education Certs</th><th data-sort="leads" title="Leads handed to the firm that it followed up (reported in My territory, or Qualified in Dynamics)">Leads followed up</th><th>Sell-out MoM</th><th data-sort="rag">RAG</th><th data-sort="review">Review</th>
       </tr>
     </thead>
     <tbody id="scorecard-body"></tbody>
@@ -290,6 +291,9 @@
 
     <div class="dd-sub-title">Education</div>
     <div id="dd-education"></div>
+
+    <div class="dd-sub-title">Leads <span style="font-weight:400; text-transform:none; letter-spacing:0; color:var(--color-text-muted);">— forwarded to the firm or trade-show visitors from its territory</span></div>
+    <div id="dd-leads"></div>
 
     <div class="dd-sub-title">Accounts <span style="font-weight:400; text-transform:none; letter-spacing:0; color:var(--color-text-muted);">— contact = linked activity in the last 3 months</span></div>
     <div id="dd-dormant"></div>
@@ -560,13 +564,14 @@
     const val = (row) => sortKey === 'rag' ? RAG_ORDER[row.rag_status] ?? 9
       : sortKey === 'review' ? reviewState(row.rep_firm_id).rank
       : sortKey === 'firm_name' ? String(row.firm_name || '').toLowerCase()
+      : sortKey === 'leads' ? (leadStats(row.rep_firm_id).rate ?? 2)
       : Number(row[sortKey] || 0);
     return [...scorecardCache].sort((a, b) => (val(a) > val(b) ? 1 : val(a) < val(b) ? -1 : 0) * sortDir);
   }
   document.querySelectorAll('#scorecard-table th[data-sort]').forEach(th => {
     th.addEventListener('click', () => {
       const k = th.dataset.sort;
-      sortDir = sortKey === k ? -sortDir : (['firm_name', 'rag', 'review'].includes(k) ? 1 : -1);
+      sortDir = sortKey === k ? -sortDir : (['firm_name', 'rag', 'review', 'leads'].includes(k) ? 1 : -1);
       sortKey = k;
       document.querySelectorAll('#scorecard-table th[data-sort]').forEach(h => { h.classList.toggle('sorted', h === th); h.dataset.dir = sortDir === 1 ? '↑' : '↓'; });
       renderScorecard();
@@ -583,6 +588,7 @@
         <td>${row.open_pipeline_count} (${fmtMoney(row.open_pipeline_value_usd)})</td>
         <td>${row.new_pipeline_count} (${fmtMoney(row.new_pipeline_value_usd)})</td>
         <td>${row.education_count}</td>
+        <td>${leadCell(row.rep_firm_id)}</td>
         <td>${momCell(row)}</td>
         <td><span class="rag-badge ${ragClass(row.rag_status)}">${row.rag_status}</span></td>
         <td>${reviewState(row.rep_firm_id).html}</td>
@@ -631,6 +637,48 @@
     wirePipelineRows(ddPipeline);
     document.getElementById('dd-education').innerHTML = renderEducationTable(edu.data || []);
     document.getElementById('dd-dormant').innerHTML = renderAccountHealth(accountHealth.get(firmId));
+    document.getElementById('dd-leads').innerHTML = renderLeadReview(firmId, month);
+  }
+
+  // ---------- Leads in the review ----------
+  // Same rule as everywhere (crm_lead_route in the database): a lead counts
+  // when it was handed to the firm -- forwarded with the firm as Parent
+  // Account, or a trade-show visitor from its territory. Followed up = the
+  // rep reported on it, or it is Qualified in Dynamics. "Forwarded" itself is
+  // a Disqualified reason in Dynamics and says nothing about follow-up.
+  let leadData = { leads: [], latest: new Map(), byLead: new Map() };
+  const LEAD_WAIT_DAYS = 14;
+  const LEAD_OUTCOMES = { contacted: 'Contacted', meeting: 'Meeting or demo planned', project: 'Project or quote', not_relevant: 'Not interested / not relevant' };
+  const leadAge = (l) => Math.floor((Date.now() - new Date(l.created_on).getTime()) / 86400000);
+  function leadStats(firmId) {
+    const handed = leadData.leads.filter(l => l.rep_firm_id === firmId);
+    const done = handed.filter(l => leadData.latest.has(l.external_id) || l.crm_status_reason === 'Qualified');
+    const waiting = handed.filter(l => !done.includes(l)).sort((a, b) => String(a.created_on).localeCompare(String(b.created_on)));
+    const late = waiting.filter(l => l.created_on && leadAge(l) > LEAD_WAIT_DAYS);
+    return { handed, done, waiting, late, rate: handed.length ? done.length / handed.length : null };
+  }
+  function leadCell(firmId) {
+    const s = leadStats(firmId);
+    if (!s.handed.length) return '<span class="mom-flat">—</span>';
+    return `${s.done.length} / ${s.handed.length}${s.late.length ? `<span class="lead-wait">${s.late.length} waiting &gt;${LEAD_WAIT_DAYS} days</span>` : ''}`;
+  }
+  const inMonth = (iso, m) => !!iso && String(iso).slice(0, 7) === m;
+  function renderLeadReview(firmId, month) {
+    const s = leadStats(firmId);
+    if (!s.handed.length) return '<div class="empty-note">No leads handed to this firm yet.</div>';
+    const reported = (leadData.byLead.get(firmId) || []).filter(f => inMonth(f.created_at, month));
+    const leadName = (id) => { const l = leadData.leads.find(x => x.external_id === id); return l ? [l.company, l.full_name].filter(Boolean).join(' · ') : ''; };
+    const place = (l) => [l.city, l.state_code].filter(Boolean).join(', ');
+    const summary = `<p class="hint" style="margin:0 0 8px;">${s.done.length} of ${s.handed.length} followed up (${Math.round(s.rate * 100)}%) · ${s.waiting.length} waiting${s.late.length ? `, ${s.late.length} for more than ${LEAD_WAIT_DAYS} days` : ''} · ${plural(reported.length, 'report')} in ${monthLabel(month)}.</p>`;
+    const rep = reported.length ? `<div class="ah-label">Reported in ${monthLabel(month)}</div>
+      <table class="detail"><thead><tr><th>Date</th><th>Lead</th><th>Outcome</th><th>Note</th><th>By</th></tr></thead><tbody>${reported.map(f => `<tr>
+        <td>${new Date(f.created_at).toLocaleDateString()}</td><td>${escapeHtml(leadName(f.lead_external_id))}</td>
+        <td>${escapeHtml(LEAD_OUTCOMES[f.outcome] || f.outcome)}</td><td>${escapeHtml(f.note || '')}</td><td>${escapeHtml(f.submitted_by_name || '')}</td></tr>`).join('')}</tbody></table>` : '';
+    const wait = s.late.length ? `<div class="ah-label">Waiting for follow-up, oldest first${s.late.length > 10 ? ` (10 of ${s.late.length})` : ''}</div>
+      <table class="detail"><thead><tr><th>Lead</th><th>City / State</th><th>Source</th><th>Waiting</th></tr></thead><tbody>${s.late.slice(0, 10).map(l => `<tr>
+        <td>${escapeHtml([l.company, l.full_name].filter(Boolean).join(' · '))}</td><td>${escapeHtml(place(l))}</td>
+        <td>${l.route === 'trade_show' ? 'Trade show' : 'Forwarded'}</td><td>${leadAge(l)} days</td></tr>`).join('')}</tbody></table>` : '';
+    return summary + rep + wait;
   }
 
   // A finalized firm+month freezes activity_entries at the DB layer (see
@@ -1138,6 +1186,17 @@
     btn.textContent = 'Generate Monthly Review Agenda';
   });
 
+  function agendaLeads(firmId, month) {
+    const s = leadStats(firmId);
+    if (!s.handed.length) return '<p style="color:#999;">No leads handed to this firm yet.</p>';
+    const reported = (leadData.byLead.get(firmId) || []).filter(f => inMonth(f.created_at, month));
+    const name = (l) => escapeHtml([l.company, l.full_name].filter(Boolean).join(' · '));
+    const byId = new Map(leadData.leads.map(l => [l.external_id, l]));
+    return `<p>${s.done.length} of ${s.handed.length} leads followed up (${Math.round(s.rate * 100)}%). ${s.late.length ? `${s.late.length} waiting for more than ${LEAD_WAIT_DAYS} days.` : 'None waiting for more than ' + LEAD_WAIT_DAYS + ' days.'}</p>
+      ${reported.length ? `<table><thead><tr><th>Reported</th><th>Lead</th><th>Outcome</th><th>Note</th></tr></thead><tbody>${reported.map(f => `<tr><td>${new Date(f.created_at).toLocaleDateString()}</td><td>${byId.get(f.lead_external_id) ? name(byId.get(f.lead_external_id)) : ''}</td><td>${escapeHtml(LEAD_OUTCOMES[f.outcome] || f.outcome)}</td><td>${escapeHtml(f.note || '')}</td></tr>`).join('')}</tbody></table>` : ''}
+      ${s.late.length ? `<p><b>To discuss: oldest leads without follow-up</b></p><table><thead><tr><th>Lead</th><th>City / State</th><th>Waiting</th></tr></thead><tbody>${s.late.slice(0, 10).map(l => `<tr><td>${name(l)}</td><td>${escapeHtml([l.city, l.state_code].filter(Boolean).join(', '))}</td><td>${leadAge(l)} days</td></tr>`).join('')}</tbody></table>` : ''}`;
+  }
+
   function openAgendaWindow(row, month, activities, pipeline, education, existingNotes, repByCreator) {
     const byType = {};
     activities.forEach(a => { byType[a.activity_type] = (byType[a.activity_type] || 0) + 1; });
@@ -1198,6 +1257,9 @@
       <p>Open pipeline (all-time): ${row.open_pipeline_count} deal${row.open_pipeline_count === 1 ? '' : 's'}, ${fmtMoney(row.open_pipeline_value_usd)} — New this month: ${row.new_pipeline_count} deal${row.new_pipeline_count === 1 ? '' : 's'}, ${fmtMoney(row.new_pipeline_value_usd)}</p>
       <table><thead><tr><th>Account</th><th>Project</th><th>Stage</th><th>Value</th></tr></thead><tbody>${pipelineRows}</tbody></table>
       <p>Total value of entries tagged to this reporting period: ${fmtMoney(pipelineTotal)}</p>
+
+      <h2>Leads</h2>
+      ${agendaLeads(row.rep_firm_id, month)}
 
       <h2>Sell-out vs. Prior Month</h2>
       <p>${momText}</p>
@@ -1438,7 +1500,7 @@
   let ops = null;
   const NOT_ASSIGNABLE = new Set(['Independent Rep Firm', 'Competitor', 'Supplier']);
   async function loadOpsData() {
-    const [accts, zips, blocking, manualContacts, reps, skipped, lastPipe, lastEdu, sellAny, lastRuns, lastOkRun, lastEduBatch, dealUpdates, usage, leadWins] = await Promise.all([
+    const [accts, zips, blocking, manualContacts, reps, skipped, lastPipe, lastEdu, sellAny, lastRuns, lastOkRun, lastEduBatch, dealUpdates, usage, leadWins, leadRows, leadFus] = await Promise.all([
       AudacData.all(client.from('crm_accounts').select('name_key, source, rep_firm_id, relationship_type, state_code, country_code, is_active, last_synced_at').order('external_id')),
       client.from('rep_firm_zip_ranges').select('state_code'),
       client.from('crm_contacts').select('external_id', { count: 'exact', head: true }).eq('blocks_pipeline_sync', true),
@@ -1455,7 +1517,20 @@
       client.from('deal_status_updates').select('id', { count: 'exact', head: true }).is('handled_at', null),
       client.rpc('get_rep_usage'),
       client.from('lead_followups').select('lead_external_id, outcome, created_at, crm_leads!inner(crm_status_reason)').eq('crm_leads.crm_status_reason', 'Forwarded').is('handled_at', null).order('created_at', { ascending: false }),
+      AudacData.all(client.from('crm_leads').select('external_id, rep_firm_id, created_on, full_name, company, city, state_code, crm_status_reason, route:crm_lead_route').order('external_id')),
+      AudacData.all(client.from('lead_followups').select('id, lead_external_id, rep_firm_id, outcome, note, created_at, submitted_by_name').order('created_at', { ascending: false }).order('id')),
     ]);
+    {
+      const latest = new Map(), byLead = new Map();
+      (leadFus.data || []).forEach(f => {
+        if (!latest.has(f.lead_external_id)) latest.set(f.lead_external_id, f); // newest first
+        if (!byLead.has(f.rep_firm_id)) byLead.set(f.rep_firm_id, []);
+        byLead.get(f.rep_firm_id).push(f);
+      });
+      const leads = (leadRows.data || []).filter(l => l.rep_firm_id && (l.route === 'rep' || l.route === 'trade_show')
+        && (['Forwarded', 'Qualified'].includes(l.crm_status_reason) || latest.has(l.external_id)));
+      leadData = { leads, latest, byLead };
+    }
     const usageRows = (usage.data || []).filter(u => u.is_active !== false);
     const firmsWithReps = new Set(usageRows.map(u => u.rep_firm_id).filter(Boolean));
     const lastActByFirm = new Map();
@@ -1560,6 +1635,13 @@
       sub: 'Reactivate the lead, then Qualify it (account + contact). The next sync takes it off the list.',
       href: '/admin#pipeline', action: 'Process',
     });
+    const leadLate = firmsCache.map(f => ({ f, n: leadStats(f.id).late.length })).filter(x => x.n).sort((a, b) => b.n - a.n);
+    const leadLateTotal = leadLate.reduce((s, x) => s + x.n, 0);
+    if (leadLateTotal) items.push({
+      state: 'todo', main: `<b class="ops-count">${plural(leadLateTotal, 'lead')}</b> waiting more than ${LEAD_WAIT_DAYS} days for a rep follow-up`,
+      sub: leadLate.slice(0, 5).map(x => `${escapeHtml(x.f.name)} ${x.n}`).join(' · ') + (leadLate.length > 5 ? ` · +${leadLate.length - 5} more` : '') + '. <a href="/reps#leads">Rates per firm</a>',
+      remindLeads: true, action: 'Remind by email',
+    });
     if (ops.firmsQuiet) items.push({
       state: 'todo', main: `<b class="ops-count">${plural(ops.firmsQuiet, 'firm')}</b> with reps but no activity in 30 days`,
       sub: 'They have portal accounts but stopped logging. See who signed in last, and nudge them.',
@@ -1591,8 +1673,31 @@
     chip.textContent = open ? `${open} open` : 'All clear';
     document.getElementById('wl-items').innerHTML = items.map(i => `
       <li>${ICO[i.state]}<span class="ops-main">${i.main}${i.sub ? `<span class="ops-sub">${i.sub}</span>` : ''}</span>
-      ${i.syncButton ? `<button type="button" class="ops-action" data-sync-now>${i.action} →</button>` : `<a class="ops-action" href="${i.href}">${i.action} →</a>`}</li>`).join('');
+      ${i.syncButton ? `<button type="button" class="ops-action" data-sync-now>${i.action} →</button>` : i.remindLeads ? `<button type="button" class="ops-action" data-remind-leads>${i.action} →</button>` : `<a class="ops-action" href="${i.href}">${i.action} →</a>`}</li>`).join('');
   }
+
+  // Opens a ready-to-send mail (reps in BCC) to the firms with leads waiting
+  // more than LEAD_WAIT_DAYS days, from the manager's own mail app.
+  function remindLeadFirms() {
+    const firms = firmsCache.filter(f => leadStats(f.id).late.length);
+    const emails = [...new Set(firms.flatMap(f => ops.repEmailsByFirm[f.id] || []))];
+    const noAccount = firms.filter(f => !(ops.repEmailsByFirm[f.id] || []).length).map(f => f.name);
+    if (!emails.length) { alert('None of these firms has a rep account to email yet.'); return; }
+    if (noAccount.length && !confirm(`No rep account to email for: ${noAccount.join(', ')}. Open the mail for the others?`)) return;
+    const subject = 'Leads from AUDAC waiting for your follow-up';
+    const body = [
+      'Hi,',
+      '',
+      'AUDAC passed your firm leads that are still waiting for a follow-up: enquiries forwarded to you and visitors of the AUDAC booth from your territory.',
+      'Please contact them, then tell us in two clicks what came of it (contacted, meeting or demo, project or quote, or not interested).',
+      '',
+      `Your leads are here: ${location.origin}/territory#leads`,
+      '',
+      'Thanks,',
+    ].join('\n');
+    location.href = `mailto:?bcc=${emails.map(encodeURIComponent).join(',')}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  }
+  document.getElementById('wl-items').addEventListener('click', (e) => { if (e.target.closest('[data-remind-leads]')) remindLeadFirms(); });
 
   // "Month close": the review-day checklist for the selected month, in the
   // order it's done on the 1st.
