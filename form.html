@@ -875,7 +875,7 @@
       <div class="edit-grid">
         <label>Date<input type="date" class="ae-date" value="${row.entry_date}" max="${todayISO()}"></label>
         <label>Account<input type="text" class="ae-account" value="${escapeHtml(row.account_name)}">${row.account_external_id ? '<span class="hint" style="display:block; font-weight:400;">Changing the name removes the link to the AUDAC CRM account.</span>' : ''}</label>
-        <label>Contact<input type="text" class="ae-contact" value="${escapeHtml(row.contact_name || '')}"></label>
+        <label>Contact<input type="text" class="ae-contact" value="${escapeHtml(row.contact_name || '')}"${row.account_external_id ? ` list="ae-contacts-${escapeHtml(row.id)}" autocomplete="off"` : ''}>${row.account_external_id ? `<datalist id="ae-contacts-${escapeHtml(row.id)}"></datalist><span class="hint" style="display:block; font-weight:400;">Pick one of the company's contacts. A new contact? Add it via Log activity.</span>` : ''}</label>
         <label>Contact Type<select class="ae-contact-type">${CONTACT_TYPES.map(v => `<option value="${v}">${v}</option>`).join('')}</select></label>
         <label>Activity Type<select class="ae-activity-type">${ACTIVITY_TYPES.map(v => `<option value="${v}">${v}</option>`).join('')}</select></label>
         <label class="ae-checkbox"><input type="checkbox" class="ae-demo" ${row.demo_gear_used ? 'checked' : ''}> Demo gear used</label>
@@ -894,6 +894,15 @@
     editRow.querySelector('.ae-contact-type').value = row.contact_type;
     editRow.querySelector('.ae-activity-type').value = row.activity_type;
     editRow._original = collectEditFields(editRow);
+    // The linked company's contacts, for the picker and for checking on save.
+    editRow._contacts = [];
+    if (row.account_external_id) {
+      client.rpc('search_crm_contacts', { p_account_external_id: row.account_external_id, p_firm_id: row.rep_firm_id }).then(({ data }) => {
+        editRow._contacts = data || [];
+        const dl = editRow.querySelector('datalist');
+        if (dl) dl.innerHTML = editRow._contacts.map(c => `<option value="${escapeHtml(c.full_name || '')}"></option>`).join('');
+      });
+    }
 
     editRow.querySelector('[data-ae-cancel]').addEventListener('click', () => {
       if (editRowIsDirty(editRow) && !confirm('Discard your unsaved changes to this entry?')) return;
@@ -915,6 +924,17 @@
         fullPatch.contact_external_id = null;
       } else if ((patch.contact_name || null) !== (row.contact_name || null)) {
         fullPatch.contact_external_id = null;
+        // Still linked to a CRM company: the contact must be one of its contacts.
+        if (row.account_external_id && patch.contact_name) {
+          const match = (editRow._contacts || []).find(c => (c.full_name || '').trim().toLowerCase() === patch.contact_name.toLowerCase());
+          if (!match) {
+            statusEl.style.color = 'var(--color-danger)';
+            statusEl.textContent = 'Pick one of the company’s contacts from the list, or leave the contact empty. A new contact can be added via Log activity.';
+            return;
+          }
+          fullPatch.contact_external_id = match.external_id;
+          fullPatch.contact_name = match.full_name;
+        }
       }
       const { error } = await client.from('activity_entries').update(fullPatch).eq('id', row.id);
       if (error) {
@@ -1240,6 +1260,11 @@
       }
       if (e.entry_date > todayISO()) {
         return `Activity #${i + 1}'s entry date can't be in the future.`;
+      }
+      // A contact is either one of the company's CRM contacts or added as a new
+      // one -- never loose text (the database checks the link too).
+      if (e.contact_name && !e.contact_external_id) {
+        return `Activity #${i + 1}: pick ${e.account_name}'s contact from the list, or choose “Add … as a new contact”. Or leave the contact empty.`;
       }
       const locked = lockedMonthFor(e.entry_date);
       if (locked) return `Activity #${i + 1} is dated in ${locked}, which has already been finalized for this firm. Ask AUDAC to re-open the month, or check the date.`;
