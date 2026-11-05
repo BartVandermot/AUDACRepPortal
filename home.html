@@ -165,6 +165,8 @@
             <p class="meta-line" id="terr-deals" style="margin-top:8px;"></p>
           </section>
 
+          <section class="surface-card push-card" id="push-card" aria-label="Notifications" hidden></section>
+
           <section class="team surface-card" id="team" aria-labelledby="team-h" hidden>
             <h3 class="card-title" id="team-h">Your team</h3>
             <p class="sub" id="team-sub"></p>
@@ -219,6 +221,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="/assets/audac-shell.js"></script>
+<script src="/assets/audac-push.js"></script>
 <script>
   const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
@@ -353,6 +356,7 @@
 
     if (firm) await Promise.all([renderReview(), renderTerritory(), profile?.is_rep_admin ? renderTeam() : null]);
     await renderStarter(profile, firm, session.user.id);
+    if (window.AudacPush && profile?.is_active !== false) AudacPush.mountCard($("push-card"), client, { audience: "rep" });
   }
 
   // ---------- Firm admins: who on the team is logging ----------
