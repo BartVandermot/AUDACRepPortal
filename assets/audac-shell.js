@@ -156,6 +156,10 @@
 
   window.AudacShell = {
     icon,
+    // A lead asks for follow-up only while it is fresh: older ones are history
+    // (shown, but no follow-up asked, no reminders, not in the rates).
+    // Used by My territory, Home, Reps and the dashboard.
+    LEAD_FOLLOW_UP_DAYS: 60,
     mount(activeKey, opts = {}) { active = activeKey; if (opts.nav) navKey = opts.nav; render(); },
     useNav(key) { navKey = key; render(); },
     addItem(item) { if (!extraItems.some(i => i.key === item.key)) extraItems.push(item); render(); },

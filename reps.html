@@ -107,7 +107,7 @@
     </div>
 
     <h2 class="section-title" id="leads">Lead follow-up</h2>
-    <p class="upload-hint">Leads actually handed to each firm: forwarded with the firm as Parent Account in Dynamics, or trade-show visitors from its territory. Web enquiries that went to AVL Media Group are not counted. A lead counts as followed up once the rep reported on it in My territory, or once it is Qualified in Dynamics. (Forwarded leads are disqualified in Dynamics; that does not mean anyone followed them up.) Lowest follow-up rate first.</p>
+    <p class="upload-hint">Leads of the last <span id="lead-window-days">60</span> days actually handed to each firm (older leads are history: no follow-up asked, not counted): forwarded with the firm as Parent Account in Dynamics, or trade-show visitors from its territory. Web enquiries that went to AVL Media Group are not counted. A lead counts as followed up once the rep reported on it in My territory, or once it is Qualified in Dynamics. (Forwarded leads are disqualified in Dynamics; that does not mean anyone followed them up.) Lowest follow-up rate first.</p>
     <div style="overflow-x:auto;">
       <table class="rep-table">
         <thead><tr><th>Rep Firm</th><th>Leads handed over</th><th>Followed up</th><th>Rate</th><th>Meeting or demo</th><th>Project or quote</th><th>Oldest waiting</th></tr></thead>
@@ -608,7 +608,10 @@ They can no longer log or import activities. Everything they logged stays, under
     fus.forEach(f => { if (!latest.has(f.lead_external_id)) latest.set(f.lead_external_id, f); }); // newest first
     // Handed to the firm and still Forwarded/Qualified, or already reported on (it keeps counting
     // when the manager later gives the lead another reason in Dynamics).
+    const since = new Date(Date.now() - AudacShell.LEAD_FOLLOW_UP_DAYS * 86400000).toISOString();
+    document.getElementById('lead-window-days').textContent = AudacShell.LEAD_FOLLOW_UP_DAYS;
     const leads = (leadsRes.data || []).filter(l => (l.route === 'rep' || l.route === 'trade_show')
+      && (l.created_on || '') >= since
       && (['Forwarded', 'Qualified'].includes(l.crm_status_reason) || latest.has(l.external_id)));
     const isDone = (l) => latest.has(l.external_id) || l.crm_status_reason === 'Qualified';
     const daysSince = (iso) => Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
@@ -627,7 +630,7 @@ They can no longer log or import activities. Everything they logged stays, under
       <td>${r.meeting || '—'}</td>
       <td>${r.project || '—'}</td>
       <td>${r.oldest ? `${daysSince(r.oldest)} days` : '—'}</td>
-    </tr>`).join('') : '<tr><td colspan="7" class="empty-note">No leads handed to rep firms yet.</td></tr>';
+    </tr>`).join('') : `<tr><td colspan="7" class="empty-note">No leads handed to rep firms in the last ${AudacShell.LEAD_FOLLOW_UP_DAYS} days.</td></tr>`;
     const firmName = (id) => firmsCache.find(f => f.id === id)?.name || '';
     const leadById = new Map((leadsRes.data || []).map(l => [l.external_id, l]));
     const recent = fus.slice(0, 12);

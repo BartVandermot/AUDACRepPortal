@@ -241,10 +241,12 @@
   // "Qualified" in AUDAC's CRM = turned into an account + contact after the rep made contact.
   const OUTCOMES = { contacted: 'Contacted', meeting: 'Meeting or demo planned', project: 'Project or quote', not_relevant: 'Not interested / not relevant' };
   const OUTCOME_CHIP = { contacted: 'gold', meeting: 'gold', project: 'ok', not_relevant: '' };
-  const LEAD_FRESH_DAYS = 183; // older ones without follow-up go in a collapsed list
+  const FOLLOW_UP_DAYS = AudacShell.LEAD_FOLLOW_UP_DAYS;
   let leadsCache = [];
   const leadDay = (l) => String(l.created_on || '').slice(0, 10);
   const isMine = (l) => l.route === 'rep' || l.route === 'trade_show';
+  // Only recent leads handed to the firm ask for follow-up; the rest is history.
+  const isActionable = (l) => isMine(l) && (!l.created_on || daysAgo(leadDay(l)) <= FOLLOW_UP_DAYS);
   const followedUp = (l) => !!l.outcome || l.crm_status_reason === 'Qualified';
 
   function originLine(l) {
@@ -257,7 +259,7 @@
   }
 
   function leadItem(l) {
-    const mine = isMine(l);
+    const mine = isActionable(l);
     const age = l.created_on ? daysAgo(leadDay(l)) : null;
     const late = mine && !followedUp(l) && age !== null && age > 7;
     const place = [l.city, l.state_code].filter(Boolean).join(', ');
@@ -282,28 +284,20 @@
   }
 
   function renderLeads() {
-    const mine = leadsCache.filter(isMine);
-    const info = leadsCache.filter(l => l.route === 'info');
-    if (!mine.length && !info.length) {
-      $('leads-sub').textContent = 'No leads for your firm yet. When AUDAC forwards an enquiry from your territory to you, it shows up here.';
-      $('leads-list').innerHTML = '';
-      return;
-    }
-    const todo = mine.filter(l => !followedUp(l));
-    const fresh = todo.filter(l => !l.created_on || daysAgo(leadDay(l)) <= LEAD_FRESH_DAYS);
-    const older = todo.filter(l => !fresh.includes(l));
-    const done = mine.filter(followedUp);
-    $('leads-sub').textContent = mine.length
-      ? `${mine.length} lead${mine.length === 1 ? '' : 's'} handed to your firm` +
+    const current = leadsCache.filter(isActionable);
+    const earlier = leadsCache.filter(l => !isActionable(l));
+    const todo = current.filter(l => !followedUp(l));
+    const done = current.filter(followedUp);
+    $('leads-sub').textContent = current.length
+      ? `${current.length} new lead${current.length === 1 ? '' : 's'} for your firm` +
         (todo.length ? ` · ${todo.length} waiting for your follow-up` : ' · all followed up') +
-        '. Contact them, then tell AUDAC what came of it: AUDAC turns them into accounts in its CRM, and that is how we see which leads turn into business.'
-      : 'No leads have been forwarded to your firm yet.';
+        '. Contact them, then tell AUDAC in two clicks what came of it.'
+      : 'No new leads right now. When AUDAC forwards an enquiry from your territory, it shows up here and you get an e-mail.';
     const group = (title, list) => list.length ? `<p class="group-title">${title}</p><ul class="list">${list.map(leadItem).join('')}</ul>` : '';
-    $('leads-list').innerHTML = group('Waiting for your follow-up', fresh) + group('Followed up', done) +
-      (older.length ? `<details class="older"><summary>${older.length} older lead${older.length === 1 ? '' : 's'} (more than 6 months) without a follow-up</summary><ul class="list">${older.map(leadItem).join('')}</ul></details>` : '') +
-      (info.length ? `<details class="older"><summary>${info.length} web enquir${info.length === 1 ? 'y' : 'ies'} from your territory, answered by AVL Media Group (for your information)</summary>
-        <p class="empty">AUDAC passed these to AVL Media Group, which replied to the customer. No follow-up is asked from you, but you may know the company.</p>
-        <ul class="list">${info.map(leadItem).join('')}</ul></details>` : '');
+    $('leads-list').innerHTML = group('Waiting for your follow-up', todo) + group('Followed up', done) +
+      (earlier.length ? `<details class="older"><summary>Earlier leads from your territory (${earlier.length}) · for reference</summary>
+        <p class="empty">Leads from more than ${FOLLOW_UP_DAYS} days ago, such as the InfoComm 2026 booth visitors, and web enquiries AVL Media Group answered. Shown as history; no follow-up is asked.</p>
+        <ul class="list">${earlier.map(leadItem).join('')}</ul></details>` : '');
   }
 
   function openLeadForm(id) {

@@ -257,7 +257,7 @@
     <thead>
       <tr>
         <th data-sort="firm_name">Firm</th><th data-sort="activity_count">Activities</th><th data-sort="demo_gear_count">Demo Gear Used</th><th data-sort="open_pipeline_value_usd">Open Pipeline</th><th data-sort="new_pipeline_value_usd">New Pipeline (Month)</th>
-        <th data-sort="education_count">Education Certs</th><th data-sort="leads" title="Leads handed to the firm that it followed up (reported in My territory, or Qualified in Dynamics)">Leads followed up</th><th>Sell-out MoM</th><th data-sort="rag">RAG</th><th data-sort="review">Review</th>
+        <th data-sort="education_count">Education Certs</th><th data-sort="leads" title="Leads of the last 60 days handed to the firm that it followed up (reported in My territory, or Qualified in Dynamics)">Leads followed up</th><th>Sell-out MoM</th><th data-sort="rag">RAG</th><th data-sort="review">Review</th>
       </tr>
     </thead>
     <tbody id="scorecard-body"></tbody>
@@ -292,7 +292,7 @@
     <div class="dd-sub-title">Education</div>
     <div id="dd-education"></div>
 
-    <div class="dd-sub-title">Leads <span style="font-weight:400; text-transform:none; letter-spacing:0; color:var(--color-text-muted);">— forwarded to the firm or trade-show visitors from its territory</span></div>
+    <div class="dd-sub-title">Leads <span style="font-weight:400; text-transform:none; letter-spacing:0; color:var(--color-text-muted);">— of the last 60 days, forwarded to the firm or trade-show visitors from its territory</span></div>
     <div id="dd-leads"></div>
 
     <div class="dd-sub-title">Accounts <span style="font-weight:400; text-transform:none; letter-spacing:0; color:var(--color-text-muted);">— contact = linked activity in the last 3 months</span></div>
@@ -665,7 +665,7 @@
   const inMonth = (iso, m) => !!iso && String(iso).slice(0, 7) === m;
   function renderLeadReview(firmId, month) {
     const s = leadStats(firmId);
-    if (!s.handed.length) return '<div class="empty-note">No leads handed to this firm yet.</div>';
+    if (!s.handed.length) return `<div class="empty-note">No leads handed to this firm in the last ${AudacShell.LEAD_FOLLOW_UP_DAYS} days.</div>`;
     const reported = (leadData.byLead.get(firmId) || []).filter(f => inMonth(f.created_at, month));
     const leadName = (id) => { const l = leadData.leads.find(x => x.external_id === id); return l ? [l.company, l.full_name].filter(Boolean).join(' · ') : ''; };
     const place = (l) => [l.city, l.state_code].filter(Boolean).join(', ');
@@ -1188,7 +1188,7 @@
 
   function agendaLeads(firmId, month) {
     const s = leadStats(firmId);
-    if (!s.handed.length) return '<p style="color:#999;">No leads handed to this firm yet.</p>';
+    if (!s.handed.length) return `<p style="color:#999;">No leads handed to this firm in the last ${AudacShell.LEAD_FOLLOW_UP_DAYS} days.</p>`;
     const reported = (leadData.byLead.get(firmId) || []).filter(f => inMonth(f.created_at, month));
     const name = (l) => escapeHtml([l.company, l.full_name].filter(Boolean).join(' · '));
     const byId = new Map(leadData.leads.map(l => [l.external_id, l]));
@@ -1527,7 +1527,10 @@
         if (!byLead.has(f.rep_firm_id)) byLead.set(f.rep_firm_id, []);
         byLead.get(f.rep_firm_id).push(f);
       });
+      // Only recent leads ask for follow-up (AudacShell.LEAD_FOLLOW_UP_DAYS); older ones are history.
+      const since = new Date(Date.now() - AudacShell.LEAD_FOLLOW_UP_DAYS * 86400000).toISOString();
       const leads = (leadRows.data || []).filter(l => l.rep_firm_id && (l.route === 'rep' || l.route === 'trade_show')
+        && (l.created_on || '') >= since
         && (['Forwarded', 'Qualified'].includes(l.crm_status_reason) || latest.has(l.external_id)));
       leadData = { leads, latest, byLead };
     }
