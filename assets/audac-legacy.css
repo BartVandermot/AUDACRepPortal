@@ -88,7 +88,8 @@ button.audac-btn-outline.danger-outline { color: var(--color-danger); border-col
 
 /* 6. Data tables: opaque, quiet, readable */
 table.detail, table.scorecard, table.crm-table, table.rep-table, table.territory-table, table.split-table {
-  background: var(--color-bg-raised); border: 0; border-radius: var(--radius-tile); box-shadow: var(--depth-card);
+  background: rgba(17, 18, 21, 0.92); border: 0; border-radius: var(--radius-tile); box-shadow: var(--depth-card);
+  -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter);
   border-collapse: separate; border-spacing: 0; overflow: hidden; font-size: 13.5px; color: var(--color-text-primary);
 }
 table.detail th, table.scorecard th, table.crm-table th, table.rep-table th, table.territory-table th, table.split-table th {
