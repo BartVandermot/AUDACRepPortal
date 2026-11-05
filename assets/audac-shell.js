@@ -157,6 +157,13 @@
     }
   }
 
+  // The service worker (/sw.js) only handles push notifications -- it never
+  // caches pages. Registered on every page so the portal installs as an app
+  // from any page (Chrome/Edge on Android) and notifications keep working.
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {}); });
+  }
+
   window.AudacShell = {
     icon,
     // A lead asks for follow-up only while it is fresh: older ones are history
