@@ -97,7 +97,16 @@
   <div id="loading-note">Loading reps…</div>
 
   <div id="content" style="display:none;">
-    <h2 class="section-title" style="margin-top:0; padding-top:0; border-top:none;">Rep Firms &amp; Their CRM Contacts</h2>
+    <h2 class="section-title" id="usage" style="margin-top:0; padding-top:0; border-top:none;">Usage</h2>
+    <p class="upload-hint">Who uses the portal: per firm, the most recent sign-in and logged activity of its reps. Firms that went quiet come first, so you know who to nudge. Firms without any rep account need their signup link (Copy Link below).</p>
+    <div style="overflow-x:auto;">
+      <table class="rep-table">
+        <thead><tr><th>Rep Firm</th><th>Status</th><th>Reps</th><th>Last sign-in</th><th>Last activity</th><th>Activities (30 days)</th><th>This month</th></tr></thead>
+        <tbody id="usage-body"><tr><td colspan="7" class="empty-note">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <h2 class="section-title">Rep Firms &amp; Their CRM Contacts</h2>
     <p class="upload-hint">Each rep firm's own CRM account (its Independent Rep Firm record in Dataverse — not one of the dealer accounts they sell to) and the individual people under it. Click a firm to see its people, and link one to their portal login there. If a firm shows no CRM account yet, search for and link the right one. Use "Copy Link" to get that firm's own sign-up link to send its reps — it takes them straight to the sign-up screen with that firm already selected, no manual picking required.</p>
 
     <div class="action-row" style="margin-bottom:16px;">
@@ -539,6 +548,40 @@ They can no longer log or import activities. Everything they logged stays, under
   }
   document.getElementById('sync-crm-btn').addEventListener('click', runCrmSync);
 
+  // ---------- Usage per firm (get_rep_usage: sign-ins live in auth.users) ----------
+  async function loadUsage() {
+    const body = document.getElementById('usage-body');
+    const { data, error } = await client.rpc('get_rep_usage');
+    if (error) { body.innerHTML = `<tr><td colspan="7" class="empty-note">Could not load usage: ${escapeHtml(error.message)}</td></tr>`; return; }
+    const reps = (data || []).filter(r => r.is_active !== false);
+    const daysSince = (iso) => iso ? Math.floor((Date.now() - new Date(iso).getTime()) / 86400000) : null;
+    const ago = (iso) => { const d = daysSince(iso); return d === null ? '—' : d === 0 ? 'today' : d === 1 ? 'yesterday' : `${d} days ago`; };
+    const latest = (vals) => vals.filter(Boolean).sort().pop() || null;
+    const rows = firmsCache.map(f => {
+      const fr = reps.filter(r => r.rep_firm_id === f.id);
+      const lastSignIn = latest(fr.map(r => r.last_sign_in_at));
+      const lastAct = latest(fr.map(r => r.last_activity_date));
+      const acts30 = fr.reduce((s, r) => s + Number(r.acts_30d || 0), 0);
+      const actsMonth = fr.reduce((s, r) => s + Number(r.acts_this_month || 0), 0);
+      const quiet = daysSince(lastAct);
+      const status = !fr.length ? { rank: 0, cls: 'danger', label: 'No rep account' }
+        : quiet === null ? { rank: 1, cls: 'danger', label: 'Never logged' }
+        : quiet > 30 ? { rank: 2, cls: 'warn', label: 'Quiet 30+ days' }
+        : quiet > 14 ? { rank: 3, cls: 'warn', label: 'Quiet 14+ days' }
+        : { rank: 4, cls: 'ok', label: 'Active' };
+      return { f, fr, lastSignIn, lastAct, acts30, actsMonth, status };
+    }).sort((a, b) => a.status.rank - b.status.rank || a.acts30 - b.acts30 || a.f.name.localeCompare(b.f.name));
+    body.innerHTML = rows.map(r => `<tr>
+      <td><b>${escapeHtml(r.f.name)}</b>${r.fr.length ? `<div class="muted" style="font-size:12px;">${r.fr.map(p => `${escapeHtml(p.full_name || p.email)} (${p.last_sign_in_at ? 'signed in ' + ago(p.last_sign_in_at) : 'never signed in'})`).join(', ')}</div>` : ''}</td>
+      <td><span class="chip ${r.status.cls}">${r.status.label}</span></td>
+      <td>${r.fr.length}</td>
+      <td>${r.lastSignIn ? ago(r.lastSignIn) : '—'}</td>
+      <td>${r.lastAct ? ago(r.lastAct + 'T12:00:00') : '—'}</td>
+      <td>${r.acts30}</td>
+      <td>${r.actsMonth}</td>
+    </tr>`).join('');
+  }
+
   async function loadAll() {
     const [firmsRes, repsRes, contactsRes, accountsRes] = await Promise.all([
       client.from('rep_firms').select('id, name, crm_account_external_id').eq('status', 'active').order('name'),
@@ -592,6 +635,7 @@ They can no longer log or import activities. Everything they logged stays, under
     currentUser = g.user;
     document.getElementById('user-email').textContent = g.profile.email;
     await loadAll();
+    loadUsage();
     // Deep link from the dashboard work list: /reps?view=attention
     const view = new URLSearchParams(location.search).get('view');
     if (['attention', 'left', 'inactive'].includes(view)) {

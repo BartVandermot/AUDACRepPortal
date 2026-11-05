@@ -79,6 +79,14 @@
   .terr .progress { max-width: 360px; }
   .terr .rows li { grid-template-columns: 1fr auto; }
   .terr .rows .button-secondary { min-height: 40px; padding: 0 14px; font-size: 13.5px; }
+  .team { padding: var(--space-6); }
+  .team table { width: 100%; border-collapse: collapse; margin-top: var(--space-3); font-size: 14px; }
+  .team th { text-align: left; font-size: 12px; font-weight: 650; letter-spacing: .4px; color: var(--color-text-muted); padding: 0 8px 8px 0; }
+  .team td { padding: 10px 8px 10px 0; border-top: 1px solid rgba(255,255,255,0.06); color: var(--color-text-secondary); }
+  .team td b { color: var(--color-text-primary); font-weight: 600; }
+  .team td.num { font-variant-numeric: tabular-nums; color: var(--color-text-primary); }
+  .team .quiet { color: var(--color-warning); }
+  .team p.sub { margin: var(--space-1) 0 0; font-size: 14px; line-height: 21px; color: var(--color-text-secondary); }
   .skeleton { color: transparent !important; background: rgba(255,255,255,0.06); border-radius: 8px; }
 
   @media (max-width: 1000px) {
@@ -154,6 +162,15 @@
             <div class="progress" role="img" id="terr-meter"><i></i></div>
             <div id="terr-list"></div>
             <p class="meta-line" id="terr-deals" style="margin-top:8px;"></p>
+          </section>
+
+          <section class="team surface-card" id="team" aria-labelledby="team-h" hidden>
+            <h3 class="card-title" id="team-h">Your team</h3>
+            <p class="sub" id="team-sub"></p>
+            <div style="overflow-x:auto;"><table>
+              <thead><tr><th>Rep</th><th>This month</th><th>Last month</th><th>Last activity</th><th>Last sign-in</th></tr></thead>
+              <tbody id="team-body"></tbody>
+            </table></div>
           </section>
 
           <section class="recent surface-card" aria-labelledby="recent-h">
@@ -333,8 +350,29 @@
     }
     $('page').setAttribute('aria-busy', 'false');
 
-    if (firm) await Promise.all([renderReview(), renderTerritory()]);
+    if (firm) await Promise.all([renderReview(), renderTerritory(), profile?.is_rep_admin ? renderTeam() : null]);
     await renderStarter(profile, firm, session.user.id);
+  }
+
+  // ---------- Firm admins: who on the team is logging ----------
+  async function renderTeam() {
+    const { data, error } = await client.rpc('get_my_team');
+    const rows = (!error && data) || [];
+    if (!rows.length) return;
+    const days = (iso) => iso ? Math.floor((Date.now() - new Date(iso).getTime()) / 86400000) : null;
+    const ago = (iso) => { const d = days(iso); return d === null ? 'never' : d === 0 ? 'today' : d === 1 ? 'yesterday' : `${d} days ago`; };
+    const quiet = rows.filter(r => { const d = days(r.last_activity_date && r.last_activity_date + 'T12:00:00'); return d === null || d > 14; }).length;
+    $('team-sub').textContent = `${rows.length} rep${rows.length === 1 ? '' : 's'} on the portal` + (quiet ? ` · ${quiet} haven’t logged anything in the last 2 weeks.` : ' · everyone logged in the last 2 weeks.');
+    $('team-body').innerHTML = rows.map(r => {
+      const d = days(r.last_activity_date && r.last_activity_date + 'T12:00:00');
+      return `<tr>
+        <td><b>${esc(r.full_name || r.email)}</b>${r.is_rep_admin ? ' <span class="chip">Admin</span>' : ''}</td>
+        <td class="num">${r.acts_this_month}</td>
+        <td class="num">${r.acts_prev_month}</td>
+        <td class="${d === null || d > 14 ? 'quiet' : ''}">${r.last_activity_date ? ago(r.last_activity_date + 'T12:00:00') : 'nothing logged yet'}</td>
+        <td>${ago(r.last_sign_in_at)}</td></tr>`;
+    }).join('');
+    $('team').hidden = false;
   }
 
   // ---------- Last finalized review, with AUDAC's feedback ----------

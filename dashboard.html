@@ -1438,7 +1438,7 @@
   let ops = null;
   const NOT_ASSIGNABLE = new Set(['Independent Rep Firm', 'Competitor', 'Supplier']);
   async function loadOpsData() {
-    const [accts, zips, blocking, manualContacts, reps, skipped, lastPipe, lastEdu, sellAny, lastRuns, lastOkRun, lastEduBatch, dealUpdates] = await Promise.all([
+    const [accts, zips, blocking, manualContacts, reps, skipped, lastPipe, lastEdu, sellAny, lastRuns, lastOkRun, lastEduBatch, dealUpdates, usage] = await Promise.all([
       AudacData.all(client.from('crm_accounts').select('name_key, source, rep_firm_id, relationship_type, state_code, country_code, is_active, last_synced_at').order('external_id')),
       client.from('rep_firm_zip_ranges').select('state_code'),
       client.from('crm_contacts').select('external_id', { count: 'exact', head: true }).eq('blocks_pipeline_sync', true),
@@ -1453,7 +1453,13 @@
       // Also counts imports that added nothing new (all rows already known).
       client.from('data_import_batches').select('created_at').eq('source', 'education').is('undone_at', null).order('created_at', { ascending: false }).limit(1),
       client.from('deal_status_updates').select('id', { count: 'exact', head: true }).is('handled_at', null),
+      client.rpc('get_rep_usage'),
     ]);
+    const usageRows = (usage.data || []).filter(u => u.is_active !== false);
+    const firmsWithReps = new Set(usageRows.map(u => u.rep_firm_id).filter(Boolean));
+    const lastActByFirm = new Map();
+    usageRows.forEach(u => { if (u.last_activity_date && (!lastActByFirm.get(u.rep_firm_id) || u.last_activity_date > lastActByFirm.get(u.rep_firm_id))) lastActByFirm.set(u.rep_firm_id, u.last_activity_date); });
+    const quietCutoff = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
     const accounts = accts.data || [];
     const covered = new Set([...firmsCache.flatMap(f => f.states || []), ...(zips.data || []).map(z => z.state_code)]);
     const synced = accounts.filter(a => a.source !== 'manual');
@@ -1492,6 +1498,8 @@
       lastEduImport: maxIso(lastEduBatch.data?.[0]?.created_at, lastEdu.data?.[0]?.uploaded_at),
       selloutInUse: (sellAny.count || 0) > 0,
       dealUpdates: dealUpdates.count || 0,
+      firmsNoReps: firmsCache.filter(f => !firmsWithReps.has(f.id)).length,
+      firmsQuiet: firmsCache.filter(f => firmsWithReps.has(f.id) && !((lastActByFirm.get(f.id) || '') >= quietCutoff)).length,
       repEmailsByFirm: repRows.reduce((m, r) => { if (r.rep_firm_id && r.email) (m[r.rep_firm_id] ||= []).push(r.email); return m; }, {}),
     };
   }
@@ -1543,6 +1551,16 @@
       state: 'todo', main: `<b class="ops-count">${plural(ops.dealUpdates, 'deal update')}</b> from reps to process`,
       sub: 'Won, lost or moved deals reported on My territory. Change them in Dynamics, then mark them processed.',
       href: '/admin#pipeline', action: 'Process',
+    });
+    if (ops.firmsQuiet) items.push({
+      state: 'todo', main: `<b class="ops-count">${plural(ops.firmsQuiet, 'firm')}</b> with reps but no activity in 30 days`,
+      sub: 'They have portal accounts but stopped logging. See who signed in last, and nudge them.',
+      href: '/reps#usage', action: 'Usage',
+    });
+    if (ops.firmsNoReps) items.push({
+      state: 'off', main: `<b class="ops-count">${plural(ops.firmsNoReps, 'firm')}</b> without any rep account`,
+      sub: 'Send them their signup link (Reps, Copy Link).',
+      href: '/reps#usage', action: 'Usage',
     });
     if (ops.repsAttention) items.push({
       state: 'todo', main: `<b class="ops-count">${plural(ops.repsAttention, 'rep')}</b> to finish setting up`,
