@@ -223,7 +223,7 @@
     }
     // [line width multiplier, alpha multiplier]: wide faint strokes under a
     // thin bright core. (canvas shadowBlur looks similar but costs ~10x more.)
-    const GLOW_PASSES = [[12, 0.035], [6, 0.07], [2.6, 0.18], [1, 1]];
+    const GLOW_PASSES = [[22, 0.045], [10, 0.09], [4, 0.2], [1, 1]];
     function waveGradient(alpha) {
       const g = ctx.createLinearGradient(0, 0, W, 0);
       g.addColorStop(0, 'rgba(217,166,83,0)');
