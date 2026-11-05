@@ -51,6 +51,10 @@
     {
       "source": "/resources",
       "destination": "/resources.html"
+    },
+    {
+      "source": "/crossref",
+      "destination": "/crossref.html"
     }
   ],
   "headers": [

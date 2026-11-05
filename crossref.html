@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>AUDAC Rep Portal — Competitor cross-reference</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/audac-ui.css">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="AUDAC Reps">
+<meta name="theme-color" content="#0b0c0e">
+<style>
+  .tool-wrap { border-radius: var(--radius-tile); overflow: hidden; box-shadow: var(--depth-card); background: #0C0C0C; }
+  #tool { display: block; width: 100%; border: 0; height: calc(100dvh - 150px); min-height: 520px; background: #0C0C0C; }
+  .crumb { display: inline-flex; align-items: center; gap: 4px; margin: 0 0 var(--space-3); font-size: 13.5px; color: var(--color-text-secondary); text-decoration: none; }
+  .crumb:hover { color: var(--color-text-primary); }
+  .crumb svg { width: 16px; height: 16px; }
+  @media (max-width: 760px) { #tool { height: calc(100dvh - 190px); } }
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <aside class="sidebar glass-floating" id="app-sidebar" aria-label="Main menu"></aside>
+  <div class="app-content">
+    <header class="topbar">
+      <h1>Competitor cross-reference</h1>
+      <span class="spacer"></span>
+      <button type="button" class="icon-btn mobile-only" id="mobile-signout" aria-label="Sign out" title="Sign out"></button>
+    </header>
+    <main class="page" id="page">
+      <a class="crumb" href="/resources" id="crumb"></a>
+      <div class="tool-wrap"><iframe id="tool" title="AUDAC competitor cross-reference" src="about:blank"></iframe></div>
+    </main>
+  </div>
+</div>
+<nav class="bottom-nav glass-floating" id="app-bottom-nav" aria-label="Main menu"></nav>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/assets/audac-shell.js"></script>
+<script>
+  const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
+  const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const $ = (id) => document.getElementById(id);
+
+  AudacShell.mount('resources');
+  const signOut = async () => { await client.auth.signOut(); window.location.href = '/login'; };
+  AudacShell.onSignOut(signOut);
+  $('mobile-signout').innerHTML = AudacShell.icon('out');
+  $('mobile-signout').addEventListener('click', signOut);
+  $('crumb').innerHTML = AudacShell.icon('left') + 'Resources';
+
+  // What reps look up: input for the structural competitor-matching project.
+  // Product names only. Logging never gets in the way of the tool itself.
+  const log = (row) => { client.from('crossref_lookups').insert(row).then(() => {}, () => {}); };
+
+  function hookTool(frame) {
+    let w;
+    try { w = frame.contentWindow; if (!w || !w.document.getElementById('sb')) return; } catch { return; }
+    // Searches: the term once the rep stops typing.
+    let timer = null, lastLogged = '';
+    w.document.getElementById('sb').addEventListener('input', (e) => {
+      clearTimeout(timer);
+      const q = String(e.target.value || '').trim();
+      timer = setTimeout(() => {
+        if (q.length >= 2 && q.toLowerCase() !== lastLogged) { lastLogged = q.toLowerCase(); log({ kind: 'search', query: q.slice(0, 100) }); }
+      }, 1500);
+    });
+    // Opened pairings: which competitor product, and which AUDAC answer.
+    const original = w.openCard;
+    if (typeof original === 'function') {
+      w.openCard = function (i) {
+        try { const d = (w._R || [])[i]; if (d) log({ kind: 'open', brand: d.brand, model: d.model, audac: d.audac }); } catch { /* ignore */ }
+        return original.apply(this, arguments);
+      };
+    }
+  }
+
+  (async function init() {
+    const { data: { session } } = await client.auth.getSession();
+    if (!session) { window.location.href = '/login'; return; }
+    const { data: profile } = await client.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
+    if (profile && profile.role !== 'rep') AudacShell.mount('resources', { nav: profile.role === 'executive' ? 'executive' : 'manager' });
+    AudacShell.setUser({ name: profile?.full_name || session.user.email, sub: session.user.email });
+    // The pairings live in the database (signed-in users only); the tool file is an empty shell.
+    const [{ data, error }] = await Promise.all([client.rpc('get_crossref')]);
+    if (error || !data || !(data.rows || []).length) {
+      $('page').insertAdjacentHTML('beforeend', `<div class="notice ${error ? 'error' : 'info'}">${error ? 'Could not load the cross-reference: ' + String(error.message).replace(/</g, '&lt;') : 'The cross-reference has no data yet. AUDAC is loading it.'}</div>`);
+      $('tool').closest('.tool-wrap').hidden = true;
+      return;
+    }
+    const frame = $('tool');
+    frame.addEventListener('load', () => {
+      try { frame.contentWindow.crossrefInit(data.rows, data.version); } catch (e) { console.error(e); }
+      hookTool(frame);
+    });
+    frame.src = '/tools/crossref-tool.html';
+  })();
+</script>
+</body>
+</html>

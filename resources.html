@@ -29,6 +29,15 @@
   .ask { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-3); max-width: 640px; }
   .ask textarea { min-height: 120px; }
   .ask .route { margin: 0; font-size: 13px; color: var(--color-text-muted); }
+  .ask .label-like { display: block; margin-bottom: 8px; font-size: 13px; font-weight: 600; color: var(--color-text-secondary); }
+  .kinds { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); }
+  .kind { text-align: left; padding: 12px 14px; border-radius: var(--radius-tile); border: 1px solid var(--color-border); background: var(--well-bg); color: var(--color-text-secondary); cursor: pointer; font: inherit; }
+  .kind b { display: block; font-size: 14.5px; color: var(--color-text-primary); }
+  .kind span { display: block; margin-top: 2px; font-size: 12.5px; line-height: 17px; }
+  .kind[aria-checked="true"] { border-color: var(--color-gold); box-shadow: 0 0 0 1px var(--color-gold) inset; }
+  .kind:focus-visible { outline: 2px solid var(--color-gold); outline-offset: 2px; }
+  .ask .channel { display: inline-flex; align-items: center; gap: 8px; width: auto; min-height: 44px; padding: 0 18px; }
+  @media (max-width: 560px) { .kinds { grid-template-columns: 1fr; } }
   .ask .form-actions { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
   .ask .button-primary { width: auto; padding: 0 22px; }
   .msg { margin: 0; font-size: 13.5px; line-height: 20px; }
@@ -53,10 +62,14 @@
     </header>
 
     <main class="page" id="page">
-      <p class="intro">Everything you need around AUDAC in one place: product information, training, and a direct line to AUDAC.</p>
+      <p class="intro">Everything you need around AUDAC in one place: product information, the competitor cross-reference, training, and a direct line to AUDAC.</p>
 
       <div class="tiles">
-        <!-- Competitor cross-reference tile: added once the tool data is protected (not a public file). -->
+        <a class="tile surface-card featured" href="/crossref">
+          <b>Competitor cross-reference</b>
+          <span>Look up a competitor model (Atlas IED, JBL, QSC, Bose, Biamp…) and get the AUDAC alternative with a ready-to-use pitch.</span>
+          <span class="go">Open →</span>
+        </a>
         <a class="tile surface-card" href="https://audac.eu/noram/" target="_blank" rel="noopener">
           <b>AUDAC products (North America)</b>
           <span>The full product range with datasheets, manuals and specifications.</span>
@@ -81,21 +94,19 @@
 
       <section class="section surface-card" id="ask" aria-labelledby="ask-h">
         <h2 class="card-title" id="ask-h">Ask AUDAC</h2>
-        <p class="sub">A technical question, a product you can't find, or something about this portal? Ask it here. Your question is saved in the portal so it can't get lost, and your mail app opens with a ready-to-send e-mail to the right person.</p>
+        <p class="sub">Technical questions go to AVL Media Group’s technical team; sales questions reach Bart directly, by Teams, WhatsApp or e-mail. Every question is also saved in the portal, so nothing gets lost.</p>
         <form class="ask" id="ask-form">
           <div class="field">
-            <label for="ask-topic">Topic</label>
-            <select id="ask-topic"></select>
+            <span class="label-like" id="ask-kind-label">What is it about?</span>
+            <div class="kinds" role="radiogroup" aria-labelledby="ask-kind-label" id="ask-kinds"></div>
           </div>
           <p class="route" id="ask-route"></p>
           <div class="field">
             <label for="ask-message">Your question</label>
-            <textarea id="ask-message" maxlength="4000" required placeholder="e.g. Can the NOVA8 be controlled from a Q-SYS core, and is there a plugin?"></textarea>
+            <textarea id="ask-message" maxlength="4000" required></textarea>
           </div>
           <p class="msg" id="ask-msg" hidden></p>
-          <div class="form-actions">
-            <button type="submit" class="button-primary" id="ask-send">Send question</button>
-          </div>
+          <div class="form-actions" id="ask-actions"></div>
         </form>
         <ul class="questions" id="ask-list" hidden></ul>
       </section>
@@ -119,52 +130,88 @@
   $('mobile-signout').innerHTML = AudacShell.icon('out');
   $('mobile-signout').addEventListener('click', signOut);
 
-  // Who answers what (agreed with Bart, 2026-11-05). Change addresses here only.
-  const ASK_ROUTES = {
-    technical: { label: 'Technical question (products, system design, programming)', to: 'jperry@avlmediagroup.com', cc: 'bart@pvs.global', who: 'Jay Perry (AVL Media Group), with AUDAC in copy' },
-    commercial: { label: 'Pricing, stock or orders', to: 'bart@pvs.global', cc: '', who: 'AUDAC' },
-    portal: { label: 'This portal (login, logging, leads)', to: 'bart@pvs.global', cc: '', who: 'AUDAC' },
-    other: { label: 'Something else', to: 'bart@pvs.global', cc: '', who: 'AUDAC' },
+  // Who answers what (agreed with Bart, 2026-11-05). Change contacts here only.
+  const BART = { name: 'Bart', email: 'bart@pvs.global', teams: 'bart@pvs.global', whatsapp: '32484113294' }; // whatsapp: country code + number, digits only ('' hides the button)
+  const ASK_KINDS = {
+    technical: { label: 'Technical', hint: 'Products, system design, programming', to: 'jperry@avlmediagroup.com', cc: BART.email,
+      route: 'Goes to Jay Perry (AVL Media Group) by e-mail, with AUDAC in copy.', placeholder: 'e.g. Can the NOVA8 be controlled from a Q-SYS core, and is there a plugin?' },
+    commercial: { label: 'Sales', hint: 'Projects, pricing, quotes, demo gear, availability', to: BART.email, cc: '',
+      route: 'Reaches Bart directly. Pick how: Teams, WhatsApp or e-mail.', placeholder: 'e.g. School project in Tampa, 40 classrooms: can you support with a quote and a demo?' },
+    other: { label: 'Something else', hint: 'This portal, training, anything else', to: BART.email, cc: '',
+      route: 'Goes to Bart by e-mail.', placeholder: 'e.g. A colleague of mine needs an account for the portal.' },
   };
-  $('ask-topic').innerHTML = Object.entries(ASK_ROUTES).map(([k, r]) => `<option value="${k}">${esc(r.label)}</option>`).join('');
-  const showRoute = () => { $('ask-route').textContent = `Goes to ${ASK_ROUTES[$('ask-topic').value].who}.`; };
-  $('ask-topic').addEventListener('change', showRoute);
-  showRoute();
+  const TOPIC_LABEL = { technical: 'Technical question', commercial: 'Sales question', portal: 'Portal', other: 'Other' };
+  let kind = 'technical';
+  function renderKinds() {
+    $('ask-kinds').innerHTML = Object.entries(ASK_KINDS).map(([k, v]) =>
+      `<button type="button" class="kind" role="radio" aria-checked="${k === kind}" data-kind="${k}"><b>${esc(v.label)}</b><span>${esc(v.hint)}</span></button>`).join('');
+    const v = ASK_KINDS[kind];
+    $('ask-route').textContent = v.route;
+    $('ask-message').placeholder = v.placeholder;
+    $('ask-actions').innerHTML = kind === 'commercial'
+      ? `<button type="button" class="button-primary channel" data-channel="teams">Teams</button>`
+        + (BART.whatsapp ? `<button type="button" class="button-primary channel" data-channel="whatsapp">WhatsApp</button>` : '')
+        + `<button type="button" class="button-secondary channel" data-channel="email">E-mail</button>`
+      : `<button type="button" class="button-primary channel" data-channel="email">Send by e-mail</button>`;
+  }
+  $('ask-kinds').addEventListener('click', (e) => { const b = e.target.closest('[data-kind]'); if (b) { kind = b.dataset.kind; renderKinds(); } });
+  $('ask-kinds').addEventListener('keydown', (e) => {
+    if (!['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp'].includes(e.key)) return;
+    const keys = Object.keys(ASK_KINDS), i = keys.indexOf(kind);
+    kind = keys[(i + (e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : keys.length - 1)) % keys.length];
+    renderKinds(); $('ask-kinds').querySelector(`[data-kind="${kind}"]`).focus(); e.preventDefault();
+  });
+  renderKinds();
 
   let me = null;
   const fmtDate = (iso) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
   async function loadQuestions() {
-    const { data, error } = await client.from('rep_questions').select('id, created_at, topic, message, status, answered_at')
+    const { data, error } = await client.from('rep_questions').select('id, created_at, topic, channel, message, status, answered_at')
       .eq('user_id', me.id).order('created_at', { ascending: false }).limit(10);
     const list = $('ask-list');
     if (error || !data || !data.length) { list.hidden = true; return; }
     list.innerHTML = `<p class="group-title" style="margin:0 0 4px;">Your questions</p>` + data.map(q => `<li>
       <div><div class="q">${esc(q.message.length > 240 ? q.message.slice(0, 240) + '…' : q.message)}</div>
-        <div class="meta">${esc(fmtDate(q.created_at))} · ${esc(ASK_ROUTES[q.topic]?.label || q.topic)}</div></div>
+        <div class="meta">${esc(fmtDate(q.created_at))} · ${esc(TOPIC_LABEL[q.topic] || q.topic)}${q.channel && q.channel !== 'email' ? ' · via ' + (q.channel === 'teams' ? 'Teams' : 'WhatsApp') : ''}</div></div>
       <div>${q.status === 'answered' ? `<span class="chip ok">${AudacShell.icon('check')}Answered</span>` : '<span class="chip">Open</span>'}</div>
     </li>`).join('');
     list.hidden = false;
   }
 
-  $('ask-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const topic = $('ask-topic').value, message = $('ask-message').value.trim();
-    const msg = $('ask-msg'), btn = $('ask-send');
-    if (!message) { msg.hidden = false; msg.className = 'msg err'; msg.textContent = 'Type your question first.'; return; }
-    const route = ASK_ROUTES[topic];
-    btn.disabled = true; btn.textContent = 'Sending…';
-    const { error } = await client.from('rep_questions').insert({ topic, message, sent_to: route.to });
-    btn.disabled = false; btn.textContent = 'Send question';
-    if (error) { msg.hidden = false; msg.className = 'msg err'; msg.textContent = 'Could not save your question: ' + error.message; return; }
-    msg.hidden = false; msg.className = 'msg ok';
-    msg.textContent = 'Saved: AUDAC sees your question in the portal. Your mail app opens now to send it by e-mail as well; if it doesn’t, that’s fine.';
+  $('ask-form').addEventListener('submit', (e) => e.preventDefault());
+  // The channel opens right away, inside the click (otherwise browsers block the
+  // new Teams/WhatsApp tab); the question is saved in the portal at the same time.
+  $('ask-actions').addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-channel]');
+    if (!btn) return;
+    const channel = btn.dataset.channel, message = $('ask-message').value.trim(), msg = $('ask-msg');
+    if (!message) { msg.hidden = false; msg.className = 'msg err'; msg.textContent = 'Type your question first.'; $('ask-message').focus(); return; }
+    const v = ASK_KINDS[kind];
+    const signed = `${message.slice(0, 1800)}\n\n— ${me.name}${me.firm ? ', ' + me.firm : ''}`;
+    let sentTo;
+    if (channel === 'teams') {
+      sentTo = 'Teams: ' + BART.teams;
+      window.open(`https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent(BART.teams)}&message=${encodeURIComponent(signed)}`, '_blank', 'noopener');
+    } else if (channel === 'whatsapp') {
+      sentTo = 'WhatsApp: +' + BART.whatsapp;
+      window.open(`https://wa.me/${BART.whatsapp}?text=${encodeURIComponent(signed)}`, '_blank', 'noopener');
+    } else {
+      sentTo = v.to;
+      const subject = `[Rep Portal] ${TOPIC_LABEL[kind]}: ${message.split('\n')[0].slice(0, 60)}`;
+      location.href = `mailto:${encodeURIComponent(v.to)}?${v.cc ? `cc=${encodeURIComponent(v.cc)}&` : ''}subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(signed + '\n(Sent from the AUDAC Rep Portal)')}`;
+    }
+    $('ask-actions').querySelectorAll('button').forEach(b => { b.disabled = true; });
+    const { error } = await client.from('rep_questions').insert({ topic: kind, channel, message, sent_to: sentTo });
+    $('ask-actions').querySelectorAll('button').forEach(b => { b.disabled = false; });
+    msg.hidden = false;
+    if (error) { msg.className = 'msg err'; msg.textContent = 'Your message was opened in ' + (channel === 'email' ? 'your mail app' : channel === 'teams' ? 'Teams' : 'WhatsApp') + ', but saving it in the portal failed: ' + error.message; return; }
+    msg.className = 'msg ok';
+    msg.textContent = channel === 'email'
+      ? 'Saved in the portal. Your mail app opens with the e-mail ready to send.'
+      : `Saved in the portal. ${channel === 'teams' ? 'Teams' : 'WhatsApp'} opens with your message ready; press send there.`;
     $('ask-message').value = '';
     loadQuestions();
-    const firstLine = message.split('\n')[0].slice(0, 60);
-    const subject = `[Rep Portal] ${route.label.split(' (')[0]}: ${firstLine}`;
-    const body = `${message.slice(0, 1800)}\n\n— ${me.name}${me.firm ? ', ' + me.firm : ''}\n(Sent from the AUDAC Rep Portal)`;
-    location.href = `mailto:${encodeURIComponent(route.to)}?${route.cc ? `cc=${encodeURIComponent(route.cc)}&` : ''}subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   });
 
   (async function init() {

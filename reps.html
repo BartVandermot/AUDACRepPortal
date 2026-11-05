@@ -117,7 +117,7 @@
     <div id="lead-notes"></div>
 
     <h2 class="section-title" id="questions">Questions from reps</h2>
-    <p class="upload-hint">Asked via “Ask AUDAC” on the reps’ Resources page. They were also e-mailed from the rep’s own mail app (technical questions to Jay Perry with you in CC; everything else to you). Mark a question answered once it’s handled.</p>
+    <p class="upload-hint">Asked via “Ask AUDAC” on the reps’ Resources page. The rep also sent them through their own channel: technical questions by e-mail to Jay Perry with you in CC; sales questions to you by Teams, WhatsApp or e-mail; anything else to you by e-mail. Mark a question answered once it’s handled.</p>
     <div id="questions-box"><div class="empty-note">Loading…</div></div>
 
     <h2 class="section-title" id="crossref">Competitor cross-reference: what reps look up</h2>
@@ -656,7 +656,8 @@ They can no longer log or import activities. Everything they logged stays, under
   }
 
   // ---------- Questions from reps (Ask AUDAC) ----------
-  const QUESTION_TOPICS = { technical: 'Technical', commercial: 'Pricing, stock or orders', portal: 'Portal', other: 'Other' };
+  const QUESTION_TOPICS = { technical: 'Technical', commercial: 'Sales', portal: 'Portal', other: 'Other' };
+  const QUESTION_CHANNELS = { email: 'e-mail', teams: 'Teams', whatsapp: 'WhatsApp' };
   async function loadQuestions() {
     const box = document.getElementById('questions-box');
     const { data, error } = await client.from('rep_questions').select('*').order('status').order('created_at', { ascending: false }).limit(50);
@@ -667,7 +668,7 @@ They can no longer log or import activities. Everything they logged stays, under
     box.innerHTML = `<div style="overflow-x:auto;"><table class="rep-table"><thead><tr><th>Asked</th><th>Rep</th><th>Topic</th><th>Question</th><th>Status</th><th></th></tr></thead><tbody>${rows.map(q => `<tr>
       <td>${new Date(q.created_at).toLocaleDateString()}</td>
       <td><b>${escapeHtml(q.submitted_by_name || '')}</b><div class="muted" style="font-size:12px;">${escapeHtml(firmName(q.rep_firm_id))}</div></td>
-      <td>${escapeHtml(QUESTION_TOPICS[q.topic] || q.topic)}<div class="muted" style="font-size:12px;">to ${escapeHtml(q.sent_to || '')}</div></td>
+      <td>${escapeHtml(QUESTION_TOPICS[q.topic] || q.topic)}<div class="muted" style="font-size:12px;">${q.channel ? 'via ' + escapeHtml(QUESTION_CHANNELS[q.channel] || q.channel) + ' · ' : ''}${escapeHtml(q.sent_to || '')}</div></td>
       <td style="white-space:pre-line; max-width:420px;">${escapeHtml(q.message)}</td>
       <td>${q.status === 'answered' ? '<span class="chip ok">Answered</span>' : '<span class="chip warn">Open</span>'}</td>
       <td style="white-space:nowrap;">${q.submitted_by_email ? `<a class="link-btn" href="mailto:${encodeURIComponent(q.submitted_by_email)}?subject=${encodeURIComponent('Re: your question in the AUDAC Rep Portal')}&body=${encodeURIComponent('\n\n> ' + q.message.split('\n').join('\n> '))}">Reply</a> · ` : ''}${q.status === 'open' ? `<button type="button" class="link-btn" data-answer="${q.id}">Mark answered</button>` : `<button type="button" class="link-btn" data-reopen="${q.id}">Reopen</button>`}</td>

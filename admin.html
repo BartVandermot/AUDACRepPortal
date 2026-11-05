@@ -162,6 +162,7 @@
     <button type="button" class="tab-btn" data-tab="pipeline">Pipeline</button>
     <button type="button" class="tab-btn" data-tab="sellout">Sell-out</button>
     <button type="button" class="tab-btn" data-tab="mappings">Company Mappings</button>
+    <button type="button" class="tab-btn" data-tab="crossref">Cross-reference</button>
   </div>
 
   <!-- Shared by the three CSV-import tabs -- kept visible regardless of which
@@ -456,6 +457,20 @@
     </div>
   </div>
 
+  <div class="tab-panel" id="tab-crossref">
+    <h2 class="section-title">Competitor cross-reference</h2>
+    <div class="upload-hint">The pairings reps see in the cross-reference tool (Resources → Competitor cross-reference). They are stored here, readable only by signed-in users, never as a public file. Upload a new version as the Rep Tool file (.html), or as Excel/CSV with the columns cat, brand, sub, model, cPow, cIp, audac, aPow, aIp, match (direct/alt), diff (the pitch), link, bestApp. Every upload is kept; you can switch back to an earlier version.</div>
+    <div id="crossref-current" class="kpi-row"></div>
+    <div class="toolbar" style="align-items:flex-end;">
+      <div><label for="crossref-file">File</label><input type="file" id="crossref-file" accept=".html,.htm,.json,.csv,.xlsx,.xls"></div>
+      <div><label for="crossref-version">Version name</label><input type="text" id="crossref-version" placeholder="e.g. v27" maxlength="40"></div>
+      <div><button type="button" class="audac-btn" id="crossref-publish" disabled>Publish</button></div>
+    </div>
+    <div id="crossref-preview" class="upload-hint"></div>
+    <div class="dd-sub-title" style="margin-top:22px;">Versions</div>
+    <div id="crossref-versions"></div>
+  </div>
+
 </main>
 </div>
 </div>
@@ -551,7 +566,7 @@
   }
 
   // ---------- Tabs ----------
-  const TAB_NAMES = ['activities', 'education', 'pipeline', 'sellout', 'mappings'];
+  const TAB_NAMES = ['activities', 'education', 'pipeline', 'sellout', 'mappings', 'crossref'];
   const CSV_IMPORT_TABS = ['education', 'pipeline', 'sellout'];
   function switchTab(name) {
     if (!TAB_NAMES.includes(name)) name = 'activities';
@@ -1424,6 +1439,80 @@
       loadLeadFollowups();
     }));
   }
+
+  // ---------- Competitor cross-reference (versions + upload) ----------
+  const CROSSREF_KEYS = { cat: ['cat', 'category', 'producttype'], brand: ['brand', 'competitorbrand'], sub: ['sub', 'series', 'subbrand'],
+    model: ['model', 'competitormodel'], cPow: ['cpow', 'competitorpower'], cIp: ['cip', 'competitorip'], audac: ['audac', 'audacmodel', 'audacalternative'],
+    aPow: ['apow', 'audacpower'], aIp: ['aip', 'audacip'], match: ['match', 'matchtype'], diff: ['diff', 'pitch', 'yourpitch'], link: ['link', 'url'], bestApp: ['bestapp', 'bestapplication'] };
+  let crossrefParsed = null;
+  async function loadCrossrefVersions() {
+    const { data, error } = await client.from('crossref_versions').select('*').order('uploaded_at', { ascending: false });
+    const box = document.getElementById('crossref-versions');
+    if (error) { box.innerHTML = `<div class="empty-note">Could not load versions: ${escapeHtml(error.message)}</div>`; return; }
+    const rows = data || [];
+    const cur = rows.find(v => v.is_current);
+    document.getElementById('crossref-current').innerHTML = cur
+      ? `<div class="kpi-tile"><div class="kpi-label">Current version</div><div class="kpi-value">${escapeHtml(cur.version)}</div></div>
+         <div class="kpi-tile"><div class="kpi-label">Pairings</div><div class="kpi-value">${cur.pair_count}</div></div>
+         <div class="kpi-tile"><div class="kpi-label">Published</div><div class="kpi-value" style="font-size:16px;">${new Date(cur.uploaded_at).toLocaleDateString()}</div></div>`
+      : '<div class="empty-note">No cross-reference published yet: reps see an empty tool until you upload one.</div>';
+    box.innerHTML = rows.length ? `<table class="detail"><thead><tr><th>Version</th><th>Pairings</th><th>Published</th><th>Source file</th><th></th></tr></thead><tbody>${rows.map(v => `<tr>
+      <td><b>${escapeHtml(v.version)}</b></td><td>${v.pair_count}</td><td>${new Date(v.uploaded_at).toLocaleString()}</td><td>${escapeHtml(v.source_name || '')}</td>
+      <td>${v.is_current ? '<span class="status-badge won">Current</span>' : `<button type="button" class="link-btn" data-crossref-current="${escapeHtml(v.version)}">Make current</button>`}</td></tr>`).join('')}</tbody></table>` : '';
+    box.querySelectorAll('[data-crossref-current]').forEach(b => b.addEventListener('click', async () => {
+      if (!confirm(`Reps will see version ${b.dataset.crossrefCurrent} from now on. Continue?`)) return;
+      const { error: e2 } = await client.rpc('set_current_crossref', { p_version: b.dataset.crossrefCurrent });
+      if (e2) { alert('Could not switch: ' + e2.message); return; }
+      loadCrossrefVersions();
+    }));
+  }
+  function crossrefFromTable(headers, rows) {
+    const idx = {};
+    const norm = headers.map(h => normalize(h));
+    Object.entries(CROSSREF_KEYS).forEach(([k, names]) => { const i = norm.findIndex(h => names.includes(h)); if (i >= 0) idx[k] = i; });
+    ['brand', 'model', 'audac'].forEach(k => { if (idx[k] == null) throw new Error(`Column "${k}" not found in the file.`); });
+    return rows.map(r => { const o = {}; Object.entries(idx).forEach(([k, i]) => { o[k] = String(r[i] ?? '').trim(); });
+      o.match = /^dir/i.test(o.match || '') ? 'direct' : 'alt'; return o; }).filter(o => o.brand && o.model && o.audac);
+  }
+  document.getElementById('crossref-file').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    const prev = document.getElementById('crossref-preview'), btn = document.getElementById('crossref-publish');
+    crossrefParsed = null; btn.disabled = true; prev.textContent = '';
+    if (!file) return;
+    try {
+      let rows, version = '';
+      if (/\.html?$/i.test(file.name)) {
+        const text = await file.text();
+        const m = text.match(/const DATA=(\[[\s\S]*?\]);\n/);
+        if (!m) throw new Error('No cross-reference data found in this HTML file.');
+        rows = JSON.parse(m[1]);
+        version = (text.match(/Rep Tool · (v\d+)/) || [])[1] || '';
+      } else if (/\.json$/i.test(file.name)) {
+        rows = JSON.parse(await file.text());
+      } else {
+        const t = await parseFile(file);
+        rows = crossrefFromTable(t.headers, t.rows);
+      }
+      if (!Array.isArray(rows) || !rows.length) throw new Error('No pairings found.');
+      const brands = new Set(rows.map(r => r.brand)), cats = new Set(rows.map(r => r.cat).filter(Boolean));
+      crossrefParsed = { rows, source: file.name };
+      if (version && !document.getElementById('crossref-version').value) document.getElementById('crossref-version').value = version;
+      prev.textContent = `${rows.length} pairings · ${brands.size} competitor brands · ${cats.size} product types. Check the version name, then Publish.`;
+      btn.disabled = false;
+    } catch (err) { prev.textContent = 'Could not read this file: ' + err.message; }
+  });
+  document.getElementById('crossref-publish').addEventListener('click', async () => {
+    if (!crossrefParsed) return;
+    const version = document.getElementById('crossref-version').value.trim();
+    const btn = document.getElementById('crossref-publish'), prev = document.getElementById('crossref-preview');
+    btn.disabled = true; btn.textContent = 'Publishing…';
+    const { data, error } = await client.rpc('publish_crossref', { p_version: version, p_source: crossrefParsed.source, p_rows: crossrefParsed.rows });
+    btn.textContent = 'Publish';
+    if (error) { prev.textContent = 'Not published: ' + error.message; btn.disabled = false; return; }
+    prev.textContent = `Published ${version}: ${data} pairings. Reps see it right away.`;
+    crossrefParsed = null; document.getElementById('crossref-file').value = '';
+    loadCrossrefVersions();
+  });
 
   async function loadPipelineEntries() {
     const { data, error } = await AudacData.all(client.from('pipeline_entries').select('*').not('crm_id', 'is', null).order('created_date', { ascending: false }).order('id'));
@@ -2556,7 +2645,7 @@
     document.getElementById('activity-search-to').value = nowMonth;
     document.getElementById('activity-search-from').value = trailingMonths(nowMonth, 6)[5];
     await fetchAllAttachmentCounts();
-    await Promise.all([loadActivitySearchRange(), loadAuditLog(), loadPipelineEntries(), loadDealUpdates(), loadLeadFollowups(), refreshImportKpis(), loadCompanyMappings(), loadEducationRecords(), loadPipelineCsvEntries(), loadSelloutRecords(), loadImportHistory()]);
+    await Promise.all([loadActivitySearchRange(), loadAuditLog(), loadPipelineEntries(), loadDealUpdates(), loadLeadFollowups(), loadCrossrefVersions(), refreshImportKpis(), loadCompanyMappings(), loadEducationRecords(), loadPipelineCsvEntries(), loadSelloutRecords(), loadImportHistory()]);
     switchTab((window.location.hash || '').replace('#', ''));
     // Deep link from the dashboard work list: /admin?filter=skipped#mappings
     const mapFilter = new URLSearchParams(location.search).get('filter');
