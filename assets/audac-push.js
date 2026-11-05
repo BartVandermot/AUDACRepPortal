@@ -88,8 +88,15 @@
     const what = audience === 'manager'
       ? 'Get a notification on this device when a rep asks a question.'
       : 'Get a notification on this device when AUDAC forwards you a new lead, when your monthly review is ready, and when AUDAC answers your question.';
+    const say = (msg, cls) => {
+      let p = el.querySelector('.push-msg');
+      if (!p) { p = document.createElement('p'); el.appendChild(p); }
+      p.className = 'push-msg ' + (cls || '');
+      p.textContent = msg;
+    };
     const render = async (msg, cls) => {
-      const s = await state();
+      let s;
+      try { s = await state(); } catch { s = 'off'; }
       const body = {
         'install-first': 'On iPhone and iPad, notifications only work from the app on your Home Screen: tap Share, then “Add to Home Screen”, open the portal from there and turn notifications on.',
         unsupported: 'This browser doesn’t support notifications. Try Chrome, Edge or Safari.',
@@ -111,13 +118,21 @@
       const b = e.target.closest('[data-push]');
       if (!b) return;
       b.disabled = true;
+      // Edge and Chrome often ask "quietly": no pop-up, only an icon in the
+      // address bar -- and the permission request just waits until it's used.
+      const ASK = 'Your browser is asking for permission. No pop-up? Click the bell or lock icon in the address bar and choose Allow.';
+      let nudge = null;
+      if (b.dataset.push === 'on' && Notification.permission === 'default') {
+        say(ASK);
+        nudge = setTimeout(() => say(ASK + ' Still nothing? Check that this browser may show notifications in Windows or macOS settings.'), 8000);
+      }
       try {
-        if (b.dataset.push === 'on') { await enable(client); await render('Done. You’ll get a test notification in a moment.', 'ok'); await test(client); }
+        if (b.dataset.push === 'on') { await enable(client); clearTimeout(nudge); await render('Done. You’ll get a test notification in a moment.', 'ok'); await test(client); }
         else if (b.dataset.push === 'off') { await disable(client); await render('Notifications are off for this device.'); }
         else { await test(client); await render('Test sent. It should appear within a few seconds.', 'ok'); }
-      } catch (err) { await render(String(err.message || err), 'err'); }
+      } catch (err) { clearTimeout(nudge); await render(String(err.message || err), 'err'); }
     });
-    render();
+    render().catch((err) => { el.hidden = false; say('Notifications could not be loaded: ' + (err.message || err), 'err'); });
   }
 
   window.AudacPush = { state, enable, disable, test, mountCard, supported };
