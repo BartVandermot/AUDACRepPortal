@@ -30,7 +30,7 @@
   .hero .button-primary { width: 100%; }
 
   .kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-3); margin-top: var(--space-4); }
-  .kpi { padding: var(--space-4); border-radius: var(--radius-tile); background: var(--color-bg-raised); border: 1px solid var(--color-border); }
+  .kpi { padding: var(--space-4); border-radius: var(--radius-tile); background: var(--well-bg); box-shadow: var(--depth-well); }
   .kpi .value { display: block; font-size: 28px; line-height: 32px; font-weight: 650; font-variant-numeric: tabular-nums; }
   .kpi .label { display: block; margin-top: var(--space-1); font-size: 14px; line-height: 21px; color: var(--color-text-secondary); }
   .kpi .trend { display: inline-flex; align-items: flex-start; gap: 4px; margin-top: var(--space-2); font-size: 12px; line-height: 16px; color: var(--color-text-muted); }
@@ -48,7 +48,7 @@
   .empty { margin: var(--space-3) 0 0; font-size: 14px; color: var(--color-text-secondary); }
 
   .month-row { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); }
-  .progress { height: 6px; border-radius: 999px; background: var(--color-bg-raised); border: 1px solid var(--color-border); overflow: hidden; margin: var(--space-3) 0 var(--space-2); }
+  .progress { height: 6px; border-radius: 999px; background: var(--well-bg); box-shadow: var(--depth-well); overflow: hidden; margin: var(--space-3) 0 var(--space-2); }
   .progress i { display: block; height: 100%; width: 0; background: var(--color-gold); }
   .meta-line { margin: 0; font-size: 14px; line-height: 21px; color: var(--color-text-secondary); display: flex; gap: 6px; align-items: center; }
   .meta-line svg { width: 16px; height: 16px; color: var(--color-text-muted); flex: none; }
@@ -63,7 +63,7 @@
   .starter-head p { margin: var(--space-1) 0 0; font-size: 14px; line-height: 21px; color: var(--color-text-secondary); }
   .link-quiet { background: none; border: 0; padding: 6px 0; font: inherit; font-size: 13px; color: var(--color-text-muted); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
   .steps { list-style: none; margin: var(--space-4) 0 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-3); }
-  .steps li { padding: var(--space-3) var(--space-4); border-radius: var(--radius-tile); background: var(--color-bg-raised); border: 1px solid var(--color-border); font-size: 13.5px; line-height: 20px; color: var(--color-text-secondary); }
+  .steps li { padding: var(--space-3) var(--space-4); border-radius: var(--radius-tile); background: var(--well-bg); box-shadow: var(--depth-well); font-size: 13.5px; line-height: 20px; color: var(--color-text-secondary); }
   .steps li b { display: flex; gap: 8px; align-items: center; font-size: 14px; color: var(--color-text-primary); margin-bottom: 4px; }
   .steps li .num { flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; border: 1px solid var(--color-border-strong); }
   .steps li.done { opacity: .6; }

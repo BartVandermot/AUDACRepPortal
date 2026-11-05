@@ -66,7 +66,7 @@
   select.needs-choice { outline: 2px solid var(--amber); outline-offset: 1px; }
   .import-history { margin-top: 14px; }
   .import-history:empty { display: none; }
-  .import-history ul { list-style: none; margin: 0; padding: 0; border: 1px solid var(--color-border); border-radius: 10px; }
+  .import-history ul { list-style: none; margin: 0; padding: 0; border-radius: 12px; background: var(--well-bg); box-shadow: var(--depth-well); }
   .import-history li { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; padding: 8px 12px; font-size: 13px; }
   .import-history li + li { border-top: 1px solid var(--color-border); }
   .import-history .ih-file { font-weight: 600; overflow-wrap: anywhere; }
@@ -192,11 +192,11 @@
       </div>
       <div>
         <label for="activity-search-from">From</label>
-        <input type="month" id="activity-search-from">
+        <input type="month" id="activity-search-from" data-clearable>
       </div>
       <div>
         <label for="activity-search-to">To</label>
-        <input type="month" id="activity-search-to">
+        <input type="month" id="activity-search-to" data-clearable>
       </div>
       <div>
         <label>&nbsp;</label>

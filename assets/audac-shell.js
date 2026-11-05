@@ -27,6 +27,8 @@
     collapse: '<path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M4 4h16v16H4zM9 4v16M15.5 9.5 13 12l2.5 2.5"/>',
     expand: '<path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M4 4h16v16H4zM9 4v16M13 9.5l2.5 2.5-2.5 2.5"/>',
     spark: '<path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M12 3v4M12 17v4M3 12h4M17 12h4"/>',
+    left: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m14.5 6-6 6 6 6"/>',
+    right: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m9.5 6 6 6-6 6"/>',
   };
   const icon = (name, attrs = '') => `<svg viewBox="0 0 24 24" aria-hidden="true" ${attrs}>${ICONS[name] || ''}</svg>`;
 
@@ -164,6 +166,116 @@
     },
   };
 
+  // ---------- Month picker ----------
+  // Replaces the browser's own month popup (light, in the OS language) with
+  // one in the portal's style: ‹ November 2026 › to step, a dark 12-month grid
+  // to jump. The real <input type="month"> stays (hidden) as the source of
+  // truth, so page code keeps reading .value and listening for 'change'; a
+  // value set from code re-renders the control too.
+  const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const valueDesc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+  let openPicker = null;
+  function closeOpenPicker() { if (openPicker) { openPicker(); openPicker = null; } }
+  document.addEventListener('click', (e) => { if (!e.target.closest('.mp')) closeOpenPicker(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeOpenPicker(); });
+
+  function enhanceMonthInput(input) {
+    if (input.dataset.mpReady) return;
+    input.dataset.mpReady = '1';
+    const id = input.id || ('mp-' + Math.random().toString(36).slice(2));
+    const wrap = document.createElement('div');
+    wrap.className = 'mp';
+    wrap.innerHTML =
+      `<button type="button" class="mp-step" data-step="-1" aria-label="Previous month">${icon('left')}</button>` +
+      `<button type="button" class="mp-label" id="${id}-mp" aria-haspopup="dialog" aria-expanded="false"></button>` +
+      `<button type="button" class="mp-step" data-step="1" aria-label="Next month">${icon('right')}</button>` +
+      `<div class="mp-pop" role="dialog" aria-label="Choose a month" hidden>` +
+        `<div class="mp-year"><button type="button" class="mp-ystep" data-y="-1" aria-label="Previous year">${icon('left')}</button><span class="mp-y"></span><button type="button" class="mp-ystep" data-y="1" aria-label="Next year">${icon('right')}</button></div>` +
+        `<div class="mp-grid"></div>` +
+        `<div class="mp-foot"><button type="button" class="mp-now">This month</button>${input.hasAttribute('data-clearable') ? '<button type="button" class="mp-clear">Any month</button>' : ''}</div>` +
+      `</div>`;
+    input.classList.add('mp-native');
+    input.tabIndex = -1;
+    input.setAttribute('aria-hidden', 'true');
+    input.insertAdjacentElement('afterend', wrap);
+    const label = document.querySelector(`label[for="${CSS.escape(input.id)}"]`);
+    if (label) label.htmlFor = id + '-mp';
+
+    const pop = wrap.querySelector('.mp-pop');
+    const btn = wrap.querySelector('.mp-label');
+    const now = new Date();
+    const thisYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    let viewYear = now.getFullYear();
+    const get = () => valueDesc.get.call(input);
+    const parse = (v) => /^\d{4}-\d{2}$/.test(v || '') ? { y: +v.slice(0, 4), m: +v.slice(5, 7) } : null;
+    const fmt = (y, m) => `${y}-${String(m).padStart(2, '0')}`;
+    const inRange = (v) => (!input.min || v >= input.min) && (!input.max || v <= input.max);
+
+    function render() {
+      const p = parse(get());
+      btn.textContent = p ? new Date(p.y, p.m - 1, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' }) : 'Any month';
+      wrap.querySelectorAll('.mp-step').forEach(b => { b.disabled = !p; });
+    }
+    function renderGrid() {
+      const p = parse(get());
+      wrap.querySelector('.mp-y').textContent = viewYear;
+      wrap.querySelector('.mp-grid').innerHTML = MONTHS_SHORT.map((name, i) => {
+        const v = fmt(viewYear, i + 1);
+        const sel = p && p.y === viewYear && p.m === i + 1;
+        return `<button type="button" data-v="${v}"${sel ? ' aria-selected="true"' : ''}${v === thisYm ? ' aria-current="date"' : ''}${inRange(v) ? '' : ' disabled'}>${name}</button>`;
+      }).join('');
+    }
+    function choose(v) {
+      if (v && !inRange(v)) return;
+      valueDesc.set.call(input, v || '');
+      render();
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    function close() { pop.hidden = true; btn.setAttribute('aria-expanded', 'false'); }
+    function open() {
+      closeOpenPicker();
+      const p = parse(get());
+      viewYear = p ? p.y : now.getFullYear();
+      renderGrid();
+      pop.hidden = false;
+      btn.setAttribute('aria-expanded', 'true');
+      openPicker = close;
+      (pop.querySelector('[aria-selected="true"]') || pop.querySelector('.mp-grid button')).focus();
+    }
+
+    btn.addEventListener('click', () => (pop.hidden ? open() : closeOpenPicker()));
+    wrap.querySelectorAll('.mp-step').forEach(b => b.addEventListener('click', () => {
+      const p = parse(get());
+      if (!p) return;
+      const d = new Date(p.y, p.m - 1 + Number(b.dataset.step), 1);
+      choose(fmt(d.getFullYear(), d.getMonth() + 1));
+    }));
+    wrap.querySelectorAll('.mp-ystep').forEach(b => b.addEventListener('click', () => { viewYear += Number(b.dataset.y); renderGrid(); }));
+    wrap.querySelector('.mp-grid').addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-v]');
+      if (!b) return;
+      choose(b.dataset.v);
+      closeOpenPicker();
+      btn.focus();
+    });
+    wrap.querySelector('.mp-now').addEventListener('click', () => { choose(thisYm); closeOpenPicker(); btn.focus(); });
+    const clr = wrap.querySelector('.mp-clear');
+    if (clr) clr.addEventListener('click', () => { choose(''); closeOpenPicker(); btn.focus(); });
+
+    // Keep the control in sync when page code sets input.value directly.
+    Object.defineProperty(input, 'value', {
+      configurable: true,
+      get() { return valueDesc.get.call(input); },
+      set(v) { valueDesc.set.call(input, v); render(); },
+    });
+    render();
+  }
+  function enhanceMonthInputs(root) {
+    (root || document).querySelectorAll('input[type="month"]').forEach(enhanceMonthInput);
+  }
+  window.AudacShell.enhanceMonthInputs = enhanceMonthInputs;
+
   themeCharts();
   function autoMount() {
     const b = document.body;
@@ -171,6 +283,6 @@
     AudacShell.mount(b.dataset.active || '', { nav: b.dataset.nav });
     bridgeLegacyAuth();
   }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', autoMount);
-  else autoMount();
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => { autoMount(); enhanceMonthInputs(); });
+  else { autoMount(); enhanceMonthInputs(); }
 })();
