@@ -161,6 +161,7 @@
             </div>
             <div class="progress" role="img" id="terr-meter"><i></i></div>
             <div id="terr-list"></div>
+            <p class="meta-line" id="terr-leads" style="margin-top:8px;" hidden></p>
             <p class="meta-line" id="terr-deals" style="margin-top:8px;"></p>
           </section>
 
@@ -395,9 +396,16 @@
 
   // ---------- Key accounts + deals at a glance ----------
   async function renderTerritory() {
-    const [keyRes, dealRes] = await Promise.all([client.rpc('get_my_key_accounts'), client.rpc('get_my_deals')]);
-    const keys = keyRes.data || [], deals = dealRes.data || [];
-    if (keyRes.error || dealRes.error || (!keys.length && !deals.length)) return;
+    const [keyRes, dealRes, leadRes] = await Promise.all([client.rpc('get_my_key_accounts'), client.rpc('get_my_deals'), client.rpc('get_my_leads')]);
+    const keys = keyRes.data || [], deals = dealRes.data || [], leads = (!leadRes.error && leadRes.data) || [];
+    if (keyRes.error || dealRes.error || (!keys.length && !deals.length && !leads.length)) return;
+    // Leads waiting for a follow-up: only the last 6 months, same as My territory's main list.
+    const leadCutoff = new Date(Date.now() - 183 * 86400000).toISOString();
+    const leadsTodo = leads.filter(l => !l.outcome && (l.created_on || '') >= leadCutoff).length;
+    if (leadsTodo) {
+      $('terr-leads').innerHTML = `${AudacShell.icon('spark')}<a href="/territory#leads" style="color:var(--color-warning); font-weight:600;">${leadsTodo} lead${leadsTodo === 1 ? '' : 's'} from AUDAC waiting for your follow-up →</a>`;
+      $('terr-leads').hidden = false;
+    }
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const iso = today.toISOString().slice(0, 10);
     const ago = (d) => Math.round((today - new Date(d + 'T00:00:00')) / 86400000);

@@ -1,11 +1,11 @@
-// Full CRM sync (Dynamics -> accounts, contacts, opportunities) run server-side
+// Full CRM sync (Dynamics -> accounts, contacts, opportunities, leads) run server-side
 // by the dataverse-sync edge function as a chained, logged run (sync_runs).
 // The same run the nightly pg_cron job starts at 03:00 UTC; these helpers let
 // a manager page start one on demand and follow its progress.
 (function () {
   const POLL_MS = 2000;
   const MAX_WAIT_MS = 10 * 60 * 1000;
-  const PHASE_LABEL = { accounts: 'accounts', contacts: 'contacts', opportunities: 'opportunities', done: 'finishing' };
+  const PHASE_LABEL = { accounts: 'accounts', contacts: 'contacts', opportunities: 'opportunities', leads: 'leads', done: 'finishing' };
 
   const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   function plural(n, one, many) { return `${n} ${n === 1 ? one : (many || one + 's')}`; }
@@ -68,6 +68,7 @@
         s.accounts && `${s.accounts.processed || 0} accounts (${s.accounts.matched || 0} with a rep firm${s.accounts.deactivated ? `, ${s.accounts.deactivated} deactivated` : ''})`,
         s.contacts && `${s.contacts.processed || 0} contacts${s.contacts.deactivated ? ` (${s.contacts.deactivated} deactivated)` : ''}`,
         s.opportunities && `${s.opportunities.processed || 0} opportunities${s.opportunities.skippedNoMatch ? ` (${s.opportunities.skippedNoMatch} without a firm, skipped)` : ''}`,
+        s.leads && `${s.leads.processed || 0} leads`,
       ].filter(Boolean);
       return `Synced ${parts.join(', ')}${secs ? ` in ${secs}s` : ''}.`
         + (s.blockingContacts ? ` ${plural(s.blockingContacts, 'contact')} still ${s.blockingContacts === 1 ? 'blocks' : 'block'} the pipeline.` : '');

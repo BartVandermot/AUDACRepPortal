@@ -106,6 +106,16 @@
       </table>
     </div>
 
+    <h2 class="section-title" id="leads">Lead follow-up</h2>
+    <p class="upload-hint">Leads AUDAC forwarded to each firm in the last 6 months (status “Forwarded” in Dynamics), and how many the firm reported back on via My territory. Lowest follow-up rate first.</p>
+    <div style="overflow-x:auto;">
+      <table class="rep-table">
+        <thead><tr><th>Rep Firm</th><th>Forwarded (6 months)</th><th>Followed up</th><th>Rate</th><th>Quote sent</th><th>Won</th><th>Oldest waiting</th></tr></thead>
+        <tbody id="leads-body"><tr><td colspan="7" class="empty-note">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div id="lead-notes"></div>
+
     <h2 class="section-title">Rep Firms &amp; Their CRM Contacts</h2>
     <p class="upload-hint">Each rep firm's own CRM account (its Independent Rep Firm record in Dataverse — not one of the dealer accounts they sell to) and the individual people under it. Click a firm to see its people, and link one to their portal login there. If a firm shows no CRM account yet, search for and link the right one. Use "Copy Link" to get that firm's own sign-up link to send its reps — it takes them straight to the sign-up screen with that firm already selected, no manual picking required.</p>
 
@@ -582,6 +592,52 @@ They can no longer log or import activities. Everything they logged stays, under
     </tr>`).join('');
   }
 
+  // ---------- Lead follow-up per firm ----------
+  const LEAD_OUTCOMES = { contacted: 'Contacted', quoted: 'Quote sent', won: 'Won', lost: 'Lost', not_relevant: 'Not relevant' };
+  async function loadLeadFollowup() {
+    const body = document.getElementById('leads-body');
+    const since = new Date(Date.now() - 183 * 86400000).toISOString();
+    const [leadsRes, fuRes] = await Promise.all([
+      AudacData.all(client.from('crm_leads').select('external_id, rep_firm_id, created_on, full_name, company').eq('crm_status_reason', 'Forwarded').gte('created_on', since).order('external_id')),
+      AudacData.all(client.from('lead_followups').select('lead_external_id, rep_firm_id, outcome, note, created_at, submitted_by_name').order('created_at', { ascending: false }).order('id')),
+    ]);
+    if (leadsRes.error || fuRes.error) { body.innerHTML = `<tr><td colspan="7" class="empty-note">Could not load leads: ${escapeHtml((leadsRes.error || fuRes.error).message)}</td></tr>`; return; }
+    const leads = leadsRes.data || [], fus = fuRes.data || [];
+    const latest = new Map();
+    fus.forEach(f => { if (!latest.has(f.lead_external_id)) latest.set(f.lead_external_id, f); }); // newest first
+    const daysSince = (iso) => Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+    const rows = firmsCache.map(f => {
+      const fl = leads.filter(l => l.rep_firm_id === f.id);
+      const done = fl.filter(l => latest.has(l.external_id));
+      const waiting = fl.filter(l => !latest.has(l.external_id)).map(l => l.created_on).sort();
+      const out = (o) => done.filter(l => latest.get(l.external_id).outcome === o).length;
+      return { f, n: fl.length, done: done.length, rate: fl.length ? done.length / fl.length : null, quoted: out('quoted'), won: out('won'), oldest: waiting[0] || null };
+    }).filter(r => r.n).sort((a, b) => a.rate - b.rate || b.n - a.n);
+    body.innerHTML = rows.length ? rows.map(r => `<tr>
+      <td><b>${escapeHtml(r.f.name)}</b></td>
+      <td>${r.n}</td>
+      <td>${r.done}</td>
+      <td><span class="chip ${r.rate >= 0.8 ? 'ok' : r.rate >= 0.4 ? 'warn' : 'danger'}">${Math.round(r.rate * 100)}%</span></td>
+      <td>${r.quoted || '—'}</td>
+      <td>${r.won || '—'}</td>
+      <td>${r.oldest ? `${daysSince(r.oldest)} days` : '—'}</td>
+    </tr>`).join('') : '<tr><td colspan="7" class="empty-note">No leads forwarded in the last 6 months.</td></tr>';
+    const firmName = (id) => firmsCache.find(f => f.id === id)?.name || '';
+    const leadById = new Map(leads.map(l => [l.external_id, l]));
+    const recent = fus.slice(0, 12);
+    document.getElementById('lead-notes').innerHTML = recent.length ? `
+      <h3 class="card-title" style="margin:20px 0 8px; font-size:15px;">Latest follow-ups</h3>
+      <div style="overflow-x:auto;"><table class="rep-table"><thead><tr><th>Date</th><th>Firm</th><th>Lead</th><th>Outcome</th><th>Note</th><th>By</th></tr></thead><tbody>
+      ${recent.map(f => { const l = leadById.get(f.lead_external_id); return `<tr>
+        <td>${new Date(f.created_at).toLocaleDateString()}</td>
+        <td>${escapeHtml(firmName(f.rep_firm_id))}</td>
+        <td>${escapeHtml(l ? (l.company || l.full_name || '') : '(older lead)')}</td>
+        <td>${escapeHtml(LEAD_OUTCOMES[f.outcome] || f.outcome)}</td>
+        <td>${escapeHtml(f.note || '')}</td>
+        <td>${escapeHtml(f.submitted_by_name || '')}</td></tr>`; }).join('')}
+      </tbody></table></div>` : '<p class="upload-hint" style="margin-top:12px;">No follow-ups reported by reps yet.</p>';
+  }
+
   async function loadAll() {
     const [firmsRes, repsRes, contactsRes, accountsRes] = await Promise.all([
       client.from('rep_firms').select('id, name, crm_account_external_id').eq('status', 'active').order('name'),
@@ -636,6 +692,7 @@ They can no longer log or import activities. Everything they logged stays, under
     document.getElementById('user-email').textContent = g.profile.email;
     await loadAll();
     loadUsage();
+    loadLeadFollowup();
     // Deep link from the dashboard work list: /reps?view=attention
     const view = new URLSearchParams(location.search).get('view');
     if (['attention', 'left', 'inactive'].includes(view)) {

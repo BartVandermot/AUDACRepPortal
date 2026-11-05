@@ -293,6 +293,20 @@ const OPPORTUNITIES_URL_LEVELS = [
   { level: "none", url: OPPORTUNITIES_URL_BASE },
 ];
 
+// Leads (Read granted to the "Rep Portal Sync" role on 2026-11-05): only
+// US/Canada leads created since Intellimix became distributor -- the ones
+// AUDAC forwards to the rep firms and wants a follow-up on.
+const LEADS_SELECT = [
+  "leadid", "fullname", "companyname", "emailaddress1", "telephone1", "mobilephone",
+  "address1_city", "address1_stateorprovince", "address1_postalcode", "subject", "description",
+  "leadsourcecode", "pvs_leadwebsource", "statecode", "statuscode", "createdon",
+  "_scp_countrylookup_value", "_parentaccountid_value",
+].join(",");
+const LEADS_URL_BASE = `${DATAVERSE_ORG_URL}/api/data/v9.2/leads?$select=${LEADS_SELECT}`;
+const LEADS_URL_LEVELS = [
+  { level: "full", url: `${LEADS_URL_BASE}&$filter=(_scp_countrylookup_value eq ${COUNTRY_GUID_US} or _scp_countrylookup_value eq ${COUNTRY_GUID_CA}) and createdon ge ${DISTRIBUTOR_START}T00:00:00Z` },
+];
+
 // Diagnostic-only counts, so the actual expected record counts can be checked before
 // running a real sync. Dataverse's bare /$count sub-path doesn't support $filter at
 // all in this org (confirmed: fails identically regardless of filter content) --
@@ -332,7 +346,7 @@ async function getCounts(): Promise<Record<string, any>> {
   };
 }
 
-type Phase = "accounts" | "contacts" | "opportunities";
+type Phase = "accounts" | "contacts" | "opportunities" | "leads";
 
 // One page of one phase -- the unit of work both the browser-driven loops and
 // the server-side chained run (below) are built from. Returns the page result
@@ -581,7 +595,7 @@ async function runPage(svc: any, phase: Phase, cursor: string | null, syncStarte
         preservedOverrides,
         filterLevel,
       });
-    } else {
+    } else if (phase === "opportunities") {
       let rows: any[], nextLink: string | null, filterLevel: string | null;
       if (cursor) {
         const page = await fetchOnePage(cursor, token);
@@ -821,6 +835,79 @@ async function runPage(svc: any, phase: Phase, cursor: string | null, syncStarte
         lostCount,
         filterLevel,
       });
+    } else {
+      // Leads: resolved to a rep firm like accounts -- the linked account's
+      // firm first, then Canada -> PAG Canada, then state (or ZIP) with the
+      // split-state ZIP ranges. Follow-ups reps report live in the portal
+      // (lead_followups), so a lead is never deleted here.
+      let rows: any[], nextLink: string | null, filterLevel: string | null;
+      if (cursor) {
+        const page = await fetchOnePage(cursor, token);
+        if (page.status !== 200) throw new Error(`Dataverse request failed: ${page.status} ${page.bodyText}`);
+        rows = page.rows; nextLink = page.nextLink; filterLevel = null;
+      } else {
+        const first = await fetchFirstPageLadder(LEADS_URL_LEVELS, token);
+        rows = first.rows; nextLink = first.nextLink; filterLevel = first.filterLevel;
+      }
+
+      const { data: firms } = await svc.from("rep_firms").select("id, states").eq("status", "active");
+      const firmsCache = firms || [];
+      const { data: zipRanges } = await svc.from("rep_firm_zip_ranges").select("rep_firm_id, state_code, zip3_start, zip3_end");
+      const parentIds = [...new Set(rows.map((r: any) => r._parentaccountid_value).filter(Boolean))];
+      let parentFirmById = new Map<string, string | null>();
+      if (parentIds.length) {
+        const { data: parents } = await svc.from("crm_accounts").select("external_id, rep_firm_id").in("external_id", parentIds);
+        parentFirmById = new Map((parents || []).map((p: any) => [p.external_id, p.rep_firm_id]));
+      }
+      function firmForState(stateCode: string | null, zip: string | null): string | null {
+        if (!stateCode) return null;
+        const ranges = (zipRanges || []).filter((z: any) => z.state_code === stateCode);
+        const zip3 = zip && /^\d{3}/.test(zip) ? parseInt(zip.slice(0, 3), 10) : null;
+        if (ranges.length && zip3 != null) {
+          const m = ranges.find((z: any) => zip3 >= z.zip3_start && zip3 <= z.zip3_end);
+          if (m) return m.rep_firm_id;
+        }
+        const f = firmsCache.find((x: any) => Array.isArray(x.states) && x.states.includes(stateCode));
+        return f ? f.id : null;
+      }
+
+      let matched = 0, unassigned = 0;
+      const now = new Date().toISOString();
+      const upserts = rows.map((r: any) => {
+        const isCanada = r._scp_countrylookup_value === COUNTRY_GUID_CA;
+        const zip = r.address1_postalcode || null;
+        const stateCode = isCanada ? null : (normalizeState(r.address1_stateorprovince) || stateFromZip(zip));
+        const repFirmId = (r._parentaccountid_value && parentFirmById.get(r._parentaccountid_value))
+          || (isCanada ? PAG_CANADA_FIRM_ID : firmForState(stateCode, zip));
+        if (repFirmId) matched++; else unassigned++;
+        const fmt = (k: string) => r[`${k}@OData.Community.Display.V1.FormattedValue`] ?? null;
+        return {
+          external_id: r.leadid,
+          full_name: r.fullname || null,
+          company: r.companyname || null,
+          email: r.emailaddress1 || null,
+          phone: r.telephone1 || r.mobilephone || null,
+          city: r.address1_city || null,
+          state_raw: r.address1_stateorprovince || null,
+          state_code: stateCode,
+          zip,
+          country_code: isCanada ? "CA" : "US",
+          subject: r.subject || null,
+          description: r.description ? String(r.description).slice(0, 2000) : null,
+          source: fmt("leadsourcecode"),
+          web_source: fmt("pvs_leadwebsource"),
+          crm_status: fmt("statecode"),
+          crm_status_reason: fmt("statuscode"),
+          created_on: r.createdon || null,
+          rep_firm_id: repFirmId || null,
+          last_synced_at: syncStartedAt || now,
+        };
+      });
+      if (upserts.length) {
+        const { error } = await svc.from("crm_leads").upsert(upserts, { onConflict: "external_id" });
+        if (error) throw new Error(`crm_leads upsert failed: ${error.message}`);
+      }
+      return ({ phase: "leads", done: !nextLink, nextCursor: nextLink, processed: upserts.length, matched, unassigned, filterLevel });
     }
 }
 
@@ -842,7 +929,7 @@ declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
 const SELF_URL = `${SUPABASE_URL}/functions/v1/dataverse-sync`;
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") || "";
 const RUN_STALE_MS = 30 * 60 * 1000;
-const NEXT_PHASE: Record<Phase, Phase | null> = { accounts: "contacts", contacts: "opportunities", opportunities: null };
+const NEXT_PHASE: Record<Phase, Phase | null> = { accounts: "contacts", contacts: "opportunities", opportunities: "leads", leads: null };
 
 let cachedSecret: string | null = null;
 // deno-lint-ignore no-explicit-any
@@ -970,7 +1057,7 @@ Deno.serve(async (req: Request) => {
     if (payload.chain) {
       if (payload.runId) {
         if (!viaSecret) return jsonResponse({ error: "Sync steps can only be started by the sync itself" }, 403);
-        const phase: Phase = payload.phase === "contacts" ? "contacts" : payload.phase === "opportunities" ? "opportunities" : "accounts";
+        const phase: Phase = payload.phase === "contacts" ? "contacts" : payload.phase === "opportunities" ? "opportunities" : payload.phase === "leads" ? "leads" : "accounts";
         EdgeRuntime.waitUntil(runHop(svc, { runId: String(payload.runId), phase, cursor: payload.cursor || null, syncStartedAt: String(payload.syncStartedAt), updatedBy: payload.updatedBy || null }));
         return jsonResponse({ accepted: true }, 202);
       }
@@ -985,7 +1072,7 @@ Deno.serve(async (req: Request) => {
       return jsonResponse(await getCounts());
     }
 
-    const phase: Phase = payload.phase === "contacts" ? "contacts" : payload.phase === "opportunities" ? "opportunities" : "accounts";
+    const phase: Phase = payload.phase === "contacts" ? "contacts" : payload.phase === "opportunities" ? "opportunities" : payload.phase === "leads" ? "leads" : "accounts";
     const cursor = payload.cursor || null;
     // The same value the caller sends on every page of one logical sync run
     // (set once, before the first request) -- lets the final page tell "every

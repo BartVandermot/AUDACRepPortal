@@ -39,13 +39,21 @@
   .update-form .form-actions { grid-column: 1 / -1; display: flex; gap: var(--space-2); justify-content: flex-end; }
   .update-form .button-primary { width: auto; min-height: 40px; padding: 0 18px; }
   .update-form textarea { min-height: 60px; }
+  .lead-contact { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 2px; font-size: 13.5px; line-height: 20px; }
+  .lead-contact a { color: var(--color-gold); text-decoration: none; overflow-wrap: anywhere; }
+  .lead-contact a:hover { text-decoration: underline; }
+  .lead-desc { margin: 4px 0 0; font-size: 13.5px; line-height: 20px; color: var(--color-text-secondary); white-space: pre-line; overflow-wrap: anywhere; }
+  details.older { margin-top: var(--space-4); }
+  details.older summary { cursor: pointer; font-size: 13.5px; font-weight: 600; color: var(--color-text-secondary); }
+  details.older summary:focus-visible { outline: 2px solid var(--color-gold); outline-offset: 2px; border-radius: 4px; }
+  .update-form.lead-form { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }
   .form-msg { grid-column: 1 / -1; margin: 0; font-size: 13.5px; color: var(--color-danger); }
 
   @media (max-width: 760px) {
     .section { padding: var(--space-5); }
     .list > li { grid-template-columns: 1fr; }
     .list .actions { justify-content: flex-start; }
-    .update-form { grid-template-columns: 1fr; }
+    .update-form, .update-form.lead-form { grid-template-columns: 1fr; }
   }
 </style>
 </head>
@@ -60,7 +68,7 @@
     </header>
 
     <main class="page" id="page" aria-busy="true">
-      <p class="intro" id="intro">Your key accounts and your firm’s deals, straight from AUDAC’s CRM.</p>
+      <p class="intro" id="intro">Your key accounts, the leads AUDAC forwarded and your firm’s deals, straight from AUDAC’s CRM.</p>
       <div id="gate"></div>
 
       <section class="section surface-card" id="key-section" aria-labelledby="key-h">
@@ -72,6 +80,16 @@
           </div>
         </div>
         <div id="key-list"></div>
+      </section>
+
+      <section class="section surface-card" id="leads-section" aria-labelledby="leads-h">
+        <div class="section-head">
+          <div>
+            <h2 class="card-title" id="leads-h">Leads from AUDAC</h2>
+            <p id="leads-sub">Loading…</p>
+          </div>
+        </div>
+        <div id="leads-list"></div>
       </section>
 
       <section class="section surface-card" id="deals-section" aria-labelledby="deals-h">
@@ -215,6 +233,89 @@
     if (b) openUpdateForm(b.dataset.update);
   });
 
+  // ---------- Leads (forwarded by AUDAC; the rep reports what happened) ----------
+  const OUTCOMES = { contacted: 'Contacted', quoted: 'Quote sent', won: 'Won', lost: 'Lost', not_relevant: 'Not relevant' };
+  const OUTCOME_CHIP = { contacted: 'gold', quoted: 'gold', won: 'ok', lost: '', not_relevant: '' };
+  const LEAD_FRESH_DAYS = 183; // 6 months: keeps the June 2026 trade-show leads in view
+  let leadsCache = [];
+  const leadDay = (l) => String(l.created_on || '').slice(0, 10);
+
+  function leadItem(l) {
+    const age = l.created_on ? daysAgo(leadDay(l)) : null;
+    const late = !l.outcome && age !== null && age > 7;
+    const place = [l.city, l.state_code].filter(Boolean).join(', ');
+    const who = l.company && l.full_name ? `${esc(l.full_name)} · ${esc(l.company)}` : esc(l.company || l.full_name || '(no name)');
+    const meta = [place, l.source, l.created_on ? `received ${fmtDate(leadDay(l))}` : ''].filter(Boolean).map(esc).join(' · ');
+    const contact = [
+      l.email ? `<a href="mailto:${esc(l.email)}">${esc(l.email)}</a>` : '',
+      l.phone ? `<a href="tel:${esc(String(l.phone).replace(/[^\d+]/g, ''))}">${esc(l.phone)}</a>` : '',
+    ].filter(Boolean).join('');
+    const ask = [l.subject, l.description].filter(Boolean).join(' — ');
+    const status = l.outcome
+      ? `<span class="chip ${OUTCOME_CHIP[l.outcome] || ''}">${esc(OUTCOMES[l.outcome] || l.outcome)} · ${esc(fmtDate(String(l.outcome_at).slice(0, 10)))}</span>` : '';
+    return `<li data-lead="${esc(l.external_id)}">
+      <div><b>${who}</b><span class="sub">${meta}</span>
+        ${contact ? `<span class="lead-contact">${contact}</span>` : ''}
+        ${ask ? `<p class="lead-desc">${esc(ask.length > 220 ? ask.slice(0, 220) + '…' : ask)}</p>` : ''}
+        ${l.outcome_note ? `<span class="sub">Your note: ${esc(l.outcome_note)}</span>` : ''}
+        ${late ? `<span class="sub warn">Received ${age} days ago, no follow-up reported yet</span>` : ''}</div>
+      <div class="actions">${status}<button type="button" class="button-secondary" data-lead-update="${esc(l.external_id)}">${l.outcome ? 'Update' : 'Report follow-up'}</button></div>
+    </li>`;
+  }
+
+  function renderLeads() {
+    const rows = leadsCache;
+    if (!rows.length) {
+      $('leads-sub').textContent = 'No leads have been forwarded to your firm yet. When AUDAC passes on an enquiry from your territory, it shows up here.';
+      $('leads-list').innerHTML = '';
+      return;
+    }
+    const isClosed = (l) => ['won', 'lost', 'not_relevant'].includes(l.outcome);
+    const todo = rows.filter(l => !l.outcome);
+    const fresh = todo.filter(l => !l.created_on || daysAgo(leadDay(l)) <= LEAD_FRESH_DAYS);
+    const older = todo.filter(l => !fresh.includes(l));
+    const working = rows.filter(l => l.outcome && !isClosed(l));
+    const closed = rows.filter(isClosed);
+    $('leads-sub').textContent = `${rows.length} lead${rows.length === 1 ? '' : 's'} forwarded to your firm` +
+      (todo.length ? ` · ${todo.length} without a follow-up` : ' · all followed up') +
+      '. Contact them, then tell AUDAC what came of it — that’s how we know which leads turn into business.';
+    const group = (title, list) => list.length ? `<p class="group-title">${title}</p><ul class="list">${list.map(leadItem).join('')}</ul>` : '';
+    $('leads-list').innerHTML = group('Waiting for your follow-up', fresh) + group('In progress', working) + group('Closed', closed) +
+      (older.length ? `<details class="older"><summary>${older.length} older lead${older.length === 1 ? '' : 's'} (more than 6 months) without a follow-up</summary><ul class="list">${older.map(leadItem).join('')}</ul></details>` : '');
+  }
+
+  function openLeadForm(id) {
+    document.querySelectorAll('.update-form').forEach(f => f.remove());
+    const li = document.querySelector(`li[data-lead="${CSS.escape(id)}"]`);
+    const l = leadsCache.find(x => x.external_id === id);
+    if (!li || !l) return;
+    const form = document.createElement('form');
+    form.className = 'update-form lead-form';
+    form.innerHTML = `
+      <div class="field"><label for="l-outcome">What happened?</label>
+        <select id="l-outcome">${Object.entries(OUTCOMES).map(([k, v]) => `<option value="${k}"${k === (l.outcome || 'contacted') ? ' selected' : ''}>${v}</option>`).join('')}</select></div>
+      <div class="field"><label for="l-note">Note for AUDAC (optional)</label><textarea id="l-note" placeholder="e.g. site visit planned, quoted 2x XMP44, or not a fit: residential"></textarea></div>
+      <p class="form-msg" id="l-msg" hidden></p>
+      <div class="form-actions"><button type="button" class="button-secondary" id="l-cancel">Cancel</button><button type="submit" class="button-primary" id="l-send">Save</button></div>`;
+    li.appendChild(form);
+    form.querySelector('#l-cancel').addEventListener('click', () => form.remove());
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const outcome = form.querySelector('#l-outcome').value, note = form.querySelector('#l-note').value;
+      const btn = form.querySelector('#l-send'), msg = form.querySelector('#l-msg');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      const { error } = await client.rpc('submit_lead_followup', { p_lead: id, p_outcome: outcome, p_note: note });
+      if (error) { msg.hidden = false; msg.textContent = 'Could not save: ' + error.message; btn.disabled = false; btn.textContent = 'Save'; return; }
+      Object.assign(l, { outcome, outcome_note: note.trim() || null, outcome_at: new Date().toISOString() });
+      renderLeads();
+    });
+    form.querySelector('#l-outcome').focus();
+  }
+  $('leads-list').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-lead-update]');
+    if (b) openLeadForm(b.dataset.leadUpdate);
+  });
+
   async function init() {
     const { data: { session } } = await client.auth.getSession();
     if (!session) { window.location.href = '/login'; return; }
@@ -229,17 +330,19 @@
       $('gate').innerHTML = `<div class="notice info">${profile?.is_active === false
         ? 'Your portal account has been deactivated, so this page is not available.'
         : 'Your account isn’t linked to a rep firm yet. Use your firm’s signup link, or pick your firm on your first activity.'}</div>`;
-      $('key-section').hidden = true; $('deals-section').hidden = true;
+      $('key-section').hidden = true; $('deals-section').hidden = true; $('leads-section').hidden = true;
       $('page').setAttribute('aria-busy', 'false');
       return;
     }
     try { localStorage.setItem('audac_seen_territory', '1'); } catch { /* private mode */ }
-    $('intro').textContent = `${firm.name}: your key accounts and your firm’s deals, straight from AUDAC’s CRM.`;
-    const [keyRes, dealRes] = await Promise.all([client.rpc('get_my_key_accounts'), client.rpc('get_my_deals')]);
+    $('intro').textContent = `${firm.name}: your key accounts, the leads AUDAC forwarded and your firm’s deals, straight from AUDAC’s CRM.`;
+    const [keyRes, dealRes, leadRes] = await Promise.all([client.rpc('get_my_key_accounts'), client.rpc('get_my_deals'), client.rpc('get_my_leads')]);
+    if (leadRes.error) $('leads-sub').textContent = 'Could not load leads: ' + leadRes.error.message; else { leadsCache = leadRes.data || []; renderLeads(); }
     if (keyRes.error) $('key-sub').textContent = 'Could not load key accounts: ' + keyRes.error.message; else renderKeyAccounts(keyRes.data || []);
     if (dealRes.error) $('deals-sub').textContent = 'Could not load deals: ' + dealRes.error.message; else { dealsCache = dealRes.data || []; renderDeals(); }
     $('page').setAttribute('aria-busy', 'false');
     if (location.hash === '#deals') $('deals-section').scrollIntoView();
+    if (location.hash === '#leads') $('leads-section').scrollIntoView();
   }
   init().catch(err => { $('gate').innerHTML = `<div class="notice error">Couldn’t load this page: ${esc(err.message || err)}. Refresh to try again.</div>`; });
 </script>
