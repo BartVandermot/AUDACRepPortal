@@ -19,10 +19,9 @@
 body {
   font-size: 15px; line-height: 22px;
   color: var(--color-text-secondary);
-  background:
-    radial-gradient(ellipse 70% 38% at 88% 12%, rgba(217, 166, 83, 0.10), transparent 75%),
-    radial-gradient(ellipse 60% 35% at 0% 80%, rgba(90, 100, 120, 0.045), transparent 75%),
-    var(--color-bg);
+  background: var(--canvas);
+  background-size: var(--canvas-size);
+  background-position: var(--canvas-pos);
   background-attachment: fixed;
 }
 main.page { margin: 0; max-width: 1320px; padding: var(--space-6) var(--space-8) var(--space-10); }

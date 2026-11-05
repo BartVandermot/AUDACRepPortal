@@ -42,6 +42,19 @@
   --depth-card: inset 0 1px 0 rgba(255,255,255,0.06), 0 1px 2px rgba(0,0,0,0.45), 0 18px 40px -16px rgba(0,0,0,0.85);
   --depth-raised: inset 0 1px 0 rgba(255,255,255,0.08), 0 2px 6px rgba(0,0,0,0.4), 0 28px 60px -20px rgba(0,0,0,0.9);
   --well-bg: rgba(0, 0, 0, 0.26);
+  /* Level 0 canvas: the VIRO-C micro-perforated grille. A warm light rakes the
+     metal at the top right; the staggered holes (two offset dot grids) read as
+     dark punches with a lit lower rim, and the whole sheet fades to black
+     further away from the light. Top layer first. */
+  --canvas:
+    radial-gradient(ellipse 100% 95% at 92% 0%, transparent 0%, rgba(11, 12, 14, 0.25) 40%, rgba(11, 12, 14, 0.85) 70%, var(--color-bg) 88%),
+    radial-gradient(circle at 50% 42%, #050506 0 1.35px, rgba(255, 236, 200, 0.16) 1.8px, transparent 2.3px),
+    radial-gradient(circle at 50% 42%, #050506 0 1.35px, rgba(255, 236, 200, 0.16) 1.8px, transparent 2.3px),
+    radial-gradient(ellipse 75% 55% at 88% 4%, rgba(217, 166, 83, 0.20), rgba(217, 166, 83, 0.05) 55%, transparent 78%),
+    radial-gradient(ellipse 60% 35% at 0% 80%, rgba(90, 100, 120, 0.045), transparent 75%),
+    linear-gradient(180deg, #131417 0%, var(--color-bg) 60%);
+  --canvas-size: auto, 10px 10px, 10px 10px, auto, auto, auto;
+  --canvas-pos: 0 0, 0 0, 5px 5px, 0 0, 0 0, 0 0;
   --depth-well: inset 0 1px 3px rgba(0,0,0,0.55), 0 1px 0 rgba(255,255,255,0.04);
   --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
   --space-5: 20px; --space-6: 24px; --space-8: 32px; --space-10: 40px;
@@ -57,18 +70,9 @@ body {
   font-size: 16px; line-height: 24px;
   color: var(--color-text-primary);
   -webkit-font-smoothing: antialiased;
-  /* Level 0 canvas: the VIRO-C perforated grille (two offset dot grids =
-     staggered holes, each a dark hole with a faint lit rim), revealed by one
-     warm light at the top right and fading to plain black elsewhere. */
-  background:
-    radial-gradient(ellipse 70% 42% at 86% 8%, rgba(217, 166, 83, 0.13), transparent 72%),
-    radial-gradient(ellipse 95% 90% at 90% 0%, transparent 0%, rgba(11, 12, 14, 0.35) 45%, var(--color-bg) 85%),
-    radial-gradient(circle at 50% 50%, rgba(0, 0, 0, 0.9) 0 1.2px, rgba(255, 255, 255, 0.11) 1.6px, transparent 2.1px),
-    radial-gradient(circle at 50% 50%, rgba(0, 0, 0, 0.9) 0 1.2px, rgba(255, 255, 255, 0.11) 1.6px, transparent 2.1px),
-    radial-gradient(ellipse 60% 35% at 0% 80%, rgba(90, 100, 120, 0.045), transparent 75%),
-    var(--color-bg);
-  background-size: auto, auto, 9px 9px, 9px 9px, auto, auto;
-  background-position: 0 0, 0 0, 0 0, 4.5px 4.5px, 0 0, 0 0;
+  background: var(--canvas);
+  background-size: var(--canvas-size);
+  background-position: var(--canvas-pos);
   background-attachment: fixed;
   min-height: 100dvh;
 }
