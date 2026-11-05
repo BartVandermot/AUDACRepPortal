@@ -36,6 +36,7 @@
       items: [
         { key: 'home', href: '/home', label: 'Home', short: 'Home', icon: 'home' },
         { key: 'log', href: '/form', label: 'Log activity', short: 'Log', icon: 'plus' },
+        { key: 'territory', href: '/territory', label: 'My territory', short: 'Territory', icon: 'map' },
         { key: 'submissions', href: '/form#my-submissions-section', label: 'My submissions', short: 'Submissions', icon: 'list' },
         { key: 'import', href: '/import', label: 'Import CRM export', short: 'Import', icon: 'upload' },
       ],

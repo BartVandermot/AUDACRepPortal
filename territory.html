@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AUDAC Rep Portal — My territory</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/audac-ui.css">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="AUDAC Reps">
+<meta name="theme-color" content="#0b0c0e">
+<style>
+  .intro { margin: 0 0 var(--space-5); font-size: 14px; line-height: 21px; color: var(--color-text-secondary); max-width: 70ch; }
+  .section { padding: var(--space-6); margin-bottom: var(--space-4); }
+  .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+  .section-head p { margin: var(--space-1) 0 0; font-size: 14px; line-height: 21px; color: var(--color-text-secondary); }
+  .meter { height: 6px; border-radius: 999px; background: var(--color-bg-raised); border: 1px solid var(--color-border); overflow: hidden; margin: var(--space-3) 0 0; max-width: 360px; }
+  .meter i { display: block; height: 100%; background: var(--color-gold); }
+
+  .list { list-style: none; margin: var(--space-4) 0 0; padding: 0; }
+  .list > li { display: grid; grid-template-columns: 1fr auto; gap: var(--space-2) var(--space-4); align-items: center; padding: var(--space-3) 0; border-top: 1px solid var(--color-border); }
+  .list > li:first-child { border-top: 0; }
+  .list b { display: block; font-size: 15px; line-height: 22px; font-weight: 600; overflow-wrap: anywhere; }
+  .list .sub { display: block; font-size: 13.5px; line-height: 20px; color: var(--color-text-secondary); }
+  .list .sub.warn { color: var(--color-warning); }
+  .list .actions { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+  .list .button-secondary { min-height: 40px; padding: 0 14px; font-size: 13.5px; }
+  .group-title { margin: var(--space-5) 0 0; font-size: 12px; line-height: 16px; font-weight: 650; letter-spacing: 1px; text-transform: uppercase; color: var(--color-text-muted); }
+  .empty { margin: var(--space-3) 0 0; font-size: 14px; color: var(--color-text-secondary); }
+  .value { font-variant-numeric: tabular-nums; }
+
+  .update-form { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); padding: var(--space-4); margin-top: var(--space-1); border-radius: var(--radius-tile); background: var(--color-bg-raised); border: 1px solid var(--color-border); }
+  .update-form .field { margin: 0; }
+  .update-form .wide { grid-column: 1 / -1; }
+  .update-form .form-actions { grid-column: 1 / -1; display: flex; gap: var(--space-2); justify-content: flex-end; }
+  .update-form .button-primary { width: auto; min-height: 40px; padding: 0 18px; }
+  .update-form textarea { min-height: 60px; }
+  .form-msg { grid-column: 1 / -1; margin: 0; font-size: 13.5px; color: var(--color-danger); }
+
+  @media (max-width: 760px) {
+    .section { padding: var(--space-5); }
+    .list > li { grid-template-columns: 1fr; }
+    .list .actions { justify-content: flex-start; }
+    .update-form { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <aside class="sidebar glass-floating" id="app-sidebar" aria-label="Main menu"></aside>
+  <div class="app-content">
+    <header class="topbar">
+      <h1>My territory</h1>
+      <span class="spacer"></span>
+      <button type="button" class="icon-btn mobile-only" id="mobile-signout" aria-label="Sign out" title="Sign out"></button>
+    </header>
+
+    <main class="page" id="page" aria-busy="true">
+      <p class="intro" id="intro">Your key accounts and your firm’s deals, straight from AUDAC’s CRM.</p>
+      <div id="gate"></div>
+
+      <section class="section surface-card" id="key-section" aria-labelledby="key-h">
+        <div class="section-head">
+          <div>
+            <h2 class="card-title" id="key-h">Key accounts</h2>
+            <p id="key-sub">Loading…</p>
+            <div class="meter" id="key-meter" hidden><i></i></div>
+          </div>
+        </div>
+        <div id="key-list"></div>
+      </section>
+
+      <section class="section surface-card" id="deals-section" aria-labelledby="deals-h">
+        <div class="section-head">
+          <div>
+            <h2 class="card-title" id="deals-h">Your deals</h2>
+            <p id="deals-sub">Loading…</p>
+          </div>
+        </div>
+        <div id="deals-list"></div>
+      </section>
+    </main>
+  </div>
+</div>
+<nav class="bottom-nav glass-floating" id="app-bottom-nav" aria-label="Main menu"></nav>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/assets/audac-shell.js"></script>
+<script>
+  const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
+  const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  AudacShell.mount('territory');
+  const signOut = async () => { await client.auth.signOut(); window.location.href = '/login'; };
+  AudacShell.onSignOut(signOut);
+  $('mobile-signout').innerHTML = AudacShell.icon('out');
+  $('mobile-signout').addEventListener('click', signOut);
+
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const DAY = 86400000;
+  const fmtDate = (iso) => iso ? new Date(iso + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+  const fmtMoney = (n) => n == null ? '' : Number(n).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+  const daysAgo = (iso) => Math.round((today - new Date(iso + 'T00:00:00')) / DAY);
+  const CONTACT_WINDOW_DAYS = 90; // same 3 months AUDAC reviews on
+
+  // ---------- Key accounts ----------
+  function renderKeyAccounts(rows) {
+    const contacted = rows.filter(r => r.last_contact && daysAgo(r.last_contact) <= CONTACT_WINDOW_DAYS).length;
+    if (!rows.length) {
+      $('key-sub').textContent = 'No key accounts are assigned to your firm in AUDAC’s CRM yet.';
+      $('key-list').innerHTML = '';
+      return;
+    }
+    $('key-sub').textContent = `${contacted} of ${rows.length} contacted in the last 3 months. Key accounts are TOP AUDAC LEADs and AUDAC partners in your territory. A visit counts once you log it with the account selected.`;
+    $('key-meter').hidden = false;
+    $('key-meter').querySelector('i').style.width = `${Math.round(contacted / rows.length * 100)}%`;
+    $('key-list').innerHTML = `<ul class="list">${rows.map(r => {
+      const place = [r.city, r.state_code].filter(Boolean).join(', ');
+      const ago = r.last_contact ? daysAgo(r.last_contact) : null;
+      const stale = ago === null || ago > CONTACT_WINDOW_DAYS;
+      const contactText = ago === null ? 'No contact logged yet' : ago === 0 ? 'Contacted today' : `Last contact ${ago} day${ago === 1 ? '' : 's'} ago`;
+      const deal = r.last_deal_name ? ` · last deal: ${esc(r.last_deal_name)} (${esc(fmtDate(r.last_deal_date))})` : '';
+      const logHref = `/form?account=${encodeURIComponent(r.external_id)}&name=${encodeURIComponent(r.name)}`;
+      return `<li>
+        <div><b>${esc(r.name)}</b><span class="sub">${esc(place)}${place ? ' · ' : ''}${esc(r.reason || '')}</span>
+          <span class="sub${stale ? ' warn' : ''}">${contactText}${deal}</span></div>
+        <div class="actions"><a class="button-secondary" href="${logHref}">${AudacShell.icon('plus')}Log visit</a></div>
+      </li>`;
+    }).join('')}</ul>`;
+  }
+
+  // ---------- Deals ----------
+  let dealsCache = [];
+  const needsUpdate = (d) => d.status === 'Open' && d.expected_close_date && d.expected_close_date < todayIso && !d.pending_status;
+
+  function dealItem(d) {
+    const overdue = needsUpdate(d);
+    const pending = d.pending_status
+      ? `<span class="chip gold">${AudacShell.icon('check')}Update sent: ${esc(d.pending_status)}${d.pending_close_date ? ' · ' + esc(fmtDate(d.pending_close_date)) : ''}</span>` : '';
+    const dateLine = d.status === 'Open'
+      ? (d.expected_close_date ? `Expected close ${fmtDate(d.expected_close_date)}` : 'No expected close date')
+      : `${d.status} ${d.actual_close_date ? fmtDate(d.actual_close_date) : ''}`;
+    return `<li data-crm="${esc(d.crm_id)}">
+      <div><b>${esc(d.project_name || '(no name)')}</b>
+        <span class="sub">${esc(d.account_name || '')}${d.stage ? ' · ' + esc(d.stage) : ''} · <span class="value">${fmtMoney(d.value_usd)}</span></span>
+        <span class="sub${overdue ? ' warn' : ''}">${dateLine}${overdue ? ' — date has passed, please update' : ''}</span></div>
+      <div class="actions">${pending}${d.status === 'Open' ? `<button type="button" class="button-secondary" data-update="${esc(d.crm_id)}">${overdue ? 'Update status' : 'Update'}</button>` : ''}</div>
+    </li>`;
+  }
+
+  function renderDeals() {
+    const rows = dealsCache;
+    if (!rows.length) {
+      $('deals-sub').textContent = 'No deals are credited to your firm yet. Deals come from AUDAC’s CRM.';
+      $('deals-list').innerHTML = '';
+      return;
+    }
+    const overdue = rows.filter(needsUpdate);
+    const open = rows.filter(d => d.status === 'Open' && !needsUpdate(d));
+    const yearAgo = new Date(today.getTime() - 365 * DAY).toISOString().slice(0, 10);
+    const closed = rows.filter(d => d.status !== 'Open' && (d.actual_close_date || d.created_date || '') >= yearAgo);
+    const openValue = rows.filter(d => d.status === 'Open').reduce((s, d) => s + Number(d.value_usd || 0), 0);
+    $('deals-sub').textContent = `${rows.filter(d => d.status === 'Open').length} open (${fmtMoney(openValue)})` +
+      (overdue.length ? ` · ${overdue.length} need${overdue.length === 1 ? 's' : ''} a status update` : '') +
+      '. Know a deal was won, lost or moved? Tell us here and AUDAC updates the CRM.';
+    const group = (title, list) => list.length ? `<p class="group-title">${title}</p><ul class="list">${list.map(dealItem).join('')}</ul>` : '';
+    $('deals-list').innerHTML = group('Needs an update', overdue) + group('Open', open) + group('Closed in the last 12 months', closed);
+  }
+
+  function openUpdateForm(crmId) {
+    document.querySelectorAll('.update-form').forEach(f => f.remove());
+    const li = document.querySelector(`li[data-crm="${CSS.escape(crmId)}"]`);
+    const d = dealsCache.find(x => x.crm_id === crmId);
+    if (!li || !d) return;
+    const form = document.createElement('form');
+    form.className = 'update-form';
+    form.innerHTML = `
+      <div class="field"><label for="u-status">What happened?</label>
+        <select id="u-status"><option value="Open">Still open</option><option value="Won">Won</option><option value="Lost">Lost</option></select></div>
+      <div class="field"><label for="u-date" id="u-date-label">New expected close date</label><input type="date" id="u-date"></div>
+      <div class="field wide"><label for="u-note">Note for AUDAC (optional)</label><textarea id="u-note" placeholder="e.g. PO expected next week, or lost to a competitor on price"></textarea></div>
+      <p class="form-msg" id="u-msg" hidden></p>
+      <div class="form-actions"><button type="button" class="button-secondary" id="u-cancel">Cancel</button><button type="submit" class="button-primary" id="u-send">Send update</button></div>`;
+    li.appendChild(form);
+    const statusSel = form.querySelector('#u-status');
+    const dateLabel = form.querySelector('#u-date-label');
+    const syncLabel = () => { dateLabel.textContent = statusSel.value === 'Open' ? 'New expected close date' : `Date ${statusSel.value.toLowerCase()}`; };
+    statusSel.addEventListener('change', syncLabel);
+    syncLabel();
+    form.querySelector('#u-cancel').addEventListener('click', () => form.remove());
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const status = statusSel.value, date = form.querySelector('#u-date').value || null, note = form.querySelector('#u-note').value;
+      const msg = form.querySelector('#u-msg');
+      if (status === 'Open' && !date) { msg.hidden = false; msg.textContent = 'Give the new expected close date, so AUDAC can update the deal.'; return; }
+      const btn = form.querySelector('#u-send');
+      btn.disabled = true; btn.textContent = 'Sending…';
+      const { error } = await client.rpc('submit_deal_update', { p_crm_id: crmId, p_status: status, p_close_date: date, p_note: note });
+      if (error) { msg.hidden = false; msg.textContent = 'Could not send the update: ' + error.message; btn.disabled = false; btn.textContent = 'Send update'; return; }
+      Object.assign(d, { pending_status: status, pending_close_date: date, pending_at: new Date().toISOString() });
+      renderDeals();
+    });
+    statusSel.focus();
+  }
+  $('deals-list').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-update]');
+    if (b) openUpdateForm(b.dataset.update);
+  });
+
+  async function init() {
+    const { data: { session } } = await client.auth.getSession();
+    if (!session) { window.location.href = '/login'; return; }
+    const { data: profile } = await client.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
+    if (profile?.role === 'manager') { window.location.href = '/dashboard'; return; }
+    if (profile?.role === 'executive') { window.location.href = '/executive'; return; }
+    const { data: firms } = await client.from('rep_firms').select('id, name');
+    const firm = (firms || []).find(f => f.id === profile?.rep_firm_id);
+    AudacShell.setUser({ name: profile?.full_name || session.user.email, sub: firm ? firm.name : session.user.email });
+    AudacShell.setSection(firm ? firm.name : '');
+    if (profile?.is_active === false || !firm) {
+      $('gate').innerHTML = `<div class="notice info">${profile?.is_active === false
+        ? 'Your portal account has been deactivated, so this page is not available.'
+        : 'Your account isn’t linked to a rep firm yet. Use your firm’s signup link, or pick your firm on your first activity.'}</div>`;
+      $('key-section').hidden = true; $('deals-section').hidden = true;
+      $('page').setAttribute('aria-busy', 'false');
+      return;
+    }
+    try { localStorage.setItem('audac_seen_territory', '1'); } catch { /* private mode */ }
+    $('intro').textContent = `${firm.name}: your key accounts and your firm’s deals, straight from AUDAC’s CRM.`;
+    const [keyRes, dealRes] = await Promise.all([client.rpc('get_my_key_accounts'), client.rpc('get_my_deals')]);
+    if (keyRes.error) $('key-sub').textContent = 'Could not load key accounts: ' + keyRes.error.message; else renderKeyAccounts(keyRes.data || []);
+    if (dealRes.error) $('deals-sub').textContent = 'Could not load deals: ' + dealRes.error.message; else { dealsCache = dealRes.data || []; renderDeals(); }
+    $('page').setAttribute('aria-busy', 'false');
+    if (location.hash === '#deals') $('deals-section').scrollIntoView();
+  }
+  init().catch(err => { $('gate').innerHTML = `<div class="notice error">Couldn’t load this page: ${esc(err.message || err)}. Refresh to try again.</div>`; });
+</script>
+</body>
+</html>

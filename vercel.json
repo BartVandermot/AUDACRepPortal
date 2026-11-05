@@ -1,15 +1,52 @@
 {
   "rewrites": [
-    { "source": "/", "destination": "/index.html" },
-    { "source": "/form", "destination": "/form.html" },
-    { "source": "/login", "destination": "/login.html" },
-    { "source": "/dashboard", "destination": "/dashboard.html" },
-    { "source": "/executive", "destination": "/executive.html" },
-    { "source": "/crm", "destination": "/crm.html" },
-    { "source": "/territories", "destination": "/territories.html" },
-    { "source": "/reps", "destination": "/reps.html" },
-    { "source": "/admin", "destination": "/admin.html" },
-    { "source": "/import", "destination": "/import.html" },
-    { "source": "/home", "destination": "/home.html" }
+    {
+      "source": "/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/form",
+      "destination": "/form.html"
+    },
+    {
+      "source": "/login",
+      "destination": "/login.html"
+    },
+    {
+      "source": "/dashboard",
+      "destination": "/dashboard.html"
+    },
+    {
+      "source": "/executive",
+      "destination": "/executive.html"
+    },
+    {
+      "source": "/crm",
+      "destination": "/crm.html"
+    },
+    {
+      "source": "/territories",
+      "destination": "/territories.html"
+    },
+    {
+      "source": "/reps",
+      "destination": "/reps.html"
+    },
+    {
+      "source": "/admin",
+      "destination": "/admin.html"
+    },
+    {
+      "source": "/import",
+      "destination": "/import.html"
+    },
+    {
+      "source": "/home",
+      "destination": "/home.html"
+    },
+    {
+      "source": "/territory",
+      "destination": "/territory.html"
+    }
   ]
 }

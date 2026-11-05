@@ -600,6 +600,7 @@
     document.getElementById('name-prompt-bar').hidden = !!currentProfile?.full_name;
     updateSignedInGreeting();
     restoreDraft();
+    applyAccountFromUrl();
     refreshMonthNotes();
     await loadMySubmissions();
   }
@@ -1084,6 +1085,27 @@
     const key = draftKey();
     if (key) { try { localStorage.removeItem(key); } catch { /* ignore */ } }
     document.getElementById('draft-notice').hidden = true;
+  }
+
+  // "Log visit" on My territory opens /form?account=<external_id>&name=<name>:
+  // the account is filled in and linked, so the visit counts for that key account.
+  function applyAccountFromUrl() {
+    const p = new URLSearchParams(window.location.search);
+    const id = p.get('account'), name = p.get('name');
+    if (!id || !name) return;
+    let block = [...entriesContainer.querySelectorAll('.activity-entry')].find(b => !b.querySelector('.account-input').value.trim());
+    if (!block) block = addEntry();
+    block.querySelector('.account-input').value = name;
+    block.dataset.accountExternalId = id;
+    const st = block.querySelector('.account-status');
+    st.textContent = '✓ Linked to existing CRM account';
+    st.className = 'combo-status account-status linked';
+    block.querySelector('.contact-field').classList.add('active');
+    wireContactCombo(block);
+    suggestContactType(block, id);
+    p.delete('account'); p.delete('name');
+    history.replaceState(null, '', window.location.pathname + (p.toString() ? '?' + p : '') + window.location.hash);
+    saveDraft();
   }
 
   function restoreDraft() {

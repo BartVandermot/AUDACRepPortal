@@ -56,11 +56,36 @@
   .import-row .text { flex: 1; }
   .import-row p { margin: var(--space-1) 0 0; font-size: 14px; line-height: 21px; color: var(--color-text-secondary); }
 
+  .main-stack { grid-column: span 7; display: grid; gap: var(--space-4); }
+  .main-stack > .surface-card { grid-column: auto; }
+  .starter { grid-column: 1 / -1; padding: var(--space-5) var(--space-6); }
+  .starter-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-3); }
+  .starter-head p { margin: var(--space-1) 0 0; font-size: 14px; line-height: 21px; color: var(--color-text-secondary); }
+  .link-quiet { background: none; border: 0; padding: 6px 0; font: inherit; font-size: 13px; color: var(--color-text-muted); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+  .steps { list-style: none; margin: var(--space-4) 0 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-3); }
+  .steps li { padding: var(--space-3) var(--space-4); border-radius: var(--radius-tile); background: var(--color-bg-raised); border: 1px solid var(--color-border); font-size: 13.5px; line-height: 20px; color: var(--color-text-secondary); }
+  .steps li b { display: flex; gap: 8px; align-items: center; font-size: 14px; color: var(--color-text-primary); margin-bottom: 4px; }
+  .steps li .num { flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; border: 1px solid var(--color-border-strong); }
+  .steps li.done { opacity: .6; }
+  .steps li.done .num { background: var(--color-success); border-color: var(--color-success); color: #0b0c0e; }
+  .steps li.done .num svg { width: 13px; height: 13px; }
+  .steps li a, .steps li button.inline { color: var(--color-gold-light); font: inherit; font-weight: 600; background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+  .review { padding: var(--space-5) var(--space-6); }
+  .review .feedback { margin: var(--space-3) 0 0; font-size: 14px; line-height: 21px; color: var(--color-text-primary); white-space: pre-wrap; padding-left: var(--space-3); border-left: 2px solid var(--color-gold); }
+  .review .meta { margin: var(--space-2) 0 0; font-size: 13.5px; color: var(--color-text-secondary); }
+  .terr { padding: var(--space-6); }
+  .terr-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-3); flex-wrap: wrap; }
+  .terr-head p { margin: var(--space-1) 0 0; font-size: 14px; line-height: 21px; color: var(--color-text-secondary); }
+  .terr .progress { max-width: 360px; }
+  .terr .rows li { grid-template-columns: 1fr auto; }
+  .terr .rows .button-secondary { min-height: 40px; padding: 0 14px; font-size: 13.5px; }
   .skeleton { color: transparent !important; background: rgba(255,255,255,0.06); border-radius: 8px; }
 
   @media (max-width: 1000px) {
-    .hero, .kpis, .recent, .side-stack { grid-column: 1 / -1; }
+    .hero, .kpis, .recent, .side-stack, .main-stack { grid-column: 1 / -1; }
+    .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
+  @media (max-width: 560px) { .steps { grid-template-columns: 1fr; } }
   @media (max-width: 760px) {
     .bento { gap: var(--space-3); }
     .hero, .kpis, .recent { padding: var(--space-5); }
@@ -90,6 +115,17 @@
       </div>
 
       <div class="bento">
+        <section class="starter surface-card" id="starter" aria-labelledby="starter-h" hidden>
+          <div class="starter-head">
+            <div>
+              <h3 class="card-title" id="starter-h">Getting started</h3>
+              <p id="starter-sub">Five quick steps to get the most out of the portal.</p>
+            </div>
+            <button type="button" class="link-quiet" id="starter-hide">Hide</button>
+          </div>
+          <ol class="steps" id="starter-steps"></ol>
+        </section>
+
         <section class="hero surface-card surface-card--elevated" aria-labelledby="hero-h">
           <p class="eyebrow">Log activity</p>
           <h3 id="hero-h">Just visited a dealer?</h3>
@@ -106,13 +142,37 @@
           </div>
         </section>
 
-        <section class="recent surface-card" aria-labelledby="recent-h">
-          <h3 class="card-title" id="recent-h">Recent activity</h3>
-          <div id="recent-list"><p class="empty">Loading…</p></div>
-          <a class="see-all" href="/form#my-submissions-section">See all submissions →</a>
-        </section>
+        <div class="main-stack">
+          <section class="terr surface-card" id="terr" aria-labelledby="terr-h" hidden>
+            <div class="terr-head">
+              <div>
+                <h3 class="card-title" id="terr-h">Your territory</h3>
+                <p id="terr-sub"></p>
+              </div>
+              <a class="see-all" href="/territory" style="margin-top:0;">Open →</a>
+            </div>
+            <div class="progress" role="img" id="terr-meter"><i></i></div>
+            <div id="terr-list"></div>
+            <p class="meta-line" id="terr-deals" style="margin-top:8px;"></p>
+          </section>
+
+          <section class="recent surface-card" aria-labelledby="recent-h">
+            <h3 class="card-title" id="recent-h">Recent activity</h3>
+            <div id="recent-list"><p class="empty">Loading…</p></div>
+            <a class="see-all" href="/form#my-submissions-section">See all submissions →</a>
+          </section>
+        </div>
 
         <div class="side-stack">
+          <section class="review surface-card" id="review" aria-labelledby="review-h" hidden>
+            <div class="month-row">
+              <h3 class="card-title" id="review-h">Your review</h3>
+              <span class="chip" id="review-chip"></span>
+            </div>
+            <p class="meta" id="review-meta"></p>
+            <div id="review-feedback"></div>
+          </section>
+
           <section class="surface-card" aria-labelledby="month-h">
             <div class="month-row">
               <h3 class="card-title" id="month-h"></h3>
@@ -272,7 +332,94 @@
       $('prev-month-meta').textContent = 'Your account isn’t linked to a rep firm yet. Use your firm’s signup link, or pick your firm on your first activity.';
     }
     $('page').setAttribute('aria-busy', 'false');
+
+    if (firm) await Promise.all([renderReview(), renderTerritory()]);
+    await renderStarter(profile, firm, session.user.id);
   }
+
+  // ---------- Last finalized review, with AUDAC's feedback ----------
+  async function renderReview() {
+    const { data, error } = await client.rpc('get_my_reviews', { p_limit: 1 });
+    const r = !error && data && data[0];
+    if (!r) return;
+    const label = new Date(r.reporting_month + '-01T12:00:00').toLocaleString('en-US', { month: 'long' });
+    $('review-h').textContent = `Your ${label} review`;
+    const chip = $('review-chip');
+    chip.className = 'chip ' + (r.rag_status === 'Green' ? 'ok' : r.rag_status === 'Amber' ? 'warn' : 'danger');
+    chip.textContent = r.rag_status;
+    $('review-meta').textContent = `${r.activity_count} activit${Number(r.activity_count) === 1 ? 'y' : 'ies'} logged by your firm.` +
+      (r.rag_status === 'Green' ? ' Great month.' : ' Green takes 8+ activities, open pipeline and a new opportunity in the month.');
+    $('review-feedback').innerHTML = r.rep_feedback
+      ? `<p class="feedback">${esc(r.rep_feedback)}</p><p class="meta">— AUDAC</p>`
+      : '<p class="meta">No written feedback this time.</p>';
+    $('review').hidden = false;
+  }
+
+  // ---------- Key accounts + deals at a glance ----------
+  async function renderTerritory() {
+    const [keyRes, dealRes] = await Promise.all([client.rpc('get_my_key_accounts'), client.rpc('get_my_deals')]);
+    const keys = keyRes.data || [], deals = dealRes.data || [];
+    if (keyRes.error || dealRes.error || (!keys.length && !deals.length)) return;
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const iso = today.toISOString().slice(0, 10);
+    const ago = (d) => Math.round((today - new Date(d + 'T00:00:00')) / 86400000);
+    const contacted = keys.filter(k => k.last_contact && ago(k.last_contact) <= 90).length;
+    $('terr-sub').textContent = keys.length
+      ? `${contacted} of ${keys.length} key accounts contacted in the last 3 months.`
+      : 'No key accounts assigned to your firm yet.';
+    $('terr-meter').hidden = !keys.length;
+    $('terr-meter').querySelector('i').style.width = keys.length ? `${Math.round(contacted / keys.length * 100)}%` : '0';
+    $('terr-meter').setAttribute('aria-label', `${contacted} of ${keys.length} key accounts contacted`);
+    const due = keys.filter(k => !k.last_contact || ago(k.last_contact) > 90).slice(0, 3);
+    $('terr-list').innerHTML = due.length ? `<ul class="rows">${due.map(k => `<li>
+        <div><b>${esc(k.name)}</b><span class="sub">${esc([k.city, k.state_code].filter(Boolean).join(', '))} · ${k.last_contact ? `last contact ${ago(k.last_contact)} days ago` : 'no contact logged yet'}</span></div>
+        <a class="button-secondary" href="/form?account=${encodeURIComponent(k.external_id)}&name=${encodeURIComponent(k.name)}">Log visit</a></li>`).join('')}</ul>` : '';
+    const stale = deals.filter(d => d.status === 'Open' && d.expected_close_date && d.expected_close_date < iso && !d.pending_status).length;
+    const open = deals.filter(d => d.status === 'Open').length;
+    $('terr-deals').innerHTML = stale
+      ? `${AudacShell.icon('spark')}<a href="/territory#deals" style="color:var(--color-warning); font-weight:600;">${stale} of your ${open} open deal${open === 1 ? '' : 's'} need${stale === 1 ? 's' : ''} a status update →</a>`
+      : (open ? `${open} open deal${open === 1 ? '' : 's'} in AUDAC’s CRM, all up to date.` : '');
+    $('terr').hidden = false;
+  }
+
+  // ---------- Getting started (until done or hidden) ----------
+  const LS = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } } };
+  let installPrompt = null;
+  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; });
+  const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  if (isStandalone()) LS.set('audac_installed', '1');
+
+  async function renderStarter(profile, firm, uid) {
+    if (LS.get('audac_starter_hidden') === '1') return;
+    const [actsRes, impRes] = await Promise.all([
+      client.from('activity_entries').select('id', { count: 'exact', head: true }).eq('created_by', uid),
+      client.from('activity_import_batches').select('id', { count: 'exact', head: true }).eq('imported_by', uid),
+    ]);
+    const ua = navigator.userAgent;
+    const installHow = /iPhone|iPad|iPod/.test(ua) ? 'In Safari, tap Share, then “Add to Home Screen”.'
+      : /Android/.test(ua) ? 'In Chrome, open the ⋮ menu, then “Install app”.'
+      : 'Open this page on your phone and add it to your home screen.';
+    const steps = [
+      { done: !!firm, title: 'Join your firm', body: firm ? `You’re set up with ${esc(firm.name)}.` : 'Use your firm’s signup link, or pick your firm on your first activity.' },
+      { done: (actsRes.count || 0) > 0, title: 'Log your first visit', body: '<a href="/form">Log an activity</a>. Pick the account from the list so it counts for that account.' },
+      { done: LS.get('audac_seen_territory') === '1', title: 'Check your territory', body: '<a href="/territory">See your key accounts and deals</a>, and update any deal that moved.' },
+      { done: (impRes.count || 0) > 0, title: 'Already using a CRM?', body: '<a href="/import">Import an export</a> instead of typing each visit again.' },
+      { done: LS.get('audac_installed') === '1', title: 'Add to home screen', body: installPrompt ? '<button type="button" class="inline" id="starter-install">Install the app</button> for one-tap logging.' : installHow },
+    ];
+    const left = steps.filter(x => !x.done).length;
+    if (!left) return;
+    $('starter-sub').textContent = left === steps.length ? 'Five quick steps to get the most out of the portal.' : `${left} step${left === 1 ? '' : 's'} left.`;
+    $('starter-steps').innerHTML = steps.map((x, i) => `<li class="${x.done ? 'done' : ''}"><b><span class="num">${x.done ? AudacShell.icon('check') : i + 1}</span>${x.title}</b>${x.body}</li>`).join('');
+    $('starter').hidden = false;
+    const inst = $('starter-install');
+    if (inst) inst.addEventListener('click', async () => {
+      if (!installPrompt) return;
+      installPrompt.prompt();
+      const { outcome } = await installPrompt.userChoice;
+      if (outcome === 'accepted') { LS.set('audac_installed', '1'); renderStarter(profile, firm, uid); }
+    });
+  }
+  $('starter-hide').addEventListener('click', () => { LS.set('audac_starter_hidden', '1'); $('starter').hidden = true; });
 
   init().catch(err => {
     $('recent-list').innerHTML = `<div class="notice error">Couldn’t load your overview: ${esc(err.message || err)}. Refresh to try again.</div>`;

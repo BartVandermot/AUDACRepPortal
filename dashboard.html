@@ -277,6 +277,9 @@
       <label for="dd-notes" class="dd-sub-title" style="display:block; margin-top:0;">Review notes</label>
       <textarea id="dd-notes" placeholder="Talking points, agreements and follow-ups for this firm’s review. Saved automatically, and included in the agenda."></textarea>
       <div class="hint" id="dd-notes-status"></div>
+      <label for="dd-feedback" class="dd-sub-title" style="display:block;">Feedback for the rep <span style="font-weight:400; text-transform:none; letter-spacing:0; color:var(--color-text-muted);">— shown on their Home once this review is finalized</span></label>
+      <textarea id="dd-feedback" placeholder="What the firm sees: what went well, what to improve, which key accounts to visit next month."></textarea>
+      <div class="hint" id="dd-feedback-status"></div>
     </div>
 
     <div class="dd-sub-title">Activity Log</div>
@@ -615,6 +618,8 @@
     notesFirmId = firmId;
     document.getElementById('dd-notes').value = currentReviewRow?.notes || '';
     document.getElementById('dd-notes-status').textContent = '';
+    document.getElementById('dd-feedback').value = currentReviewRow?.rep_feedback || '';
+    document.getElementById('dd-feedback-status').textContent = '';
 
     const repByCreator = await fetchRepsByCreator(acts.data || []);
     const ddActivity = document.getElementById('dd-activity');
@@ -1433,7 +1438,7 @@
   let ops = null;
   const NOT_ASSIGNABLE = new Set(['Independent Rep Firm', 'Competitor', 'Supplier']);
   async function loadOpsData() {
-    const [accts, zips, blocking, manualContacts, reps, skipped, lastPipe, lastEdu, sellAny, lastRuns, lastOkRun, lastEduBatch] = await Promise.all([
+    const [accts, zips, blocking, manualContacts, reps, skipped, lastPipe, lastEdu, sellAny, lastRuns, lastOkRun, lastEduBatch, dealUpdates] = await Promise.all([
       AudacData.all(client.from('crm_accounts').select('name_key, source, rep_firm_id, relationship_type, state_code, country_code, is_active, last_synced_at').order('external_id')),
       client.from('rep_firm_zip_ranges').select('state_code'),
       client.from('crm_contacts').select('external_id', { count: 'exact', head: true }).eq('blocks_pipeline_sync', true),
@@ -1447,6 +1452,7 @@
       AudacSync.lastOk(client),
       // Also counts imports that added nothing new (all rows already known).
       client.from('data_import_batches').select('created_at').eq('source', 'education').is('undone_at', null).order('created_at', { ascending: false }).limit(1),
+      client.from('deal_status_updates').select('id', { count: 'exact', head: true }).is('handled_at', null),
     ]);
     const accounts = accts.data || [];
     const covered = new Set([...firmsCache.flatMap(f => f.states || []), ...(zips.data || []).map(z => z.state_code)]);
@@ -1485,6 +1491,7 @@
       lastPipeSync: maxIso(lastOkRun?.finished_at, lastPipe.data?.[0]?.uploaded_at),
       lastEduImport: maxIso(lastEduBatch.data?.[0]?.created_at, lastEdu.data?.[0]?.uploaded_at),
       selloutInUse: (sellAny.count || 0) > 0,
+      dealUpdates: dealUpdates.count || 0,
       repEmailsByFirm: repRows.reduce((m, r) => { if (r.rep_firm_id && r.email) (m[r.rep_firm_id] ||= []).push(r.email); return m; }, {}),
     };
   }
@@ -1531,6 +1538,11 @@
       state: 'off', main: `<b class="ops-count">${plural(ops.unassignedNoState, 'US account')}</b> without a state in Dynamics`,
       sub: 'No State and no usable ZIP, so no rep firm can be found. Fill in the address in Dynamics; the next sync places them.',
       href: '/crm?view=nostate', action: 'List',
+    });
+    if (ops.dealUpdates) items.push({
+      state: 'todo', main: `<b class="ops-count">${plural(ops.dealUpdates, 'deal update')}</b> from reps to process`,
+      sub: 'Won, lost or moved deals reported on My territory. Change them in Dynamics, then mark them processed.',
+      href: '/admin#pipeline', action: 'Process',
     });
     if (ops.repsAttention) items.push({
       state: 'todo', main: `<b class="ops-count">${plural(ops.repsAttention, 'rep')}</b> to finish setting up`,
@@ -1667,26 +1679,38 @@
 
   // ---------- Review notes: edited in the drilldown, saved automatically ----------
   let notesFirmId = null, notesTimer = null;
-  async function saveNotes(firmId, month, notes) {
-    const status = document.getElementById('dd-notes-status');
+  // Saves one text field of this firm's review (internal notes, or the
+  // feedback the firm sees once the review is finalized), creating the
+  // review row on first save.
+  async function saveReviewField(firmId, month, field, value, statusId) {
+    const status = document.getElementById(statusId);
     status.textContent = 'Saving…';
     let error;
     const existing = reviewByFirm.get(firmId);
     if (existing || currentReviewRow) {
-      ({ error } = await client.from('monthly_reviews').update({ notes }).eq('rep_firm_id', firmId).eq('reporting_month', month));
+      ({ error } = await client.from('monthly_reviews').update({ [field]: value }).eq('rep_firm_id', firmId).eq('reporting_month', month));
     } else {
       const row = scorecardCache.find(r => r.rep_firm_id === firmId);
-      const ins = await client.from('monthly_reviews').insert({ rep_firm_id: firmId, reporting_month: month, notes, rag_status: row?.rag_status || null, created_by: currentUser.id }).select('*').single();
+      const ins = await client.from('monthly_reviews').insert({ rep_firm_id: firmId, reporting_month: month, [field]: value, rag_status: row?.rag_status || null, created_by: currentUser.id }).select('*').single();
       error = ins.error;
       if (!error && notesFirmId === firmId) currentReviewRow = ins.data;
     }
-    if (error) { status.textContent = 'Could not save notes: ' + error.message; return; }
+    if (error) { status.textContent = 'Could not save: ' + error.message; return; }
     status.textContent = 'Saved';
+    if (currentReviewRow && notesFirmId === firmId) currentReviewRow[field] = value;
     const r = reviewByFirm.get(firmId) || { rep_firm_id: firmId, is_finalized: false, agenda_generated_at: null };
-    reviewByFirm.set(firmId, { ...r, notes });
+    reviewByFirm.set(firmId, { ...r, [field]: value });
     renderScorecard();
     renderMonthClose();
   }
+  const saveNotes = (firmId, month, notes) => saveReviewField(firmId, month, 'notes', notes, 'dd-notes-status');
+  let feedbackTimer = null;
+  document.getElementById('dd-feedback').addEventListener('input', (e) => {
+    clearTimeout(feedbackTimer);
+    const firmId = notesFirmId, month = monthInput.value, value = e.target.value;
+    document.getElementById('dd-feedback-status').textContent = 'Unsaved changes…';
+    feedbackTimer = setTimeout(() => saveReviewField(firmId, month, 'rep_feedback', value, 'dd-feedback-status'), 900);
+  });
   document.getElementById('dd-notes').addEventListener('input', (e) => {
     clearTimeout(notesTimer);
     const firmId = notesFirmId, month = monthInput.value, notes = e.target.value;
