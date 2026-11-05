@@ -107,6 +107,22 @@
   .attachment-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; font-size: 13px; background: var(--color-surface-elevated); border: 1px solid var(--color-border); color: var(--color-text-primary); }
   .attachment-chip-remove { background: none; border: none; color: var(--color-danger); cursor: pointer; font-size: 16px; font-weight: 700; padding: 10px; margin: -10px -6px -10px 0; line-height: 1; }
 
+  /* Quick log (branch quick-log) */
+  .ql-card { border: 1px solid rgba(217,166,83,0.35); }
+  .ql-head { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
+  .ql-head h2 { margin: 0 !important; }
+  .ql-card textarea { min-height: 96px; }
+  .ql-actions { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; margin-top: var(--space-3); }
+  .ql-actions .audac-btn { width: auto; }
+  .ql-msg { margin: var(--space-3) 0 0; font-size: 14px; line-height: 21px; }
+  .ql-msg.err { color: var(--color-danger); }
+  .ql-msg.ok { color: var(--color-success); }
+  .ql-test { display: flex; gap: var(--space-2); align-items: center; font-size: 13px; color: var(--color-text-muted); }
+  .ql-test select { width: auto; min-height: 36px; padding: 4px 10px; font-size: 13px; }
+  .ql-check > label::after, .ql-check > .label-check { content: 'Check'; margin-left: 8px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .3px; color: #171714; background: var(--color-gold); }
+  .ql-check input, .ql-check select, .ql-check .combo input { box-shadow: 0 0 0 2px var(--color-gold) inset; }
+  .ql-from { font-size: 12.5px; color: var(--color-gold-light); margin: calc(-1 * var(--space-3)) 0 var(--space-3); }
+
   @media (max-width: 760px) {
     .card, .activity-entry { padding: var(--space-5); }
     .edit-grid { grid-template-columns: 1fr; }
@@ -165,6 +181,18 @@
       </div>
     </div>
 
+    <div class="card ql-card" id="quick-log">
+      <div class="ql-head"><h2>Quick log</h2><span class="chip gold">Beta</span></div>
+      <p class="hint" style="margin:0 0 var(--space-3);">Say or type what happened, in your own words. On your phone, tap the microphone on the keyboard to dictate. The form below gets filled in for you: check it, then submit.</p>
+      <textarea id="ql-note" maxlength="2000" aria-label="What happened?" placeholder="e.g. Yesterday visited Orlando Sound, met John Miller, demoed the NOVA8. They're quoting a school with 12 zones and compared us to Atlas. Follow up next week."></textarea>
+      <div class="ql-actions">
+        <button type="button" class="audac-btn" id="ql-run">Fill in the form</button>
+        <span class="ql-test" id="ql-test" hidden><label for="ql-model">Test model</label>
+          <select id="ql-model"><option value="claude-opus-5-5">Opus 5.5</option><option value="claude-sonnet-5-5">Sonnet 5.5</option><option value="claude-haiku-5-5">Haiku 5.5</option></select></span>
+      </div>
+      <p class="ql-msg" id="ql-msg" hidden></p>
+    </div>
+
     <div style="display:flex; justify-content:space-between; align-items:center; gap:var(--space-3); flex-wrap:wrap; margin:var(--space-6) 0 var(--space-4);">
       <h2 class="section-title">Activities</h2>
       <a href="/import" id="import-link" class="audac-btn-outline">Upload from CRM export</a>
@@ -211,6 +239,7 @@
     const firm = firmsCache.find(f => f.id === currentProfile?.rep_firm_id);
     AudacShell.setUser({ name: currentProfile?.full_name || currentSession.user.email, sub: firm ? firm.name : currentSession.user.email });
     AudacShell.setSection(firm ? firm.name : '');
+    if (currentProfile?.role === 'manager') document.getElementById('ql-test').hidden = false;
     if (currentProfile?.role === 'manager' && !managerItemAdded) {
       managerItemAdded = true;
       AudacShell.useNav('manager'); // managers get their own menu here
@@ -1066,6 +1095,7 @@
       out.account_external_id = b.dataset.accountExternalId || '';
       out.contact_name = b.querySelector('.contact-input')?.value || '';
       out.contact_external_id = b.dataset.contactExternalId || '';
+      out.quick_log_run_id = b.dataset.quickLogRunId || '';
       return out;
     });
   }
@@ -1123,6 +1153,7 @@
       for (const f of DRAFT_FIELDS) if (e[f]) b.querySelector(`[name="${f}"]`).value = e[f];
       b.querySelector('[name="demo_gear_used"]').checked = !!e.demo_gear_used;
       if (e.contact_type_auto) b.querySelector('[name="contact_type"]').dataset.auto = '1';
+      if (e.quick_log_run_id) b.dataset.quickLogRunId = e.quick_log_run_id;
       if (e.account_external_id) {
         b.dataset.accountExternalId = e.account_external_id;
         const st = b.querySelector('.account-status');
@@ -1155,6 +1186,98 @@
   });
   entriesContainer.addEventListener('input', () => saveDraft());
   entriesContainer.addEventListener('change', () => saveDraft());
+
+  // ---------- Quick log (branch quick-log) ----------
+  // The rep's note goes to the quick-log edge function, which returns filled-in
+  // activities (accounts/contacts only from the firm's own CRM lists). They land
+  // in the normal form blocks below; nothing is saved until the rep submits.
+  function blockIsEmpty(b) {
+    return !b.querySelector('.account-input').value.trim()
+      && ['topic_opportunity', 'solution_feedback', 'competitive_feedback', 'additional_comments'].every(f => !b.querySelector(`[name="${f}"]`).value.trim());
+  }
+  function markCheck(block, field) {
+    const el = field === 'account' ? block.querySelector('.account-input')
+      : field === 'contact' ? block.querySelector('.contact-input')
+      : field === 'demo_gear_used' ? null
+      : block.querySelector(`[name="${field}"]`);
+    const host = el && el.closest('.field');
+    if (host) host.classList.add('ql-check');
+  }
+  function fillFromQuickLog(result) {
+    const blocks = [...entriesContainer.querySelectorAll('.activity-entry')];
+    if (blocks.length && blocks.every(blockIsEmpty)) { entriesContainer.innerHTML = ''; entryCounter = 0; }
+    let first = null;
+    for (const a of result.activities) {
+      const b = addEntry();
+      first = first || b;
+      b.dataset.quickLogRunId = result.run_id || '';
+      b.querySelector('[name="entry_date"]').value = a.entry_date;
+      if (a.activity_type) b.querySelector('[name="activity_type"]').value = a.activity_type;
+      if (a.contact_type) b.querySelector('[name="contact_type"]').value = a.contact_type;
+      b.querySelector('[name="demo_gear_used"]').checked = !!a.demo_gear_used;
+      for (const f of ['topic_opportunity', 'solution_feedback', 'competitive_feedback', 'additional_comments']) b.querySelector(`[name="${f}"]`).value = a[f] || '';
+      const accInput = b.querySelector('.account-input'), accStatus = b.querySelector('.account-status');
+      if (a.account.external_id) {
+        accInput.value = a.account.name;
+        b.dataset.accountExternalId = a.account.external_id;
+        accStatus.textContent = '✓ Linked to existing CRM account';
+        accStatus.className = 'combo-status account-status linked';
+        b.querySelector('.contact-field').classList.add('active');
+        wireContactCombo(b);
+        if (!a.contact_type) suggestContactType(b, a.account.external_id);
+        const cInput = b.querySelector('.contact-input'), cStatus = b.querySelector('.contact-status');
+        if (a.contact.external_id) {
+          cInput.value = a.contact.name;
+          b.dataset.contactExternalId = a.contact.external_id;
+          cStatus.textContent = '✓ Linked to CRM contact';
+          cStatus.className = 'combo-status contact-status linked';
+        } else if (a.contact.name) {
+          cInput.value = a.contact.name;
+          cStatus.textContent = 'Not in the CRM yet: saved as a name only, or pick “Add as new contact” in the list.';
+        }
+      } else if (a.account.name) {
+        accInput.value = a.account.name;
+        accInput.dispatchEvent(new Event('input', { bubbles: true })); // opens the search: pick a match or add it as new
+        setTimeout(() => {
+          accStatus.textContent = `Not found in your account list. Pick a match, or add “${a.account.name}” as a new company.${a.contact.name ? ` Contact mentioned: ${a.contact.name}.` : ''}`;
+          accStatus.className = 'combo-status account-status';
+        }, 400);
+        markCheck(b, 'account');
+      } else markCheck(b, 'account');
+      (a.uncertain || []).forEach(f => markCheck(b, f));
+      if (!a.contact_type) markCheck(b, 'contact_type');
+      b.querySelector('.entry-title').insertAdjacentHTML('afterend', '<p class="ql-from">Filled in by Quick log. Check the marked fields.</p>');
+      b.addEventListener('change', (e) => { const f = e.target.closest('.ql-check'); if (f) f.classList.remove('ql-check'); });
+      b.addEventListener('input', (e) => { const f = e.target.closest('.ql-check'); if (f) f.classList.remove('ql-check'); });
+    }
+    updateEntryHint();
+    refreshMonthNotes();
+    saveDraft();
+    if (first) first.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  async function runQuickLog() {
+    const note = document.getElementById('ql-note').value.trim();
+    const msg = document.getElementById('ql-msg'), btn = document.getElementById('ql-run');
+    const say = (text, cls) => { msg.hidden = !text; msg.className = 'ql-msg' + (cls ? ' ' + cls : ''); msg.textContent = text || ''; };
+    if (note.length < 3) { say('Type or dictate what happened first.', 'err'); return; }
+    if (!firmSelect.value) { say('Select your rep firm first.', 'err'); return; }
+    btn.disabled = true; btn.textContent = 'Reading your note…'; say('');
+    const body = { note, today: todayISO(), firm_id: firmSelect.value };
+    if (currentProfile?.role === 'manager') body.model = document.getElementById('ql-model').value;
+    const { data, error } = await client.functions.invoke('quick-log', { body });
+    btn.disabled = false; btn.textContent = 'Fill in the form';
+    if (error) {
+      let text = 'Quick log could not process this note. Please use the form.';
+      try { const j = await error.context.json(); if (j?.error) text = j.error; } catch { /* keep the generic message */ }
+      say(text, 'err'); return;
+    }
+    if (!data?.activities?.length) { say(data?.message || 'No activity found in this note.', 'err'); return; }
+    fillFromQuickLog(data);
+    const n = data.activities.length;
+    say(`${n === 1 ? 'One activity' : n + ' activities'} filled in below${data.message ? ': ' + data.message : '. Check them, then submit.'}`, 'ok');
+    document.getElementById('ql-note').value = '';
+  }
+  document.getElementById('ql-run').addEventListener('click', runQuickLog);
 
   function removeEntry(idx) {
     const el = entriesContainer.querySelector(`.activity-entry[data-idx="${idx}"]`);
@@ -1228,6 +1351,7 @@
         solution_feedback: get('solution_feedback').value.trim() || null,
         competitive_feedback: get('competitive_feedback').value.trim() || null,
         additional_comments: get('additional_comments').value.trim() || null,
+        quick_log_run_id: block.dataset.quickLogRunId || null,
       };
     });
   }
