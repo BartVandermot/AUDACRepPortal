@@ -1288,16 +1288,18 @@
 
   // ---- Dictation ----
   // 1) Tell each device how to dictate with what's built in (works everywhere).
-  (function dictationHint() {
+  // The device's own dictation, which works in every browser: used for the hint
+  // and as the fallback when the Dictate button's speech service fails.
+  const builtInDictation = (() => {
     const ua = navigator.userAgent || '';
     const platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
     const touch = /Android|iPhone|iPad|iPod/i.test(ua) || (/Mac/i.test(platform) && navigator.maxTouchPoints > 1);
-    const hint = touch ? 'Dictate: tap the microphone on your keyboard.'
-      : /Win/i.test(platform) ? 'Dictate: press Windows + H in the box.'
-      : /Mac/i.test(platform) ? 'Dictate: press Fn twice (or the microphone key) in the box.'
-      : 'You can also dictate.';
-    document.getElementById('ql-dictate-hint').textContent = hint;
+    return touch ? 'tap the microphone on your keyboard'
+      : /Win/i.test(platform) ? 'press Windows + H in the box'
+      : /Mac/i.test(platform) ? 'press Fn twice (or the microphone key) in the box'
+      : '';
   })();
+  document.getElementById('ql-dictate-hint').textContent = builtInDictation ? `Dictate: ${builtInDictation}.` : 'You can also dictate.';
   // 2) A Dictate button where the browser has speech recognition (Chrome, Edge,
   //    Safari; not Firefox). The browser does the recognition: Chrome sends the
   //    audio to Google, Edge to Microsoft, Safari to Apple.
@@ -1319,7 +1321,9 @@
     btn.addEventListener('click', () => {
       if (listening && rec) { rec.stop(); return; }
       rec = new SR();
-      rec.lang = navigator.language || 'en-US';
+      // Notes are in English; only a French-speaking browser (Quebec) dictates in French.
+      // (Not the browser language as such: a Dutch or German UI would mishear English.)
+      rec.lang = /^fr\b/i.test(navigator.language || '') ? navigator.language : 'en-US';
       rec.continuous = true;
       rec.interimResults = true;
       base = note.value.trim();
@@ -1333,11 +1337,20 @@
         note.value = [base, finalText].filter(Boolean).join(' ') + (interim ? ' ' + interim.trim() : '');
       };
       rec.onerror = (e) => {
-        const why = e.error === 'not-allowed' || e.error === 'service-not-allowed'
-          ? 'Microphone access is blocked. Allow it via the icon in the address bar, or use your keyboard\'s dictation.'
+        const fallback = builtInDictation ? ` Instead, ${builtInDictation}: that works in any browser.` : ' You can type instead.';
+        // The browser's speech service can't be used here (blocked by a company
+        // network or VPN, or a browser without it, e.g. Brave/Opera): don't
+        // offer the button again this visit.
+        if (['network', 'service-not-allowed', 'language-not-supported'].includes(e.error)) {
+          btn.hidden = true;
+          show('Dictation through this browser doesn’t work here (common in Edge, or behind a company network or VPN).' + fallback, 'err');
+          return;
+        }
+        const why = e.error === 'not-allowed'
+          ? 'Microphone access is blocked. Allow it via the icon in the address bar.' + fallback
           : e.error === 'no-speech' ? 'Didn\'t hear anything. Try again, a bit closer to the microphone.'
-          : e.error === 'network' ? 'Dictation needs an internet connection.'
-          : 'Dictation stopped (' + e.error + '). You can type instead.';
+          : e.error === 'aborted' ? ''
+          : 'Dictation stopped (' + e.error + ').' + fallback;
         show(why, 'err');
       };
       rec.onend = () => {
