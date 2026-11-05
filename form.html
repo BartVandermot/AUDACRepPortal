@@ -115,6 +115,12 @@
   .ql-actions { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; margin-top: var(--space-3); }
   .ql-actions .audac-btn { width: auto; }
   .ql-msg { margin: var(--space-3) 0 0; font-size: 14px; line-height: 21px; }
+  #ql-mic { display: inline-flex; align-items: center; gap: 8px; width: auto; }
+  #ql-mic svg { width: 18px; height: 18px; }
+  #ql-mic.listening { border-color: var(--color-danger); color: var(--color-danger); }
+  #ql-mic.listening svg { animation: ql-pulse 1.2s ease-in-out infinite; }
+  @keyframes ql-pulse { 50% { opacity: .35; } }
+  @media (prefers-reduced-motion: reduce) { #ql-mic.listening svg { animation: none; } }
   .ql-msg.err { color: var(--color-danger); }
   .ql-msg.ok { color: var(--color-success); }
   .ql-test { display: flex; gap: var(--space-2); align-items: center; font-size: 13px; color: var(--color-text-muted); }
@@ -183,9 +189,10 @@
 
     <div class="card ql-card" id="quick-log">
       <div class="ql-head"><h2>Quick log</h2><span class="chip gold">Beta</span></div>
-      <p class="hint" style="margin:0 0 var(--space-3);">Say or type what happened, in your own words. On your phone, tap the microphone on the keyboard to dictate. The form below gets filled in for you: check it, then submit.</p>
+      <p class="hint" style="margin:0 0 var(--space-3);">Say or type what happened, in your own words. <span id="ql-dictate-hint">You can also dictate.</span> The form below gets filled in for you: check it, then submit.</p>
       <textarea id="ql-note" maxlength="2000" aria-label="What happened?" placeholder="e.g. Yesterday visited Orlando Sound, met John Miller, demoed the NOVA8. They're quoting a school with 12 zones and compared us to Atlas. Follow up next week."></textarea>
       <div class="ql-actions">
+        <button type="button" class="audac-btn-outline" id="ql-mic" hidden aria-pressed="false" title="Dictate with your browser's speech recognition"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3ZM5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/></svg><span>Dictate</span></button>
         <button type="button" class="audac-btn" id="ql-run">Fill in the form</button>
         <span class="ql-test" id="ql-test" hidden><label for="ql-model">Test model</label>
           <select id="ql-model"><option value="claude-opus-5-5">Opus 5.5</option><option value="claude-sonnet-5-5">Sonnet 5.5</option><option value="claude-haiku-5-5">Haiku 5.5</option></select></span>
@@ -1278,6 +1285,70 @@
     document.getElementById('ql-note').value = '';
   }
   document.getElementById('ql-run').addEventListener('click', runQuickLog);
+
+  // ---- Dictation ----
+  // 1) Tell each device how to dictate with what's built in (works everywhere).
+  (function dictationHint() {
+    const ua = navigator.userAgent || '';
+    const platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
+    const touch = /Android|iPhone|iPad|iPod/i.test(ua) || (/Mac/i.test(platform) && navigator.maxTouchPoints > 1);
+    const hint = touch ? 'Dictate: tap the microphone on your keyboard.'
+      : /Win/i.test(platform) ? 'Dictate: press Windows + H in the box.'
+      : /Mac/i.test(platform) ? 'Dictate: press Fn twice (or the microphone key) in the box.'
+      : 'You can also dictate.';
+    document.getElementById('ql-dictate-hint').textContent = hint;
+  })();
+  // 2) A Dictate button where the browser has speech recognition (Chrome, Edge,
+  //    Safari; not Firefox). The browser does the recognition: Chrome sends the
+  //    audio to Google, Edge to Microsoft, Safari to Apple.
+  (function dictateButton() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const btn = document.getElementById('ql-mic');
+    if (!SR) return;
+    btn.hidden = false;
+    const note = document.getElementById('ql-note'), msg = document.getElementById('ql-msg');
+    const label = btn.querySelector('span');
+    let rec = null, listening = false, base = '';
+    const setState = (on) => {
+      listening = on;
+      btn.classList.toggle('listening', on);
+      btn.setAttribute('aria-pressed', String(on));
+      label.textContent = on ? 'Stop' : 'Dictate';
+    };
+    const show = (text, cls) => { msg.hidden = !text; msg.className = 'ql-msg' + (cls ? ' ' + cls : ''); msg.textContent = text || ''; };
+    btn.addEventListener('click', () => {
+      if (listening && rec) { rec.stop(); return; }
+      rec = new SR();
+      rec.lang = navigator.language || 'en-US';
+      rec.continuous = true;
+      rec.interimResults = true;
+      base = note.value.trim();
+      let finalText = '';
+      rec.onresult = (e) => {
+        let interim = '';
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const t = e.results[i][0].transcript;
+          if (e.results[i].isFinal) finalText += (finalText ? ' ' : '') + t.trim(); else interim += t;
+        }
+        note.value = [base, finalText].filter(Boolean).join(' ') + (interim ? ' ' + interim.trim() : '');
+      };
+      rec.onerror = (e) => {
+        const why = e.error === 'not-allowed' || e.error === 'service-not-allowed'
+          ? 'Microphone access is blocked. Allow it via the icon in the address bar, or use your keyboard\'s dictation.'
+          : e.error === 'no-speech' ? 'Didn\'t hear anything. Try again, a bit closer to the microphone.'
+          : e.error === 'network' ? 'Dictation needs an internet connection.'
+          : 'Dictation stopped (' + e.error + '). You can type instead.';
+        show(why, 'err');
+      };
+      rec.onend = () => {
+        setState(false);
+        note.value = [base, finalText].filter(Boolean).join(' ');
+        if (finalText) show('Got it. Add more, or press Fill in the form.', 'ok');
+      };
+      try { rec.start(); setState(true); show('Listening… speak now, press Stop when you’re done.'); }
+      catch { setState(false); show('Dictation could not start. You can type instead.', 'err'); }
+    });
+  })();
 
   function removeEntry(idx) {
     const el = entriesContainer.querySelector(`.activity-entry[data-idx="${idx}"]`);
