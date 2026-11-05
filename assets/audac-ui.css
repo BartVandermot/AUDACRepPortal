@@ -38,23 +38,19 @@
   --radius-input: 12px;
   --radius-nav: 22px;
   --shadow-card: 0 12px 32px rgba(0, 0, 0, 0.18);
-  --surface-card-bg: linear-gradient(180deg, rgba(38, 39, 43, 0.66) 0%, rgba(24, 25, 28, 0.62) 100%);
-  --surface-raised-bg: linear-gradient(160deg, rgba(52, 46, 38, 0.70) 0%, rgba(29, 30, 33, 0.64) 70%);
-  --glass-filter: blur(22px) saturate(140%);
+  --surface-card-bg: linear-gradient(180deg, rgba(38, 39, 43, 0.58) 0%, rgba(24, 25, 28, 0.52) 100%);
+  --surface-raised-bg: linear-gradient(160deg, rgba(52, 46, 38, 0.62) 0%, rgba(29, 30, 33, 0.56) 70%);
+  --glass-filter: blur(9px) saturate(140%);
   --depth-card: inset 0 1px 0 rgba(255,255,255,0.08), inset 0 0 0 1px rgba(255,255,255,0.025), 0 1px 2px rgba(0,0,0,0.4), 0 18px 40px -16px rgba(0,0,0,0.8);
   --depth-raised: inset 0 1px 0 rgba(255,255,255,0.10), inset 0 0 0 1px rgba(255,255,255,0.03), 0 2px 6px rgba(0,0,0,0.35), 0 28px 60px -20px rgba(0,0,0,0.85);
   --well-bg: rgba(0, 0, 0, 0.26);
-  /* Level 0 canvas: sound waves. Thin gold wave fronts ripple out from a
-     source just past the top-right corner across the whole page, grouped in
-     soft wave packets and losing energy with distance (never fully gone).
-     Glass tiles blur them away underneath the data. Top layer first. */
+  /* Level 0 canvas: a warm key light at the top right and a cool fill at the
+     bottom left. The slowly moving gold sound waves on top of it are drawn
+     by AudacShell (#audac-waves); glass tiles blur them away. */
   --canvas:
-    radial-gradient(circle at 100% 0%, transparent 0, rgba(11, 12, 14, 0.12) 30%, rgba(11, 12, 14, 0.45) 70%, rgba(11, 12, 14, 0.6) 100%),
-    repeating-radial-gradient(circle at 100% 0%, rgba(238, 200, 134, 0.10) 0 1px, transparent 1.6px 34px),
-    repeating-radial-gradient(circle at 100% 0%, transparent 0 60px, rgba(217, 166, 83, 0.045) 110px, transparent 170px),
-    radial-gradient(ellipse 55% 45% at 100% 0%, rgba(217, 166, 83, 0.18), transparent 70%),
-    radial-gradient(ellipse 60% 40% at 0% 90%, rgba(90, 100, 120, 0.06), transparent 75%),
-    var(--color-bg);
+    radial-gradient(ellipse 60% 50% at 96% 0%, rgba(217, 166, 83, 0.13), transparent 70%),
+    radial-gradient(ellipse 55% 45% at 0% 100%, rgba(72, 84, 140, 0.11), transparent 75%),
+    linear-gradient(180deg, #111215 0%, var(--color-bg) 60%);
   --canvas-size: auto;
   --canvas-pos: 0 0;
   --depth-well: inset 0 1px 3px rgba(0,0,0,0.55), 0 1px 0 rgba(255,255,255,0.04);
@@ -119,6 +115,10 @@ h1, h2, h3 { color: var(--color-text-primary); }
     backdrop-filter: blur(20px) saturate(115%);
   }
 }
+
+/* ---------- Background sound waves (AudacShell) ---------- */
+#audac-waves { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: -1; pointer-events: none; }
+@media print { #audac-waves { display: none; } }
 
 /* ---------- Month picker (AudacShell) ---------- */
 .mp-native { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden; clip: rect(0 0 0 0); border: 0 !important; opacity: 0; pointer-events: none; }
@@ -231,7 +231,7 @@ input[type="date"]::-webkit-calendar-picker-indicator, input[type="month"]::-web
 .notice.success { background: rgba(113,198,139,0.10); color: #b5e6c4; border-color: rgba(113,198,139,0.3); }
 
 /* ---------- Tables (dense data: opaque, quiet) ---------- */
-.table-scroll, .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: var(--radius-tile); background: rgba(17, 18, 21, 0.92); box-shadow: var(--depth-well); }
+.table-scroll, .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: var(--radius-tile); background: rgba(17, 18, 21, 0.84); box-shadow: var(--depth-well); -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter); }
 table.detail { width: 100%; border-collapse: collapse; font-size: 14px; line-height: 20px; }
 table.detail th, table.detail td { padding: 12px 14px; border-bottom: 1px solid var(--color-border); text-align: left; vertical-align: top; }
 table.detail th { background: var(--color-surface); color: var(--color-text-secondary); font-size: 12px; font-weight: 650; letter-spacing: .6px; text-transform: uppercase; white-space: nowrap; }

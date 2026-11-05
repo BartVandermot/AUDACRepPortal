@@ -166,6 +166,73 @@
     },
   };
 
+  // ---------- Background sound waves ----------
+  // A few thin gold lines that weave through each other like an audio
+  // waveform across the middle of the page, drifting very slowly. Fixed
+  // behind everything (glass tiles blur them), ~30 fps, paused by the browser
+  // in background tabs, and drawn once without motion for prefers-reduced-motion.
+  const WAVES = [
+    // amplitude (x viewport height), two frequencies (cycles across the width), drift speeds, phase, alpha, width
+    { amp: 0.11, f1: 1.15, f2: 2.6, s1: 0.16, s2: -0.11, p: 0.0, alpha: 0.55, w: 1.6 },
+    { amp: 0.085, f1: 0.85, f2: 3.1, s1: -0.12, s2: 0.09, p: 1.7, alpha: 0.38, w: 1.3 },
+    { amp: 0.13, f1: 1.45, f2: 1.9, s1: 0.09, s2: 0.14, p: 3.1, alpha: 0.30, w: 1.2 },
+    { amp: 0.07, f1: 2.05, f2: 0.7, s1: -0.07, s2: -0.13, p: 4.4, alpha: 0.24, w: 1.1 },
+    { amp: 0.05, f1: 0.55, f2: 4.2, s1: 0.05, s2: 0.08, p: 5.6, alpha: 0.32, w: 1.0 },
+  ];
+  function mountWaves() {
+    if (document.getElementById('audac-waves') || !document.body) return;
+    const cv = document.createElement('canvas');
+    cv.id = 'audac-waves';
+    cv.setAttribute('aria-hidden', 'true');
+    document.body.prepend(cv);
+    const ctx = cv.getContext('2d');
+    if (!ctx) return;
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let W = 0, H = 0, dpr = 1;
+    function size() {
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      W = window.innerWidth; H = window.innerHeight;
+      cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    function draw(t) {
+      ctx.clearRect(0, 0, W, H);
+      const baseY = H * 0.5;
+      const steps = Math.max(60, Math.round(W / 12));
+      for (const wv of WAVES) {
+        ctx.beginPath();
+        for (let i = 0; i <= steps; i++) {
+          const u = i / steps; // 0..1 across the width
+          // Envelope: quiet at both edges, fuller in the middle, slowly breathing.
+          const env = Math.pow(Math.sin(Math.PI * u), 1.4) * (0.75 + 0.25 * Math.sin(t * 0.05 + wv.p));
+          const y = baseY + wv.amp * H * env * (
+            0.72 * Math.sin(2 * Math.PI * wv.f1 * u + t * wv.s1 + wv.p) +
+            0.28 * Math.sin(2 * Math.PI * wv.f2 * u + t * wv.s2 + wv.p * 0.6));
+          if (i === 0) ctx.moveTo(u * W, y); else ctx.lineTo(u * W, y);
+        }
+        const g = ctx.createLinearGradient(0, 0, W, 0);
+        g.addColorStop(0, 'rgba(217,166,83,0)');
+        g.addColorStop(0.18, `rgba(217,166,83,${wv.alpha})`);
+        g.addColorStop(0.5, `rgba(238,200,134,${Math.min(1, wv.alpha * 1.15)})`);
+        g.addColorStop(0.82, `rgba(217,166,83,${wv.alpha})`);
+        g.addColorStop(1, 'rgba(217,166,83,0)');
+        ctx.strokeStyle = g;
+        ctx.lineWidth = wv.w;
+        ctx.stroke();
+      }
+    }
+    size();
+    window.addEventListener('resize', () => { size(); if (reduce) draw(12); });
+    if (reduce) { draw(12); return; }
+    let last = 0;
+    const start = performance.now();
+    function frame(now) {
+      if (now - last >= 33) { last = now; draw((now - start) / 1000); }
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+
   // ---------- Month picker ----------
   // Replaces the browser's own month popup (light, in the OS language) with
   // one in the portal's style: ‹ November 2026 › to step, a dark 12-month grid
@@ -283,6 +350,6 @@
     AudacShell.mount(b.dataset.active || '', { nav: b.dataset.nav });
     bridgeLegacyAuth();
   }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => { autoMount(); enhanceMonthInputs(); });
-  else { autoMount(); enhanceMonthInputs(); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => { autoMount(); enhanceMonthInputs(); mountWaves(); });
+  else { autoMount(); enhanceMonthInputs(); mountWaves(); }
 })();
