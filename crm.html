@@ -82,6 +82,20 @@
   .badge-parent.via-parent { background: var(--green-bg); color: var(--green); }
   .badge-parent.via-state { background: var(--amber-bg); color: var(--amber); }
   .badge-parent.via-manual { background-color: rgba(255,255,255,0.06); color: var(--color-text-muted); }
+  .badge-parent.push-waiting { background: var(--amber-bg); color: var(--amber); }
+  .badge-parent.push-failed, .badge-parent.push-needs_info { background: rgba(229,72,77,0.14); color: var(--color-danger); }
+  .badge-parent.push-held { background-color: rgba(255,255,255,0.06); color: var(--color-text-muted); }
+  .wb-panel { margin: 0 0 var(--space-6); padding: var(--space-5); border: 1px solid var(--color-border); border-radius: var(--radius-tile); }
+  .wb-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3) var(--space-5); }
+  .wb-head h2 { margin: 0 !important; padding: 0 !important; border: 0 !important; flex: 1 1 260px; }
+  .wb-switch { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .wb-switch input { width: 18px; height: 18px; accent-color: var(--color-gold); }
+  .wb-list { width: 100%; border-collapse: collapse; margin-top: var(--space-3); font-size: 13.5px; }
+  .wb-list th { text-align: left; font-size: 11.5px; letter-spacing: .3px; text-transform: uppercase; color: var(--color-text-muted); padding: 0 10px 6px 0; }
+  .wb-list td { padding: 8px 10px 8px 0; border-top: 1px solid var(--color-border); vertical-align: top; }
+  .wb-list .err { color: var(--color-danger); font-size: 12.5px; }
+  .wb-panel details { margin-top: var(--space-4); }
+  .wb-panel summary { cursor: pointer; font-weight: 600; font-size: 14px; }
   .badge-parent.override { background-color: rgba(255,255,255,0.06); color: var(--color-text-muted); }
   .badge-parent.inactive { background: var(--red-bg); color: var(--red); }
   .muted { color: var(--color-text-muted); }
@@ -129,6 +143,18 @@
       <button type="button" class="audac-btn-outline" id="check-counts-btn">Check CRM Counts</button>
       <span id="crm-sync-status"></span>
     </div>
+
+    <section class="wb-panel" id="wb-panel" aria-labelledby="wb-h">
+      <div class="wb-head">
+        <h2 class="section-title" id="wb-h">New companies &amp; contacts → Dynamics</h2>
+        <label class="wb-switch"><input type="checkbox" id="wb-enabled"> Send automatically</label>
+        <button type="button" class="audac-btn-outline" id="wb-run">Send now</button>
+      </div>
+      <p class="upload-hint" style="margin-top:8px;">Companies and contacts reps add are created in Dynamics every 5 minutes, owned by you: the company first, then its contacts. If Dynamics already has the same company (same name, same country) or contact (same e-mail), the portal links to it instead of creating a duplicate. Nothing is ever changed or deleted in Dynamics. Test logins are never sent.</p>
+      <div id="wb-msg" class="upload-hint"></div>
+      <div id="wb-queue"></div>
+      <details><summary>History</summary><div id="wb-log"></div></details>
+    </section>
 
     <div class="page-meta-row">
       <label class="review-toggle">
@@ -500,7 +526,7 @@
             : a.rep_firm_id
               ? `<span class="badge-parent ${viaParent ? 'via-parent' : 'via-state'}">${viaParent ? 'via parent' : 'via state'}</span>`
               : '';
-      const sourceCell = a.source === 'manual' ? '<span class="badge-parent via-manual">Manual</span>' : '<span class="muted">CRM Sync</span>';
+      const sourceCell = a.source === 'manual' ? '<span class="badge-parent via-manual">Manual</span>' + pushBadge(a) : '<span class="muted">CRM Sync</span>';
       const mergeControl = a.source === 'manual' ? accountMergeRowHtml(a) : '';
       const contactCount = contactCountByAccount.get(a.external_id) || 0;
       const isOpen = expandedIds.has(a.external_id);
@@ -771,7 +797,7 @@
   function contactRowHtml(c, { showAccount, bulkSelectable } = {}) {
     const checkboxCell = bulkSelectable ? `<td><input type="checkbox" class="row-select" data-contact="${c.external_id}" ${selectedContactIds.has(c.external_id) ? 'checked' : ''}></td>` : '';
     const accountCell = showAccount ? `<td>${escapeHtml(accountNameByExternalId.get(c.parent_account_external_id) || '')}</td>` : '';
-    const sourceCell = c.source === 'manual' ? '<span class="badge-parent via-manual">Manual</span>' : '<span class="muted">CRM Sync</span>';
+    const sourceCell = c.source === 'manual' ? '<span class="badge-parent via-manual">Manual</span>' + pushBadge(c) : '<span class="muted">CRM Sync</span>';
     const mergeControl = c.source === 'manual' ? contactMergeRowHtml(c) : '';
     return `
       <tr data-contact-id="${c.external_id}">
@@ -1044,8 +1070,8 @@
   async function loadAll() {
     const [firmsRes, accountsRes, contactsRes, zipRangesRes] = await Promise.all([
       client.from('rep_firms').select('id, name, crm_account_external_id, states').eq('status', 'active').order('name'),
-      AudacData.all(client.from('crm_accounts').select('external_id, name, name_key, street, city, state_raw, state_code, zip, country_code, website, relationship_type, business_type, audac_partner_type, classification, rep_firm_id, rep_firm_overridden, parent_account_external_id, source, is_active, updated_by, updated_at').order('name').order('external_id')),
-      AudacData.all(client.from('crm_contacts').select('external_id, full_name, email, email_key, parent_account_external_id, rep_firm_id, rep_firm_overridden, blocks_pipeline_sync, source, is_active, updated_by, updated_at').order('full_name').order('external_id')),
+      AudacData.all(client.from('crm_accounts').select('external_id, name, name_key, street, city, state_raw, state_code, zip, country_code, website, relationship_type, business_type, audac_partner_type, classification, rep_firm_id, rep_firm_overridden, parent_account_external_id, source, is_active, updated_by, updated_at, crm_push_status, crm_push_error, crm_push_attempts').order('name').order('external_id')),
+      AudacData.all(client.from('crm_contacts').select('external_id, full_name, email, email_key, parent_account_external_id, rep_firm_id, rep_firm_overridden, blocks_pipeline_sync, source, is_active, updated_by, updated_at, crm_push_status, crm_push_error, crm_push_attempts').order('full_name').order('external_id')),
       client.from('rep_firm_zip_ranges').select('rep_firm_id, state_code, zip3_start, zip3_end'),
     ]);
 
@@ -1131,7 +1157,69 @@
 
     document.getElementById('loading-note').style.display = 'none';
     document.getElementById('content').style.display = 'block';
+    renderWriteback();
   }
+
+  // ---------- New companies & contacts -> Dynamics (crm-writeback) ----------
+  const PUSH_LABEL = { waiting: 'Goes to Dynamics', held: 'Not sent', needs_info: 'Needs info', failed: 'Failed' };
+  function pushBadge(r) {
+    if (!r.crm_push_status) return '';
+    const label = r.crm_push_status === 'failed' && (r.crm_push_attempts || 0) >= 5 ? 'Failed, stopped' : PUSH_LABEL[r.crm_push_status];
+    return `<span class="badge-parent push-${r.crm_push_status}"${r.crm_push_error ? ` title="${escapeHtml(r.crm_push_error)}"` : ''}>${escapeHtml(label)}</span>`;
+  }
+  async function renderWriteback() {
+    const [flagRes, logRes] = await Promise.all([
+      client.from('app_flags').select('value').eq('key', 'crm_writeback_enabled').maybeSingle(),
+      client.from('crm_writeback_log').select('at, kind, name, action, dynamics_id, detail').order('at', { ascending: false }).limit(40),
+    ]);
+    document.getElementById('wb-enabled').checked = flagRes.data?.value === true;
+    const rows = [
+      ...accountsCache.filter(a => a.source === 'manual').map(a => ({ kind: 'account', id: a.external_id, name: a.name, where: [a.city, a.state_code].filter(Boolean).join(', '), r: a })),
+      ...allContactsCache.filter(c => c.source === 'manual').map(c => ({ kind: 'contact', id: c.external_id, name: c.full_name, where: `${c.email || 'no e-mail'} · ${accountNameByExternalId.get(c.parent_account_external_id) || ''}`, r: c })),
+    ];
+    const waitsForCompany = (x) => x.kind === 'contact' && String(x.r.parent_account_external_id || '').startsWith('manual:');
+    document.getElementById('wb-queue').innerHTML = rows.length ? `<div style="overflow-x:auto;"><table class="wb-list"><thead><tr><th>Type</th><th>Name</th><th>Details</th><th>Status</th><th></th></tr></thead><tbody>${rows.map(x => `<tr>
+      <td>${x.kind === 'account' ? 'Company' : 'Contact'}</td><td><b>${escapeHtml(x.name || '')}</b></td><td>${escapeHtml(x.where)}</td>
+      <td>${pushBadge(x.r) || '<span class="muted">—</span>'}${waitsForCompany(x) && x.r.crm_push_status === 'waiting' ? '<div class="muted" style="font-size:12px;">after its company</div>' : ''}${x.r.crm_push_error ? `<div class="err">${escapeHtml(x.r.crm_push_error)}</div>` : ''}</td>
+      <td style="white-space:nowrap;">${x.r.crm_push_status === 'held' || x.r.crm_push_status === 'failed' || x.r.crm_push_status === 'needs_info'
+        ? `<button type="button" class="link-btn" data-wb-release="${x.kind}" data-id="${escapeHtml(x.id)}">Send</button>`
+        : x.r.crm_push_status === 'waiting' ? `<button type="button" class="link-btn" data-wb-hold="${x.kind}" data-id="${escapeHtml(x.id)}">Don’t send</button>` : ''}</td></tr>`).join('')}</tbody></table></div>`
+      : '<div class="empty-note">Nothing waiting: every company and contact reps added is in Dynamics.</div>';
+    const ACTION = { created: 'Created in Dynamics', linked_existing: 'Linked to existing', failed: 'Failed', needs_info: 'Needs info' };
+    const logRows = logRes.data || [];
+    document.getElementById('wb-log').innerHTML = logRows.length ? `<div style="overflow-x:auto;"><table class="wb-list"><tbody>${logRows.map(l => `<tr>
+      <td style="white-space:nowrap;">${escapeHtml(new Date(l.at).toLocaleString())}</td><td>${l.kind === 'account' ? 'Company' : 'Contact'}</td><td><b>${escapeHtml(l.name || '')}</b></td>
+      <td>${escapeHtml(ACTION[l.action] || l.action)}${l.detail?.error || l.detail?.reason ? `<div class="err">${escapeHtml(l.detail.error || l.detail.reason)}</div>` : ''}</td></tr>`).join('')}</tbody></table></div>`
+      : '<div class="empty-note">Nothing sent yet.</div>';
+  }
+  document.getElementById('wb-queue').addEventListener('click', async (e) => {
+    const rel = e.target.closest('[data-wb-release]'), hold = e.target.closest('[data-wb-hold]');
+    const b = rel || hold; if (!b) return;
+    const table = (rel ? rel.dataset.wbRelease : hold.dataset.wbHold) === 'account' ? 'crm_accounts' : 'crm_contacts';
+    const patch = rel ? { crm_push_status: 'waiting', crm_push_attempts: 0, crm_push_error: null } : { crm_push_status: 'held' };
+    const { error } = await client.from(table).update(patch).eq('external_id', b.dataset.id).eq('source', 'manual');
+    if (error) { alert('Could not change it: ' + error.message); return; }
+    await loadAll();
+  });
+  document.getElementById('wb-enabled').addEventListener('change', async (e) => {
+    const on = e.target.checked;
+    if (!on && !confirm('Stop sending new companies and contacts to Dynamics? They wait here until you switch it back on.')) { e.target.checked = true; return; }
+    const { error } = await client.from('app_flags').update({ value: on, updated_at: new Date().toISOString(), updated_by: currentUser?.id || null }).eq('key', 'crm_writeback_enabled');
+    if (error) { alert('Could not switch: ' + error.message); e.target.checked = !on; return; }
+    document.getElementById('wb-msg').textContent = on ? 'On: waiting records go to Dynamics within 5 minutes.' : 'Off: nothing is sent to Dynamics.';
+  });
+  document.getElementById('wb-run').addEventListener('click', async () => {
+    const btn = document.getElementById('wb-run'), msg = document.getElementById('wb-msg');
+    btn.disabled = true; msg.textContent = 'Sending…';
+    const { data, error } = await client.functions.invoke('crm-writeback', { body: {} });
+    btn.disabled = false;
+    if (error) { msg.textContent = 'Could not send: ' + error.message; return; }
+    if (data?.skipped) { msg.textContent = data.skipped; return; }
+    const counts = {};
+    (data?.results || []).forEach(r => { counts[r.result] = (counts[r.result] || 0) + 1; });
+    msg.textContent = data?.processed ? 'Done: ' + Object.entries(counts).map(([k, v]) => `${v} ${k.replace('_', ' ')}`).join(', ') + '.' : 'Nothing was waiting.';
+    await loadAll();
+  });
 
   (async function init() {
     const g = await guard();

@@ -330,6 +330,7 @@
     const streetInput = block.querySelector('.new-account-street');
     const cityInput = block.querySelector('.new-account-city');
     const stateInput = block.querySelector('.new-account-state');
+    const zipInput = block.querySelector('.new-account-zip');
     const phoneInput = block.querySelector('.new-account-phone');
 
     function selectAccount(acc, isNew) {
@@ -348,18 +349,27 @@
     function showNewAccountDetails(name) {
       list.hidden = true;
       details.hidden = false;
-      [streetInput, cityInput, stateInput, phoneInput].forEach(el => el.value = '');
+      [streetInput, cityInput, stateInput, zipInput, phoneInput].forEach(el => el.value = '');
       streetInput.focus();
     }
 
     async function createNew(name) {
       if (!name) return;
+      // A new company goes into AUDAC's CRM (Dynamics): it needs a city and a
+      // state/province to land in the right territory.
+      if (!cityInput.value.trim() || !/^[A-Za-z]{2}$/.test(stateInput.value.trim())) {
+        statusEl.textContent = 'Fill in the city and the 2-letter state or province (e.g. OH or ON).';
+        statusEl.className = 'combo-status account-status error';
+        (cityInput.value.trim() ? stateInput : cityInput).focus();
+        return;
+      }
       const firmId = firmSelect.value || null;
       details.querySelector('[data-new-account-confirm]').disabled = true;
       try {
-        const { data, error } = await client.rpc('create_manual_crm_account', {
-          p_name: name, p_street: streetInput.value.trim() || null, p_city: cityInput.value.trim() || null,
-          p_state_code: stateInput.value.trim() || null, p_phone: phoneInput.value.trim() || null, p_rep_firm_id: firmId,
+        const { data, error } = await client.rpc('add_manual_crm_account', {
+          p_name: name, p_street: streetInput.value.trim() || null, p_city: cityInput.value.trim(),
+          p_state_code: stateInput.value.trim(), p_zip: zipInput.value.trim() || null,
+          p_phone: phoneInput.value.trim() || null, p_rep_firm_id: firmId,
         });
         if (error) throw error;
         selectAccount({ external_id: data, name }, true);
@@ -459,6 +469,13 @@
     async function createNew(name) {
       const accountExternalId = block.dataset.accountExternalId;
       if (!name || !accountExternalId) return;
+      // Dynamics needs an e-mail address for every contact.
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emailInput.value.trim())) {
+        statusEl.textContent = 'Add their e-mail address: it’s needed to add them to AUDAC’s CRM.';
+        statusEl.className = 'combo-status contact-status error';
+        emailInput.focus();
+        return;
+      }
       details.querySelector('[data-new-contact-confirm]').disabled = true;
       try {
         const { data, error } = await client.rpc('create_manual_crm_contact', {
@@ -997,7 +1014,10 @@
           <div class="field"><label>City</label><input type="text" class="new-account-city" placeholder="City"></div>
         </div>
         <div class="row">
-          <div class="field"><label>State</label><input type="text" class="new-account-state" placeholder="e.g. OH" maxlength="2" style="text-transform:uppercase;"></div>
+          <div class="field"><label>State / province</label><input type="text" class="new-account-state" placeholder="e.g. OH or ON" maxlength="2" style="text-transform:uppercase;"></div>
+          <div class="field"><label>ZIP / postal code</label><input type="text" class="new-account-zip" placeholder="e.g. 45202" maxlength="10" autocomplete="postal-code"></div>
+        </div>
+        <div class="row">
           <div class="field"><label>Phone</label><input type="tel" class="new-account-phone" placeholder="Phone number"></div>
         </div>
         <div class="actions" style="justify-content:flex-start; gap:10px; margin-bottom:16px;">
@@ -1015,7 +1035,7 @@
       </div>
       <div class="new-details new-contact-details" hidden>
         <div class="row">
-          <div class="field"><label>Email</label><input type="email" class="new-contact-email" placeholder="Email address"></div>
+          <div class="field"><label>Email</label><input type="email" class="new-contact-email" placeholder="Email address (needed)"></div>
           <div class="field"><label>Phone</label><input type="tel" class="new-contact-phone" placeholder="Phone number"></div>
         </div>
         <div class="actions" style="justify-content:flex-start; gap:10px; margin-bottom:16px;">
