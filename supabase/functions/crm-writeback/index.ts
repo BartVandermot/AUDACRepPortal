@@ -315,6 +315,28 @@ Deno.serve(async (req) => {
       by = u.user.id;
     }
 
+    // {"check": true}: ask Dynamics which of the needed privileges this app
+    // user has. Reads only; works with the switch off.
+    const reqBody = await req.json().catch(() => ({}));
+    if (reqBody?.check) {
+      const who = await dv("GET", "WhoAmI");
+      if (!who.ok) return json({ error: who.error }, 502);
+      const uid = who.data.UserId;
+      const needed = [
+        "prvReadscp_country", "prvAppendToscp_country",
+        "prvCreateAccount", "prvReadAccount", "prvAppendAccount", "prvAppendToAccount", "prvAssignAccount",
+        "prvCreateContact", "prvReadContact", "prvAppendContact", "prvAssignContact",
+        "prvReadAsyncOperation", "prvReadUser", "prvReadBusinessUnit", "prvReadTeam", "prvReadWorkflow",
+        "prvWriteAccount", "prvWriteContact", "prvDeleteAccount", "prvDeleteContact",
+      ];
+      const privileges: Record<string, string> = {};
+      for (const name of needed) {
+        const r = await dv("GET", `systemusers(${uid})/Microsoft.Dynamics.CRM.RetrieveUserPrivilegeByPrivilegeName(PrivilegeName='${name}')`);
+        privileges[name] = !r.ok ? `error: ${r.error}` : (r.data?.RolePrivileges || []).map((p: any) => p.Depth).join(",") || "missing";
+      }
+      return json({ app_user: uid, privileges });
+    }
+
     const { data: flag } = await svc.from("app_flags").select("value").eq("key", "crm_writeback_enabled").maybeSingle();
     if (flag?.value !== true) return json({ skipped: "Sending to Dynamics is switched off." });
 
