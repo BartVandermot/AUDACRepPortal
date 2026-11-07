@@ -18,8 +18,6 @@
   .section { padding: var(--space-6); margin-bottom: var(--space-4); }
   .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
   .section-head p { margin: var(--space-1) 0 0; font-size: 14px; line-height: 21px; color: var(--color-text-secondary); }
-  .meter { height: 6px; border-radius: 999px; background: var(--well-bg); box-shadow: var(--depth-well); overflow: hidden; margin: var(--space-3) 0 0; max-width: 360px; }
-  .meter i { display: block; height: 100%; background: var(--color-gold); }
 
   .list { list-style: none; margin: var(--space-4) 0 0; padding: 0; }
   .list > li { display: grid; grid-template-columns: 1fr auto; gap: var(--space-2) var(--space-4); align-items: center; padding: var(--space-3) 0; border-top: 1px solid var(--color-border); }
@@ -49,6 +47,41 @@
   .update-form.lead-form { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }
   .form-msg { grid-column: 1 / -1; margin: 0; font-size: 13.5px; color: var(--color-danger); }
 
+  .search-bar { margin: 0 0 var(--space-4); }
+  .search-bar input[type="search"] { width: 100%; min-height: 48px; font-size: 16px; }
+  .filters { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
+  .filters button { min-height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--color-border); background: rgba(255,255,255,0.04); color: var(--color-text-secondary); font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; }
+  .filters button[aria-pressed="true"] { color: var(--color-gold-light); background: var(--color-gold-tint); border-color: rgba(217,166,83,0.4); }
+  .filters button:focus-visible { outline: 2px solid var(--color-gold); outline-offset: 2px; }
+  .no-results { margin: 0 0 var(--space-4); }
+
+  .accts { list-style: none; margin: var(--space-4) 0 0; padding: 0; }
+  .accts > li { border-top: 1px solid var(--color-border); }
+  .accts > li:first-child { border-top: 0; }
+  .acct-head { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3) 0; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+  .acct-head:focus-visible { outline: 2px solid var(--color-gold); outline-offset: 2px; border-radius: 6px; }
+  .acct-head b { display: block; font-size: 15px; line-height: 22px; font-weight: 600; overflow-wrap: anywhere; }
+  .acct-head .sub { display: block; font-size: 13.5px; line-height: 20px; color: var(--color-text-secondary); }
+  .acct-head .tags { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; flex-shrink: 0; max-width: 50%; }
+  .acct-head .caret { flex-shrink: 0; width: 16px; height: 16px; color: var(--color-text-muted); transition: transform .15s; }
+  .acct-head[aria-expanded="true"] .caret { transform: rotate(180deg); }
+  .acct-detail { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); padding: var(--space-4); margin: 0 0 var(--space-3); border-radius: var(--radius-tile); background: var(--well-bg); box-shadow: var(--depth-well); font-size: 14px; line-height: 21px; }
+  .acct-detail h3 { margin: 0 0 4px; font-size: 12px; line-height: 16px; font-weight: 650; letter-spacing: 1px; text-transform: uppercase; color: var(--color-text-muted); }
+  .acct-detail p, .acct-detail ul { margin: 0; }
+  .acct-detail ul { list-style: none; padding: 0; display: grid; gap: 6px; }
+  .acct-detail a { color: var(--color-gold); text-decoration: none; overflow-wrap: anywhere; }
+  .acct-detail a:hover { text-decoration: underline; }
+  .acct-detail .muted { color: var(--color-text-secondary); }
+  .acct-detail .wide { grid-column: 1 / -1; }
+  .acct-detail .detail-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .acct-detail .button-secondary { min-height: 40px; padding: 0 14px; font-size: 13.5px; }
+  .show-more { margin-top: var(--space-3); }
+  @media (max-width: 760px) {
+    .acct-detail { grid-template-columns: 1fr; }
+    .acct-head { flex-wrap: wrap; }
+    .acct-head .tags { max-width: none; justify-content: flex-start; order: 3; width: 100%; }
+  }
+
   @media (max-width: 760px) {
     .section { padding: var(--space-5); }
     .list > li { grid-template-columns: 1fr; }
@@ -68,19 +101,20 @@
     </header>
 
     <main class="page" id="page" aria-busy="true">
-      <p class="intro" id="intro">Your key accounts, the leads handed to your firm and your firm’s deals, straight from AUDAC’s CRM.</p>
+      <p class="intro" id="intro">Everything AUDAC’s CRM knows about your territory: companies, contacts, deals and leads.</p>
       <div id="gate"></div>
 
-      <section class="section surface-card" id="key-section" aria-labelledby="key-h">
-        <div class="section-head">
-          <div>
-            <h2 class="card-title" id="key-h">Key accounts</h2>
-            <p id="key-sub">Loading…</p>
-            <div class="meter" id="key-meter" hidden><i></i></div>
-          </div>
+      <div class="search-bar" id="search-bar" role="search">
+
+        <input type="search" id="q" aria-label="Search your territory" placeholder="Search a company, person, city or project" autocomplete="off" enterkeyhint="search">
+        <div class="filters" role="group" aria-label="Show">
+          <button type="button" data-filter="all" aria-pressed="true">All</button>
+          <button type="button" data-filter="key" aria-pressed="false">Key accounts</button>
+          <button type="button" data-filter="deals" aria-pressed="false">Deals</button>
+          <button type="button" data-filter="leads" aria-pressed="false">Leads</button>
         </div>
-        <div id="key-list"></div>
-      </section>
+      </div>
+      <div class="notice info no-results" id="no-results" hidden></div>
 
       <section class="section surface-card" id="leads-section" aria-labelledby="leads-h">
         <div class="section-head">
@@ -90,6 +124,16 @@
           </div>
         </div>
         <div id="leads-list"></div>
+      </section>
+
+      <section class="section surface-card" id="companies-section" aria-labelledby="companies-h">
+        <div class="section-head">
+          <div>
+            <h2 class="card-title" id="companies-h">Companies</h2>
+            <p id="companies-sub">Loading…</p>
+          </div>
+        </div>
+        <div id="companies-list"></div>
       </section>
 
       <section class="section surface-card" id="deals-section" aria-labelledby="deals-h">
@@ -128,33 +172,106 @@
   const fmtDate = (iso) => iso ? new Date(iso + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
   const fmtMoney = (n) => n == null ? '' : Number(n).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
   const daysAgo = (iso) => Math.round((today - new Date(iso + 'T00:00:00')) / DAY);
-  const CONTACT_WINDOW_DAYS = 90; // same 3 months AUDAC reviews on
 
-  // ---------- Key accounts ----------
-  function renderKeyAccounts(rows) {
-    const contacted = rows.filter(r => r.last_contact && daysAgo(r.last_contact) <= CONTACT_WINDOW_DAYS).length;
-    if (!rows.length) {
-      $('key-sub').textContent = 'No key accounts are assigned to your firm in AUDAC’s CRM yet.';
-      $('key-list').innerHTML = '';
-      return;
-    }
-    $('key-sub').textContent = `${contacted} of ${rows.length} with a logged visit in the last 3 months. Key accounts are TOP AUDAC LEADs and AUDAC partners in your territory. Log a visit with the account selected and it shows up here.`;
-    $('key-meter').hidden = false;
-    $('key-meter').querySelector('i').style.width = `${Math.round(contacted / rows.length * 100)}%`;
-    $('key-list').innerHTML = `<ul class="list">${rows.map(r => {
-      const place = [r.city, r.state_code].filter(Boolean).join(', ');
-      const ago = r.last_contact ? daysAgo(r.last_contact) : null;
-      const stale = ago === null || ago > CONTACT_WINDOW_DAYS;
-      const contactText = ago === null ? 'No contact logged yet' : ago === 0 ? 'Contacted today' : `Last contact ${ago} day${ago === 1 ? '' : 's'} ago`;
-      const deal = r.last_deal_name ? ` · last deal: ${esc(r.last_deal_name)} (${esc(fmtDate(r.last_deal_date))})` : '';
-      const logHref = `/form?account=${encodeURIComponent(r.external_id)}&name=${encodeURIComponent(r.name)}`;
-      return `<li>
-        <div><b>${esc(r.name)}</b><span class="sub">${esc(place)}${place ? ' · ' : ''}${esc(r.reason || '')}</span>
-          <span class="sub${stale ? ' warn' : ''}">${contactText}${deal}</span></div>
-        <div class="actions"><a class="button-secondary" href="${logHref}">${AudacShell.icon('plus')}Log visit</a></div>
-      </li>`;
-    }).join('')}</ul>`;
+  // ---------- Search & filters ----------
+  // One search box over everything on the page: companies (name, city, ZIP,
+  // contacts, deals), deals and leads. Every word typed has to match.
+  let query = '';
+  let filter = 'all';
+  const norm = (s) => String(s == null ? '' : s).toLowerCase();
+  const hit = (hay) => !query || query.split(/\s+/).filter(Boolean).every(t => hay.includes(t));
+
+  // ---------- Companies ----------
+  let accountsCache = [];
+  let openAcct = null;
+  let showAllCompanies = false;
+  const COMPANY_PAGE = 40;
+
+  function companyHay(a) {
+    return norm([a.name, a.street, a.city, a.state_code, a.zip, a.phone, a.website, a.relationship_type, a.business_type, a.key_reason,
+      ...(a.contacts || []).flatMap(c => [c.name, c.email]), ...(a.open_deals || []).map(d => d.name)].join(' '));
   }
+
+  const webHref = (w) => /^https?:\/\//i.test(w) ? w : `https://${w}`;
+  const telHref = (p) => `tel:${String(p).replace(/[^\d+]/g, '')}`;
+
+  function companyDetail(a) {
+    const address = [a.street, [a.city, [a.state_code, a.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ')].filter(Boolean).join(', ');
+    const mapHref = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([a.name, address].filter(Boolean).join(', '))}`;
+    const reach = [
+      address ? `<li><a href="${mapHref}" target="_blank" rel="noopener">${esc(address)}</a></li>` : '',
+      a.phone ? `<li><a href="${telHref(a.phone)}">${esc(a.phone)}</a></li>` : '',
+      a.website ? `<li><a href="${esc(webHref(a.website))}" target="_blank" rel="noopener">${esc(a.website.replace(/^https?:\/\//i, '').replace(/\/$/, ''))}</a></li>` : '',
+    ].filter(Boolean).join('');
+    const type = [a.relationship_type, a.business_type, a.key_reason].filter(Boolean).join(' · ');
+    const contacts = (a.contacts || []).map(c => `<li>${esc(c.name || '(no name)')}${c.email ? ` · <a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : ''}${c.phone ? ` · <a href="${telHref(c.phone)}">${esc(c.phone)}</a>` : ''}</li>`).join('');
+    const deals = (a.open_deals || []).map(d => `<li>${esc(d.name || '(no name)')}${d.value != null ? ` · <span class="value">${fmtMoney(d.value)}</span>` : ''}${d.close ? ` · expected ${fmtDate(d.close)}` : ''}</li>`).join('');
+    const logged = a.logged_count
+      ? `Your firm logged ${a.logged_count} ${a.logged_count === 1 ? 'activity' : 'activities'} here, the last on ${fmtDate(a.last_logged)}.`
+      : 'Nothing logged here yet.';
+    const logHref = `/form?account=${encodeURIComponent(a.external_id)}&name=${encodeURIComponent(a.name)}`;
+    return `<div class="acct-detail" id="acct-${esc(a.external_id)}">
+      <div><h3>Where</h3>${reach ? `<ul>${reach}</ul>` : '<p class="muted">No address or phone in the CRM.</p>'}</div>
+      <div><h3>Type</h3><p class="${type ? '' : 'muted'}">${esc(type || 'Not set in the CRM')}</p></div>
+      <div><h3>Contacts</h3>${contacts ? `<ul>${contacts}</ul>` : '<p class="muted">No contacts in the CRM yet.</p>'}</div>
+      <div><h3>Open deals</h3>${deals ? `<ul>${deals}</ul>` : '<p class="muted">None.</p>'}</div>
+      <p class="wide muted">${logged}${a.added_by_firm ? ' Added by your firm; on its way to AUDAC’s CRM.' : ''}</p>
+      <div class="detail-actions"><a class="button-secondary" href="${logHref}">${AudacShell.icon('plus')}Log activity</a></div>
+    </div>`;
+  }
+
+  function companyItem(a) {
+    const open = openAcct === a.external_id;
+    const place = [a.city, a.state_code].filter(Boolean).join(', ');
+    const nDeals = (a.open_deals || []).length;
+    const tags = [
+      a.key_reason ? `<span class="chip gold">${esc(a.key_reason)}</span>` : '',
+      nDeals ? `<span class="chip">${nDeals} open deal${nDeals === 1 ? '' : 's'}</span>` : '',
+      a.added_by_firm ? '<span class="chip">Added by your firm</span>' : '',
+    ].join('');
+    const sub = [place, a.last_logged ? `last logged ${fmtDate(a.last_logged)}` : ''].filter(Boolean).join(' · ');
+    return `<li data-acct="${esc(a.external_id)}">
+      <button type="button" class="acct-head" aria-expanded="${open}" aria-controls="acct-${esc(a.external_id)}">
+        <span><b>${esc(a.name)}</b>${sub ? `<span class="sub">${esc(sub)}</span>` : ''}</span>
+        <span class="tags">${tags}</span>
+        <span class="caret">${AudacShell.icon('down')}</span>
+      </button>
+      ${open ? companyDetail(a) : ''}
+    </li>`;
+  }
+
+  function renderCompanies() {
+    const show = filter === 'all' || filter === 'key';
+    let rows = accountsCache.filter(a => hit(a._hay));
+    if (filter === 'key') rows = rows.filter(a => a.key_reason);
+    // Key accounts first when browsing; plain A-Z when searching.
+    if (!query) rows.sort((x, y) => (!!y.key_reason - !!x.key_reason) || x.name.localeCompare(y.name));
+    $('companies-section').hidden = !show || (!!query && !rows.length);
+    if (!show) return 0;
+    const keyCount = accountsCache.filter(a => a.key_reason).length;
+    $('companies-sub').textContent = query
+      ? `${rows.length} ${rows.length === 1 ? 'company' : 'companies'} found.`
+      : filter === 'key'
+        ? `${rows.length} key accounts: TOP AUDAC LEADs and AUDAC partners in your territory.`
+        : `${accountsCache.length} companies in your territory in AUDAC’s CRM` + (keyCount ? `, ${keyCount} of them key accounts.` : '.') + ' Tap one for contacts, address and deals.';
+    const limit = (query || showAllCompanies) ? 200 : COMPANY_PAGE;
+    $('companies-list').innerHTML = rows.length
+      ? `<ul class="accts">${rows.slice(0, limit).map(companyItem).join('')}</ul>` +
+        (rows.length > limit ? `<button type="button" class="button-secondary show-more" id="show-all-companies">Show all ${rows.length}</button>` : '')
+      : '<p class="empty">No companies for your firm in AUDAC’s CRM yet.</p>';
+    return rows.length;
+  }
+
+  $('companies-list').addEventListener('click', (e) => {
+    if (e.target.closest('#show-all-companies')) { showAllCompanies = true; renderCompanies(); return; }
+    const head = e.target.closest('.acct-head');
+    if (!head) return;
+    const id = head.closest('li').dataset.acct;
+    openAcct = openAcct === id ? null : id;
+    renderCompanies();
+    const li = document.querySelector(`li[data-acct="${CSS.escape(id)}"] .acct-head`);
+    if (li) li.focus();
+  });
 
   // ---------- Deals ----------
   let dealsCache = [];
@@ -176,7 +293,15 @@
   }
 
   function renderDeals() {
-    const rows = dealsCache;
+    const show = filter === 'all' || filter === 'deals';
+    const rows = dealsCache.filter(d => hit(norm([d.project_name, d.account_name, d.stage, d.status].join(' '))));
+    $('deals-section').hidden = !show || (!!query && !rows.length);
+    if (!show) return 0;
+    if (query) {
+      $('deals-sub').textContent = `${rows.length} ${rows.length === 1 ? 'deal' : 'deals'} found.`;
+      $('deals-list').innerHTML = rows.length ? `<ul class="list">${rows.map(dealItem).join('')}</ul>` : '';
+      return rows.length;
+    }
     if (!rows.length) {
       $('deals-sub').textContent = 'No deals are credited to your firm yet. Deals come from AUDAC’s CRM.';
       $('deals-list').innerHTML = '';
@@ -192,6 +317,7 @@
       '. Know a deal was won, lost or moved? Tell us here and AUDAC updates the CRM.';
     const group = (title, list) => list.length ? `<p class="group-title">${title}</p><ul class="list">${list.map(dealItem).join('')}</ul>` : '';
     $('deals-list').innerHTML = group('Past the close date: still on?', overdue) + group('Open', open) + group('Closed in the last 12 months', closed);
+    return rows.length;
   }
 
   function openUpdateForm(crmId) {
@@ -225,7 +351,7 @@
       const { error } = await client.rpc('submit_deal_update', { p_crm_id: crmId, p_status: status, p_close_date: date, p_note: note });
       if (error) { msg.hidden = false; msg.textContent = 'Could not send the update: ' + error.message; btn.disabled = false; btn.textContent = 'Send update'; return; }
       Object.assign(d, { pending_status: status, pending_close_date: date, pending_at: new Date().toISOString() });
-      renderDeals();
+      renderAll();
     });
     statusSel.focus();
   }
@@ -285,6 +411,15 @@
   }
 
   function renderLeads() {
+    const show = filter === 'all' || filter === 'leads';
+    const found = leadsCache.filter(l => hit(norm([l.full_name, l.company, l.email, l.phone, l.city, l.state_code, l.subject, l.description].join(' '))));
+    $('leads-section').hidden = !show || (!!query && !found.length);
+    if (!show) return 0;
+    if (query) {
+      $('leads-sub').textContent = `${found.length} ${found.length === 1 ? 'lead' : 'leads'} found.`;
+      $('leads-list').innerHTML = found.length ? `<ul class="list">${found.map(leadItem).join('')}</ul>` : '';
+      return found.length;
+    }
     const current = leadsCache.filter(isActionable);
     const earlier = leadsCache.filter(l => !isActionable(l));
     const todo = current.filter(l => !followedUp(l));
@@ -299,7 +434,28 @@
       (earlier.length ? `<details class="older"><summary>Earlier leads from your territory (${earlier.length}) · for reference</summary>
         <p class="empty">Leads from more than ${FOLLOW_UP_DAYS} days ago, such as the InfoComm 2026 booth visitors, and web enquiries AVL Media Group answered. Shown as history; no follow-up is asked.</p>
         <ul class="list">${earlier.map(leadItem).join('')}</ul></details>` : '');
+    return leadsCache.length;
   }
+
+  function renderAll() {
+    const n = renderLeads() + renderCompanies() + renderDeals();
+    const nr = $('no-results');
+    nr.hidden = !query || n > 0;
+    if (!nr.hidden) nr.innerHTML = `Nothing in your territory matches “${esc(query)}”. Not in AUDAC’s CRM yet? <a href="/form">Log activity</a> and add it as a new company.`;
+  }
+
+  $('q').addEventListener('input', () => {
+    query = norm($('q').value.trim());
+    openAcct = null;
+    renderAll();
+  });
+  document.querySelector('.filters').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-filter]');
+    if (!b) return;
+    filter = b.dataset.filter;
+    document.querySelectorAll('.filters [data-filter]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    renderAll();
+  });
 
   function openLeadForm(id) {
     document.querySelectorAll('.update-form').forEach(f => f.remove());
@@ -324,7 +480,7 @@
       const { error } = await client.rpc('submit_lead_followup', { p_lead: id, p_outcome: outcome, p_note: note });
       if (error) { msg.hidden = false; msg.textContent = 'Could not save: ' + error.message; btn.disabled = false; btn.textContent = 'Save'; return; }
       Object.assign(l, { outcome, outcome_note: note.trim() || null, outcome_at: new Date().toISOString() });
-      renderLeads();
+      renderAll();
     });
     form.querySelector('#l-outcome').focus();
   }
@@ -347,16 +503,23 @@
       $('gate').innerHTML = `<div class="notice info">${profile?.is_active === false
         ? 'Your portal account has been deactivated, so this page is not available.'
         : 'Your account isn’t linked to a rep firm yet. Use your firm’s signup link, or pick your firm on your first activity.'}</div>`;
-      $('key-section').hidden = true; $('deals-section').hidden = true; $('leads-section').hidden = true;
+      $('search-bar').hidden = true; $('companies-section').hidden = true; $('deals-section').hidden = true; $('leads-section').hidden = true;
       $('page').setAttribute('aria-busy', 'false');
       return;
     }
     try { localStorage.setItem('audac_seen_territory', '1'); } catch { /* private mode */ }
-    $('intro').textContent = `${firm.name}: your key accounts, the leads handed to your firm and your firm’s deals, straight from AUDAC’s CRM.`;
-    const [keyRes, dealRes, leadRes] = await Promise.all([client.rpc('get_my_key_accounts'), client.rpc('get_my_deals'), client.rpc('get_my_leads')]);
-    if (leadRes.error) $('leads-sub').textContent = 'Could not load leads: ' + leadRes.error.message; else { leadsCache = leadRes.data || []; renderLeads(); }
-    if (keyRes.error) $('key-sub').textContent = 'Could not load key accounts: ' + keyRes.error.message; else renderKeyAccounts(keyRes.data || []);
-    if (dealRes.error) $('deals-sub').textContent = 'Could not load deals: ' + dealRes.error.message; else { dealsCache = dealRes.data || []; renderDeals(); }
+    $('intro').textContent = `${firm.name}: everything AUDAC’s CRM knows about your territory. Companies, contacts, deals and leads.`;
+    const [acctRes, dealRes, leadRes] = await Promise.all([client.rpc('get_my_territory'), client.rpc('get_my_deals'), client.rpc('get_my_leads')]);
+    leadsCache = leadRes.data || [];
+    dealsCache = dealRes.data || [];
+    accountsCache = (acctRes.data || []).map(a => ({ ...a, _hay: companyHay(a) }));
+    // ?q= opens the page on a search (e.g. from a link elsewhere in the portal).
+    const q0 = new URLSearchParams(location.search).get('q');
+    if (q0) { $('q').value = q0; query = norm(q0.trim()); }
+    renderAll();
+    if (leadRes.error) $('leads-sub').textContent = 'Could not load leads: ' + leadRes.error.message;
+    if (acctRes.error) $('companies-sub').textContent = 'Could not load companies: ' + acctRes.error.message;
+    if (dealRes.error) $('deals-sub').textContent = 'Could not load deals: ' + dealRes.error.message;
     $('page').setAttribute('aria-busy', 'false');
     if (location.hash === '#deals') $('deals-section').scrollIntoView();
     if (location.hash === '#leads') $('leads-section').scrollIntoView();
