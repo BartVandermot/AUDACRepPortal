@@ -216,7 +216,8 @@
     const [firmsRes, monthRes] = await Promise.all([
       client.from('rep_firms').select('id, name, territory'),
       // RLS scopes these to the rep's own entries (or the whole firm for a firm admin)
-      client.from('activity_entries').select('account_external_id, account_name').eq('reporting_month', thisMonth),
+      // All of them (small volumes): "new companies" needs to know what was logged before.
+      client.from('activity_entries').select('account_external_id, account_name, reporting_month'),
     ]);
 
     const firm = (firmsRes.data || []).find(f => f.id === profile?.rep_firm_id);
@@ -227,12 +228,15 @@
     $('headline').textContent = `${partOfDay}${first ? ', ' + first : ''}.`;
 
     // This month: the rep's own record, no comparisons.
-    const rows = monthRes.data || [];
+    const all = monthRes.data || [];
+    const rows = all.filter(r => r.reporting_month === thisMonth);
     $('kpi-h').textContent = profile?.is_rep_admin ? `Logged by your firm in ${monthName(now)}` : `Logged in ${monthName(now)}`;
     setKpi('acts', rows.length);
     setKpi('accts', new Set(rows.map(accountKey)).size);
-    // Companies added to AUDAC's CRM through the portal this month.
-    setKpi('new', new Set(rows.filter(r => String(r.account_external_id || '').startsWith('manual:')).map(r => r.account_external_id)).size);
+    // Companies logged for the first time this month. (Not "manual:" accounts:
+    // those get merged into the Dynamics account later and would drop out.)
+    const before = new Set(all.filter(r => r.reporting_month < thisMonth).map(accountKey));
+    setKpi('new', new Set(rows.map(accountKey).filter(k => !before.has(k))).size);
     $('page').setAttribute('aria-busy', 'false');
 
     if (firm) await Promise.all([renderNews(session.user.id), profile?.is_rep_admin ? renderTeam() : null]);
