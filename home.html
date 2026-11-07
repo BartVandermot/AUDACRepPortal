@@ -18,51 +18,46 @@
   .greeting p { margin: 0; font-size: 14px; line-height: 21px; color: var(--color-text-secondary); }
   .greeting h2 { margin: var(--space-1) 0 0; font-size: 22px; line-height: 28px; font-weight: 650; text-wrap: balance; }
 
+  /* Phones: the order in the page. Desktop: start, then "share" next to the
+     month's numbers, then what's new, then the team. */
   .bento { display: grid; grid-template-columns: repeat(12, 1fr); gap: var(--space-4); align-items: start; }
+  .starter { grid-column: 1 / -1; padding: var(--space-5) var(--space-6); }
   .hero { grid-column: span 5; padding: var(--space-6); }
   .kpis { grid-column: span 7; padding: var(--space-6); }
-  .recent { grid-column: span 7; padding: var(--space-6); }
-  .side-stack { grid-column: span 5; display: grid; gap: var(--space-4); }
-  .side-stack > .surface-card { padding: var(--space-5) var(--space-6); }
+  .news { grid-column: 1 / -1; padding: var(--space-6); }
+  .team { grid-column: 1 / -1; padding: var(--space-6); }
+  @media (min-width: 1001px) {
+    .starter { order: 0; } .hero { order: 1; } .kpis { order: 2; } .news { order: 3; } .team { order: 4; }
+  }
 
   .hero h3 { margin: 0; font-size: 22px; line-height: 28px; font-weight: 650; }
-  .hero .lead { margin: var(--space-2) 0 var(--space-5); font-size: 14px; line-height: 21px; color: var(--color-text-secondary); max-width: 44ch; }
-  .hero .button-primary { width: 100%; }
+  .hero .lead { margin: var(--space-2) 0 var(--space-5); font-size: 14px; line-height: 21px; color: var(--color-text-secondary); }
+  .hero .actions { display: flex; gap: var(--space-3); flex-wrap: wrap; }
+  .hero .actions .button-primary { flex: 1 1 180px; }
+  .hero .actions .button-secondary { flex: 0 1 auto; }
 
   .kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-3); margin-top: var(--space-4); }
   .kpi { padding: var(--space-4); border-radius: var(--radius-tile); background: var(--well-bg); box-shadow: var(--depth-well); }
   .kpi .value { display: block; font-size: 28px; line-height: 32px; font-weight: 650; font-variant-numeric: tabular-nums; }
   .kpi .label { display: block; margin-top: var(--space-1); font-size: 14px; line-height: 21px; color: var(--color-text-secondary); }
-  .kpi .trend { display: inline-flex; align-items: flex-start; gap: 4px; margin-top: var(--space-2); font-size: 12px; line-height: 16px; color: var(--color-text-muted); }
-  .kpi .trend.up { color: var(--color-success); }
-  .kpi .trend.down { color: var(--color-warning); }
-  .kpi .trend svg { width: 14px; height: 14px; flex: none; margin-top: 1px; }
+  .year-line { margin: var(--space-4) 0 0; font-size: 14px; line-height: 21px; color: var(--color-text-secondary); display: flex; gap: 8px; align-items: flex-start; }
+  .year-line svg { width: 16px; height: 16px; color: var(--color-gold); flex: none; margin-top: 2px; }
+  .year-line b { color: var(--color-text-primary); font-weight: 600; }
 
-  .rows { list-style: none; margin: var(--space-3) 0 0; padding: 0; }
-  .rows li { display: grid; grid-template-columns: 64px 1fr auto; gap: var(--space-4); align-items: center; padding: var(--space-3) 0; border-top: 1px solid var(--color-border); }
-  .rows li:first-child { border-top: 0; }
-  .rows time { font-size: 14px; color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
-  .rows b { display: block; font-size: 15px; line-height: 22px; font-weight: 600; overflow-wrap: anywhere; }
-  .rows span.sub { font-size: 14px; line-height: 21px; color: var(--color-text-secondary); }
-  .see-all { display: inline-flex; margin-top: var(--space-3); min-height: 44px; align-items: center; font-size: 14px; font-weight: 600; color: var(--color-text-primary); text-decoration: none; }
-  .empty { margin: var(--space-3) 0 0; font-size: 14px; color: var(--color-text-secondary); }
+  .news-list { list-style: none; margin: var(--space-3) 0 0; padding: 0; }
+  .news-list li { padding: var(--space-3) 0; border-top: 1px solid var(--color-border); }
+  .news-list li:first-child { border-top: 0; padding-top: 0; }
+  .news-list a.item { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); min-height: 44px; color: var(--color-text-primary); text-decoration: none; font-size: 15px; line-height: 22px; font-weight: 600; }
+  .news-list a.item span.go { color: var(--color-gold); flex: none; }
+  .news-list .sub { display: block; font-size: 13.5px; line-height: 20px; font-weight: 400; color: var(--color-text-secondary); }
+  .news-list .note { margin: var(--space-2) 0 0; font-size: 14px; line-height: 21px; color: var(--color-text-primary); white-space: pre-wrap; padding-left: var(--space-3); border-left: 2px solid var(--color-gold); }
+  .news-list .note-head { font-size: 15px; line-height: 22px; font-weight: 600; }
+  .news-list .meta { margin: var(--space-2) 0 0; font-size: 13.5px; color: var(--color-text-secondary); }
 
-  .month-row { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); }
-  .progress { height: 6px; border-radius: 999px; background: var(--well-bg); box-shadow: var(--depth-well); overflow: hidden; margin: var(--space-3) 0 var(--space-2); }
-  .progress i { display: block; height: 100%; width: 0; background: var(--color-gold); }
-  .meta-line { margin: 0; font-size: 14px; line-height: 21px; color: var(--color-text-secondary); display: flex; gap: 6px; align-items: center; }
-  .meta-line svg { width: 16px; height: 16px; color: var(--color-text-muted); flex: none; }
-  .import-row { display: flex; align-items: center; gap: var(--space-4); }
-  .import-row .text { flex: 1; }
-  .import-row p { margin: var(--space-1) 0 0; font-size: 14px; line-height: 21px; color: var(--color-text-secondary); }
-
-  .main-stack { grid-column: span 7; display: grid; gap: var(--space-4); }
-  .main-stack > .surface-card { grid-column: auto; }
-  .starter { grid-column: 1 / -1; padding: var(--space-5) var(--space-6); }
   .starter-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-3); }
   .starter-head p { margin: var(--space-1) 0 0; font-size: 14px; line-height: 21px; color: var(--color-text-secondary); }
   .link-quiet { background: none; border: 0; padding: 6px 0; font: inherit; font-size: 13px; color: var(--color-text-muted); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
-  .steps { list-style: none; margin: var(--space-4) 0 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-3); }
+  .steps { list-style: none; margin: var(--space-4) 0 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3); }
   .steps li { padding: var(--space-3) var(--space-4); border-radius: var(--radius-tile); background: var(--well-bg); box-shadow: var(--depth-well); font-size: 13.5px; line-height: 20px; color: var(--color-text-secondary); }
   .steps li b { display: flex; gap: 8px; align-items: center; font-size: 14px; color: var(--color-text-primary); margin-bottom: 4px; }
   .steps li .num { flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; border: 1px solid var(--color-border-strong); }
@@ -70,39 +65,27 @@
   .steps li.done .num { background: var(--color-success); border-color: var(--color-success); color: #0b0c0e; }
   .steps li.done .num svg { width: 13px; height: 13px; }
   .steps li a, .steps li button.inline { color: var(--color-gold-light); font: inherit; font-weight: 600; background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
-  .review { padding: var(--space-5) var(--space-6); }
-  .review .feedback { margin: var(--space-3) 0 0; font-size: 14px; line-height: 21px; color: var(--color-text-primary); white-space: pre-wrap; padding-left: var(--space-3); border-left: 2px solid var(--color-gold); }
-  .review .meta { margin: var(--space-2) 0 0; font-size: 13.5px; color: var(--color-text-secondary); }
-  .terr { padding: var(--space-6); }
-  .terr-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-3); flex-wrap: wrap; }
-  .terr-head p { margin: var(--space-1) 0 0; font-size: 14px; line-height: 21px; color: var(--color-text-secondary); }
-  .terr .progress { max-width: 360px; }
-  .terr .rows li { grid-template-columns: 1fr auto; }
-  .terr .rows .button-secondary { min-height: 40px; padding: 0 14px; font-size: 13.5px; }
-  .team { padding: var(--space-6); }
+
   .team table { width: 100%; border-collapse: collapse; margin-top: var(--space-3); font-size: 14px; }
   .team th { text-align: left; font-size: 12px; font-weight: 650; letter-spacing: .4px; color: var(--color-text-muted); padding: 0 8px 8px 0; }
   .team td { padding: 10px 8px 10px 0; border-top: 1px solid rgba(255,255,255,0.06); color: var(--color-text-secondary); }
   .team td b { color: var(--color-text-primary); font-weight: 600; }
   .team td.num { font-variant-numeric: tabular-nums; color: var(--color-text-primary); }
-  .team .quiet { color: var(--color-warning); }
   .team p.sub { margin: var(--space-1) 0 0; font-size: 14px; line-height: 21px; color: var(--color-text-secondary); }
   .skeleton { color: transparent !important; background: rgba(255,255,255,0.06); border-radius: 8px; }
 
   @media (max-width: 1000px) {
-    .hero, .kpis, .recent, .side-stack, .main-stack { grid-column: 1 / -1; }
+    .hero, .kpis { grid-column: 1 / -1; }
     .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
   @media (max-width: 560px) { .steps { grid-template-columns: 1fr; } }
   @media (max-width: 760px) {
     .bento { gap: var(--space-3); }
-    .hero, .kpis, .recent { padding: var(--space-5); }
+    .hero, .kpis, .news, .team { padding: var(--space-5); }
     .kpi-grid { gap: var(--space-2); }
     .kpi { padding: var(--space-3); }
     .kpi .value { font-size: 24px; line-height: 28px; }
     .kpi .label { font-size: 13px; line-height: 18px; }
-    .rows li { grid-template-columns: 52px 1fr; }
-    .rows li .chip { grid-column: 2; justify-self: start; }
   }
 </style>
 </head>
@@ -127,7 +110,7 @@
           <div class="starter-head">
             <div>
               <h3 class="card-title" id="starter-h">Getting started</h3>
-              <p id="starter-sub">Five quick steps to get the most out of the portal.</p>
+              <p id="starter-sub">Four quick steps to get the most out of the portal.</p>
             </div>
             <button type="button" class="link-quiet" id="starter-hide">Hide</button>
           </div>
@@ -135,85 +118,37 @@
         </section>
 
         <section class="hero surface-card surface-card--elevated" aria-labelledby="hero-h">
-          <p class="eyebrow">Quick update</p>
-          <h3 id="hero-h">Working on something with AUDAC in it?</h3>
-          <p class="lead">A few words is enough: the company and what’s going on. Got a project with AUDAC specified? Register it with AVL Media Group.</p>
-          <div style="display:flex; gap:var(--space-3); flex-wrap:wrap;">
+          <h3 id="hero-h">Something to share?</h3>
+          <p class="lead">A company and a few words is enough.</p>
+          <div class="actions">
             <a class="button-primary" href="/form" id="new-activity-btn"></a>
             <a class="button-secondary" href="https://avlmediagroup.com/project-registration/" target="_blank" rel="noopener">Register a project ↗</a>
           </div>
         </section>
 
-        <section class="kpis surface-card" aria-labelledby="kpi-h">
-          <h3 class="card-title" id="kpi-h">This month so far</h3>
-          <div class="kpi-grid">
-            <div class="kpi"><span class="value skeleton" id="k-acts">00</span><span class="label">Activities</span><span class="trend" id="t-acts"></span></div>
-            <div class="kpi"><span class="value skeleton" id="k-accts">00</span><span class="label">Accounts reached</span><span class="trend" id="t-accts"></span></div>
-            <div class="kpi"><span class="value skeleton" id="k-demos">00</span><span class="label">Demos with gear</span><span class="trend" id="t-demos"></span></div>
-          </div>
+        <section class="news surface-card" id="news" aria-labelledby="news-h" hidden>
+          <h3 class="card-title" id="news-h">New for you</h3>
+          <ul class="news-list" id="news-list"></ul>
         </section>
 
-        <div class="main-stack">
-          <section class="terr surface-card" id="terr" aria-labelledby="terr-h" hidden>
-            <div class="terr-head">
-              <div>
-                <h3 class="card-title" id="terr-h">Your territory</h3>
-                <p id="terr-sub"></p>
-              </div>
-              <a class="see-all" href="/territory" style="margin-top:0;">Open →</a>
-            </div>
-            <div class="progress" role="img" id="terr-meter"><i></i></div>
-            <div id="terr-list"></div>
-            <p class="meta-line" id="terr-leads" style="margin-top:8px;" hidden></p>
-            <p class="meta-line" id="terr-deals" style="margin-top:8px;"></p>
-          </section>
+        <section class="kpis surface-card" aria-labelledby="kpi-h">
+          <h3 class="card-title" id="kpi-h">Logged this month</h3>
+          <div class="kpi-grid">
+            <div class="kpi"><span class="value skeleton" id="k-acts">00</span><span class="label">Activities</span></div>
+            <div class="kpi"><span class="value skeleton" id="k-accts">00</span><span class="label">Companies reached</span></div>
+            <div class="kpi"><span class="value skeleton" id="k-new">00</span><span class="label">New companies</span></div>
+          </div>
+          <p class="year-line" id="year-line" hidden></p>
+        </section>
 
-          <section class="surface-card push-card" id="push-card" aria-label="Notifications" hidden></section>
-
-          <section class="team surface-card" id="team" aria-labelledby="team-h" hidden>
-            <h3 class="card-title" id="team-h">Your team</h3>
-            <p class="sub" id="team-sub"></p>
-            <div style="overflow-x:auto;"><table>
-              <thead><tr><th>Rep</th><th>This month</th><th>Last month</th><th>Last activity</th><th>Last sign-in</th></tr></thead>
-              <tbody id="team-body"></tbody>
-            </table></div>
-          </section>
-
-          <section class="recent surface-card" aria-labelledby="recent-h">
-            <h3 class="card-title" id="recent-h">Recent activity</h3>
-            <div id="recent-list"><p class="empty">Loading…</p></div>
-            <a class="see-all" href="/form#my-submissions-section">See all your activities →</a>
-          </section>
-        </div>
-
-        <div class="side-stack">
-          <section class="review surface-card" id="review" aria-labelledby="review-h" hidden>
-            <div class="month-row">
-              <h3 class="card-title" id="review-h">A note from AUDAC</h3>
-            </div>
-            <p class="meta" id="review-meta"></p>
-            <div id="review-feedback"></div>
-          </section>
-
-          <section class="surface-card" aria-labelledby="month-h">
-            <div class="month-row">
-              <h3 class="card-title" id="month-h"></h3>
-              <span class="chip" id="month-chip"></span>
-            </div>
-            <p class="meta-line" id="month-meta"></p>
-            <p class="meta-line" id="prev-month-meta" style="margin-top:8px;"></p>
-          </section>
-
-          <section class="surface-card" aria-labelledby="imp-h">
-            <div class="import-row">
-              <div class="text">
-                <h3 class="card-title" id="imp-h">Import from your CRM</h3>
-                <p>Upload an export instead of typing each visit.</p>
-              </div>
-              <a class="button-secondary" href="/import" id="import-btn"></a>
-            </div>
-          </section>
-        </div>
+        <section class="team surface-card" id="team" aria-labelledby="team-h" hidden>
+          <h3 class="card-title" id="team-h">Your team</h3>
+          <p class="sub" id="team-sub"></p>
+          <div style="overflow-x:auto;"><table>
+            <thead><tr><th>Rep</th><th>This month</th><th>Last month</th><th>Last activity</th><th>Last sign-in</th></tr></thead>
+            <tbody id="team-body"></tbody>
+          </table></div>
+        </section>
       </div>
     </main>
   </div>
@@ -237,35 +172,21 @@
   $('mobile-signout').innerHTML = AudacShell.icon('out');
   $('mobile-signout').addEventListener('click', signOut);
   $('new-activity-btn').innerHTML = AudacShell.icon('plus') + 'Log activity';
-  $('import-btn').innerHTML = AudacShell.icon('upload') + 'Upload';
 
   // ---- dates (rep's local time) ----
   const now = new Date();
   const ym = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   const thisMonth = ym(now);
-  const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const prevMonth = ym(prevDate);
+  const yearStart = `${now.getFullYear()}-01-01`;
   const monthName = (d) => d.toLocaleString('en-US', { month: 'long' });
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const hour = now.getHours();
   const partOfDay = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+  const daysSince = (iso) => (Date.now() - new Date(iso).getTime()) / 86400000;
+  const fmtMoney = (n) => '$' + Math.round(n).toLocaleString('en-US');
   $('today').textContent = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
-  // Just the rep's own numbers: no month-over-month arrows (it's their record, not a score).
-  function setKpi(id, cur) {
-    const v = $('k-' + id); v.textContent = cur; v.classList.remove('skeleton');
-  }
-  function accountKey(r) { return r.account_external_id || ('name:' + String(r.account_name || '').trim().toLowerCase()); }
-  function summarize(rows) {
-    return { acts: rows.length, accts: new Set(rows.map(accountKey)).size, demos: rows.filter(r => r.demo_gear_used).length };
-  }
-  function crmChip(r) {
-    if (!r.account_external_id) return '<span class="chip">Not linked</span>';
-    if (String(r.account_external_id).startsWith('manual:')) return `<span class="chip warn">${AudacShell.icon('spark')}New account</span>`;
-    return `<span class="chip ok">${AudacShell.icon('check')}In CRM</span>`;
-  }
-  const shortDate = (iso) => new Date(iso + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  const lower = (s) => String(s || '').toLowerCase();
+  const accountKey = (r) => r.account_external_id || ('name:' + String(r.account_name || '').trim().toLowerCase());
+  function setKpi(id, n) { const v = $('k-' + id); v.textContent = n; v.classList.remove('skeleton'); }
 
   async function init() {
     const { data: { session } } = await client.auth.getSession();
@@ -275,14 +196,14 @@
     if (profile?.role === 'manager') { window.location.href = '/dashboard'; return; }
     if (profile?.role === 'executive') { window.location.href = '/executive'; return; }
     if (profile?.is_active === false) {
-      document.getElementById('headline').textContent = 'This account is no longer active.';
+      $('headline').textContent = 'This account is no longer active.';
       document.querySelector('.bento').innerHTML = '<div class="notice info" style="grid-column:1/-1;">Your portal account has been deactivated, so you can’t log activities anymore. Everything you logged before is kept. If this is a mistake, contact AUDAC.</div>';
       $('page').setAttribute('aria-busy', 'false');
       return;
     }
 
     // A rep who arrived via their firm's signup link gets tied to that firm here
-    // (same hand-off form.html does -- login now lands reps on /home).
+    // (same hand-off form.html does -- login lands reps on /home).
     const pendingFirmId = localStorage.getItem(PENDING_FIRM_KEY);
     if (profile?.role === 'rep' && pendingFirmId && !profile.rep_firm_id) {
       const { error } = await client.rpc('claim_rep_firm', { p_firm_id: pendingFirmId });
@@ -292,12 +213,10 @@
       }
     }
 
-    const [firmsRes, finRes, monthsRes, recentRes] = await Promise.all([
+    const [firmsRes, monthRes] = await Promise.all([
       client.from('rep_firms').select('id, name, territory'),
-      client.rpc('get_finalized_periods'),
       // RLS scopes these to the rep's own entries (or the whole firm for a firm admin)
-      client.from('activity_entries').select('reporting_month, account_external_id, account_name, demo_gear_used').in('reporting_month', [thisMonth, prevMonth]),
-      client.from('activity_entries').select('id, entry_date, account_name, account_external_id, activity_type, contact_type').order('entry_date', { ascending: false }).order('submitted_at', { ascending: false }).limit(4),
+      client.from('activity_entries').select('account_external_id, account_name').eq('reporting_month', thisMonth),
     ]);
 
     const firm = (firmsRes.data || []).find(f => f.id === profile?.rep_firm_id);
@@ -305,50 +224,67 @@
     const first = (profile?.full_name || '').trim().split(/\s+/)[0];
     AudacShell.setUser({ name, sub: firm ? firm.name : session.user.email });
     AudacShell.setSection(firm ? firm.name : '');
-
-    const finalized = new Set((finRes.data || []).map(r => `${r.rep_firm_id}|${r.reporting_month}`));
-    const thisLocked = firm && finalized.has(`${firm.id}|${thisMonth}`);
     $('headline').textContent = `${partOfDay}${first ? ', ' + first : ''}.`;
 
-    // KPIs
-    const rows = monthsRes.data || [];
-    const cur = summarize(rows.filter(r => r.reporting_month === thisMonth));
+    // This month: the rep's own record, no comparisons.
+    const rows = monthRes.data || [];
     $('kpi-h').textContent = profile?.is_rep_admin ? `Logged by your firm in ${monthName(now)}` : `Logged in ${monthName(now)}`;
-    setKpi('acts', cur.acts);
-    setKpi('accts', cur.accts);
-    setKpi('demos', cur.demos);
-
-    // Recent
-    const recent = recentRes.data || [];
-    $('recent-list').innerHTML = recent.length
-      ? `<ul class="rows">${recent.map(r => `
-          <li><time datetime="${esc(r.entry_date)}">${esc(shortDate(r.entry_date))}</time>
-            <div><b>${esc(r.account_name)}</b><span class="sub">${esc(r.activity_type)} · ${esc(lower(r.contact_type))}</span></div>
-            ${crmChip(r)}</li>`).join('')}</ul>`
-      : '<p class="empty">Nothing logged yet. Your first activity will show up here.</p>';
-
-    // Month status
-    $('month-h').textContent = monthName(now);
-    const chip = $('month-chip');
-    if (!firm) { chip.className = 'chip'; chip.textContent = 'No firm yet'; }
-    else if (thisLocked) { chip.className = 'chip'; chip.innerHTML = AudacShell.icon('lock') + 'Finalized'; }
-    else { chip.className = 'chip ok'; chip.textContent = 'Open'; }
-    $('month-meta').textContent = thisLocked
-      ? `${monthName(now)} is closed for changes.`
-      : 'Log whenever it suits you. Each activity is filed under its own date.';
-    if (firm) {
-      const prevLocked = finalized.has(`${firm.id}|${prevMonth}`);
-      $('prev-month-meta').innerHTML = prevLocked
-        ? AudacShell.icon('lock') + `${esc(monthName(prevDate))} is finalized`
-        : `${esc(monthName(prevDate))} is still open, so late entries are welcome`;
-    } else {
-      $('prev-month-meta').textContent = 'Your account isn’t linked to a rep firm yet. Use your firm’s signup link, or pick your firm on your first activity.';
-    }
+    setKpi('acts', rows.length);
+    setKpi('accts', new Set(rows.map(accountKey)).size);
+    // Companies added to AUDAC's CRM through the portal this month.
+    setKpi('new', new Set(rows.filter(r => String(r.account_external_id || '').startsWith('manual:')).map(r => r.account_external_id)).size);
     $('page').setAttribute('aria-busy', 'false');
 
-    if (firm) await Promise.all([renderReview(), renderTerritory(), profile?.is_rep_admin ? renderTeam() : null]);
-    await renderStarter(profile, firm, session.user.id);
-    if (window.AudacPush && profile?.is_active !== false) AudacPush.mountCard($("push-card"), client, { audience: "rep" });
+    if (firm) await Promise.all([renderNews(session.user.id), profile?.is_rep_admin ? renderTeam() : null]);
+    await renderStarter(firm, session.user.id);
+  }
+
+  // ---------- New for you: only what's actually new; hidden when nothing is ----------
+  async function renderNews(uid) {
+    const [leadRes, dealRes, reviewRes, qRes] = await Promise.all([
+      client.rpc('get_my_leads'), client.rpc('get_my_deals'), client.rpc('get_my_reviews', { p_limit: 1 }),
+      client.from('rep_questions').select('id, answered_at').eq('user_id', uid).eq('status', 'answered').order('answered_at', { ascending: false }).limit(5),
+    ]);
+    const leads = (!leadRes.error && leadRes.data) || [];
+    const deals = (!dealRes.error && dealRes.data) || [];
+    const items = [];
+
+    // Leads handed to the firm recently that nobody reported on yet.
+    const leadCutoff = new Date(Date.now() - AudacShell.LEAD_FOLLOW_UP_DAYS * 86400000).toISOString();
+    const newLeads = leads.filter(l => (l.route === 'rep' || l.route === 'trade_show') && !l.outcome && l.crm_status_reason !== 'Qualified' && (l.created_on || '') >= leadCutoff).length;
+    if (newLeads) items.push(`<li><a class="item" href="/territory#leads"><span>${newLeads} new lead${newLeads === 1 ? '' : 's'} from AUDAC<span class="sub">Enquiries from your territory, with contact details.</span></span><span class="go">→</span></a></li>`);
+
+    // AUDAC's latest written note, for about six weeks after the month it's about.
+    const r = !reviewRes.error && reviewRes.data && reviewRes.data[0];
+    if (r && String(r.rep_feedback || '').trim() && daysSince(r.reporting_month + '-01T12:00:00') < 75) {
+      const label = new Date(r.reporting_month + '-01T12:00:00').toLocaleString('en-US', { month: 'long' });
+      items.push(`<li><span class="note-head">A note from AUDAC · ${esc(label)}</span>
+        <p class="note">${esc(r.rep_feedback)}</p>
+        <p class="meta">Questions, or something AUDAC could do better? <a href="/resources#ask">Let us know →</a></p></li>`);
+    }
+
+    // Answers to the rep's questions in the last two weeks.
+    const answered = ((!qRes.error && qRes.data) || []).filter(q => q.answered_at && daysSince(q.answered_at) <= 14).length;
+    if (answered) items.push(`<li><a class="item" href="/resources#ask"><span>AUDAC answered ${answered === 1 ? 'your question' : answered + ' of your questions'}</span><span class="go">→</span></a></li>`);
+
+    // Deals in AUDAC's CRM whose expected close date has passed.
+    const iso = new Date().toISOString().slice(0, 10);
+    const stale = deals.filter(d => d.status === 'Open' && d.expected_close_date && d.expected_close_date < iso && !d.pending_status).length;
+    if (stale) items.push(`<li><a class="item" href="/territory#deals"><span>${stale} deal${stale === 1 ? '' : 's'} past the close date<span class="sub">Still on? A quick word keeps AUDAC’s CRM right.</span></span><span class="go">→</span></a></li>`);
+
+    if (items.length) { $('news-list').innerHTML = items.join(''); $('news').hidden = false; }
+
+    // This year, only when there's something to celebrate.
+    const won = deals.filter(d => d.status === 'Won' && (d.actual_close_date || '') >= yearStart);
+    const wonValue = won.reduce((s, d) => s + Number(d.value_usd || 0), 0);
+    const converted = leads.filter(l => (l.outcome === 'meeting' || l.outcome === 'project') && String(l.outcome_at || '') >= yearStart).length;
+    const bits = [];
+    if (won.length) bits.push(`<b>${won.length} deal${won.length === 1 ? '' : 's'} won</b>${wonValue ? ` (${fmtMoney(wonValue)})` : ''}`);
+    if (converted) bits.push(`<b>${converted} lead${converted === 1 ? '' : 's'}</b> turned into a meeting or project`);
+    if (bits.length) {
+      $('year-line').innerHTML = `${AudacShell.icon('spark')}<span>This year in your territory: ${bits.join(' · ')}.</span>`;
+      $('year-line').hidden = false;
+    }
   }
 
   // ---------- Firm admins: who on the team is logging ----------
@@ -358,96 +294,44 @@
     if (!rows.length) return;
     const days = (iso) => iso ? Math.floor((Date.now() - new Date(iso).getTime()) / 86400000) : null;
     const ago = (iso) => { const d = days(iso); return d === null ? 'never' : d === 0 ? 'today' : d === 1 ? 'yesterday' : `${d} days ago`; };
-    const quiet = rows.filter(r => { const d = days(r.last_activity_date && r.last_activity_date + 'T12:00:00'); return d === null || d > 14; }).length;
-    $('team-sub').textContent = `${rows.length} rep${rows.length === 1 ? '' : 's'} on the portal` + (quiet ? ` · ${quiet} haven’t logged anything in the last 2 weeks.` : ' · everyone logged in the last 2 weeks.');
-    $('team-body').innerHTML = rows.map(r => {
-      const d = days(r.last_activity_date && r.last_activity_date + 'T12:00:00');
-      return `<tr>
+    $('team-sub').textContent = `${rows.length} rep${rows.length === 1 ? '' : 's'} on the portal.`;
+    $('team-body').innerHTML = rows.map(r => `<tr>
         <td><b>${esc(r.full_name || r.email)}</b>${r.is_rep_admin ? ' <span class="chip">Admin</span>' : ''}</td>
         <td class="num">${r.acts_this_month}</td>
         <td class="num">${r.acts_prev_month}</td>
-        <td class="${d === null || d > 14 ? 'quiet' : ''}">${r.last_activity_date ? ago(r.last_activity_date + 'T12:00:00') : 'nothing logged yet'}</td>
-        <td>${ago(r.last_sign_in_at)}</td></tr>`;
-    }).join('');
+        <td>${r.last_activity_date ? ago(r.last_activity_date + 'T12:00:00') : 'nothing logged yet'}</td>
+        <td>${ago(r.last_sign_in_at)}</td></tr>`).join('');
     $('team').hidden = false;
   }
 
-  // ---------- AUDAC's latest written note to the firm ----------
-  // Only shown when AUDAC actually wrote something. The monthly score (RAG)
-  // stays AUDAC's internal tool and isn't shown to reps.
-  async function renderReview() {
-    const { data, error } = await client.rpc('get_my_reviews', { p_limit: 1 });
-    const r = !error && data && data[0];
-    if (!r || !String(r.rep_feedback || '').trim()) return;
-    const label = new Date(r.reporting_month + '-01T12:00:00').toLocaleString('en-US', { month: 'long' });
-    $('review-h').textContent = `A note from AUDAC · ${label}`;
-    $('review-meta').textContent = '';
-    $('review-feedback').innerHTML = `<p class="feedback">${esc(r.rep_feedback)}</p>` +
-      '<p class="meta">Questions, or something AUDAC could do better? <a href="/resources#ask">Let us know →</a></p>';
-    $('review').hidden = false;
-  }
-
-  // ---------- Key accounts + deals at a glance ----------
-  async function renderTerritory() {
-    const [keyRes, dealRes, leadRes] = await Promise.all([client.rpc('get_my_key_accounts'), client.rpc('get_my_deals'), client.rpc('get_my_leads')]);
-    const keys = keyRes.data || [], deals = dealRes.data || [], leads = (!leadRes.error && leadRes.data) || [];
-    if (keyRes.error || dealRes.error || (!keys.length && !deals.length && !leads.length)) return;
-    // Leads waiting for a follow-up: only recent ones, same rule as My territory.
-    const leadCutoff = new Date(Date.now() - AudacShell.LEAD_FOLLOW_UP_DAYS * 86400000).toISOString();
-    const leadsTodo = leads.filter(l => (l.route === 'rep' || l.route === 'trade_show') && !l.outcome && l.crm_status_reason !== 'Qualified' && (l.created_on || '') >= leadCutoff).length;
-    if (leadsTodo) {
-      $('terr-leads').innerHTML = `${AudacShell.icon('spark')}<a href="/territory#leads" style="color:var(--color-warning); font-weight:600;">${leadsTodo} new lead${leadsTodo === 1 ? '' : 's'} from AUDAC →</a>`;
-      $('terr-leads').hidden = false;
-    }
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const iso = today.toISOString().slice(0, 10);
-    const ago = (d) => Math.round((today - new Date(d + 'T00:00:00')) / 86400000);
-    const dueAll = keys.filter(k => !k.last_contact || ago(k.last_contact) > 90);
-    $('terr-sub').textContent = !keys.length
-      ? 'No key accounts assigned to your firm yet.'
-      : dueAll.length
-        ? `${dueAll.length} key account${dueAll.length === 1 ? '' : 's'} without a logged visit in the last 3 months${dueAll.length > 3 ? ', for example' : ''}:`
-        : 'Every key account had a logged visit in the last 3 months.';
-    $('terr-meter').hidden = true;
-    const due = dueAll.slice(0, 3);
-    $('terr-list').innerHTML = due.length ? `<ul class="rows">${due.map(k => `<li>
-        <div><b>${esc(k.name)}</b><span class="sub">${esc([k.city, k.state_code].filter(Boolean).join(', '))} · ${k.last_contact ? `last contact ${ago(k.last_contact)} days ago` : 'no contact logged yet'}</span></div>
-        <a class="button-secondary" href="/form?account=${encodeURIComponent(k.external_id)}&name=${encodeURIComponent(k.name)}">Log visit</a></li>`).join('')}</ul>` : '';
-    const stale = deals.filter(d => d.status === 'Open' && d.expected_close_date && d.expected_close_date < iso && !d.pending_status).length;
-    const open = deals.filter(d => d.status === 'Open').length;
-    $('terr-deals').innerHTML = stale
-      ? `${AudacShell.icon('spark')}<a href="/territory#deals" style="color:var(--color-warning); font-weight:600;">${stale} of your ${open} open deal${open === 1 ? ' is' : 's are'} past the close date in AUDAC’s CRM. Still on? →</a>`
-      : (open ? `${open} open deal${open === 1 ? '' : 's'} in AUDAC’s CRM, all up to date.` : '');
-    $('terr').hidden = false;
-  }
-
-  // ---------- Getting started (until done or hidden) ----------
+  // ---------- Getting started: disappears once all four are done ----------
   const LS = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } } };
   let installPrompt = null;
   window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; });
   const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
   if (isStandalone()) LS.set('audac_installed', '1');
 
-  async function renderStarter(profile, firm, uid) {
-    if (LS.get('audac_starter_hidden') === '1') return;
-    const [actsRes, impRes] = await Promise.all([
+  async function renderStarter(firm, uid) {
+    if (LS.get('audac_starter_hidden') === '1' || LS.get('audac_starter_done') === '1') return;
+    const [actsRes, pushState] = await Promise.all([
       client.from('activity_entries').select('id', { count: 'exact', head: true }).eq('created_by', uid),
-      client.from('activity_import_batches').select('id', { count: 'exact', head: true }).eq('imported_by', uid),
+      window.AudacPush ? AudacPush.state().catch(() => 'off') : Promise.resolve('unsupported'),
     ]);
     const ua = navigator.userAgent;
     const installHow = /iPhone|iPad|iPod/.test(ua) ? 'In Safari, tap Share, then “Add to Home Screen”.'
       : /Android/.test(ua) ? 'In Chrome, open the ⋮ menu, then “Install app”.'
-      : 'Open this page on your phone and add it to your home screen.';
+      : 'Open the portal on your phone and add it to your home screen.';
     const steps = [
       { done: !!firm, title: 'Join your firm', body: firm ? `You’re set up with ${esc(firm.name)}.` : 'Use your firm’s signup link, or pick your firm on your first activity.' },
       { done: (actsRes.count || 0) > 0, title: 'Log your first visit', body: '<a href="/form">Log an activity</a>. A company and a few words is enough.' },
-      { done: LS.get('audac_seen_territory') === '1', title: 'Check your territory', body: '<a href="/territory">See your key accounts and deals</a>, and update any deal that moved.' },
-      { done: (impRes.count || 0) > 0, title: 'Already using a CRM?', body: '<a href="/import">Import an export</a> instead of typing each visit again.' },
+      { done: pushState === 'on' || pushState === 'unsupported', title: 'Get notified', body: pushState === 'install-first'
+          ? 'Add the portal to your Home Screen first (next step), then turn on notifications in <a href="/settings">Settings</a>.'
+          : 'Hear about new leads and answers right away. <a href="/settings">Turn on notifications</a>.' },
       { done: LS.get('audac_installed') === '1', title: 'Add to home screen', body: installPrompt ? '<button type="button" class="inline" id="starter-install">Install the app</button> for one-tap logging.' : installHow },
     ];
     const left = steps.filter(x => !x.done).length;
-    if (!left) return;
-    $('starter-sub').textContent = left === steps.length ? 'Five quick steps to get the most out of the portal.' : `${left} step${left === 1 ? '' : 's'} left.`;
+    if (!left) { LS.set('audac_starter_done', '1'); return; }
+    $('starter-sub').textContent = left === steps.length ? 'Four quick steps to get the most out of the portal.' : `${left} step${left === 1 ? '' : 's'} left.`;
     $('starter-steps').innerHTML = steps.map((x, i) => `<li class="${x.done ? 'done' : ''}"><b><span class="num">${x.done ? AudacShell.icon('check') : i + 1}</span>${x.title}</b>${x.body}</li>`).join('');
     $('starter').hidden = false;
     const inst = $('starter-install');
@@ -455,13 +339,15 @@
       if (!installPrompt) return;
       installPrompt.prompt();
       const { outcome } = await installPrompt.userChoice;
-      if (outcome === 'accepted') { LS.set('audac_installed', '1'); renderStarter(profile, firm, uid); }
+      if (outcome === 'accepted') { LS.set('audac_installed', '1'); renderStarter(firm, uid); }
     });
   }
   $('starter-hide').addEventListener('click', () => { LS.set('audac_starter_hidden', '1'); $('starter').hidden = true; });
 
   init().catch(err => {
-    $('recent-list').innerHTML = `<div class="notice error">Couldn’t load your overview: ${esc(err.message || err)}. Refresh to try again.</div>`;
+    $('page').setAttribute('aria-busy', 'false');
+    $('news-list').innerHTML = `<li><div class="notice error">Couldn’t load your overview: ${esc(err.message || err)}. Refresh to try again.</div></li>`;
+    $('news').hidden = false;
   });
 </script>
 </body>

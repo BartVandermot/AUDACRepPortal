@@ -265,6 +265,10 @@ table.detail td { color: var(--color-text-primary); }
 .profile { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3); border-radius: var(--radius-tile); background: var(--well-bg); box-shadow: var(--depth-well); }
 .profile .avatar { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--color-surface-elevated); font-size: 13px; font-weight: 600; color: var(--color-text-secondary); flex: none; }
 .profile .who { min-width: 0; flex: 1; }
+.profile-link { display: flex; align-items: center; gap: var(--space-3); flex: 1; min-width: 0; color: inherit; text-decoration: none; border-radius: var(--radius-tile); }
+.profile-link:hover .avatar, .profile-link[aria-current="page"] .avatar { box-shadow: 0 0 0 1px var(--color-gold); }
+.profile-link:focus-visible { outline: 2px solid var(--color-gold); outline-offset: 2px; }
+html.nav-collapsed .profile-link { flex: none; }
 .profile b { display: block; font-size: 14px; line-height: 20px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .profile .icon-btn { width: 40px; height: 40px; background: transparent; }
 .profile span { display: block; font-size: 12px; line-height: 16px; color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

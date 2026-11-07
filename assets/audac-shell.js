@@ -30,6 +30,7 @@
     left: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m14.5 6-6 6 6 6"/>',
     right: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m9.5 6 6 6-6 6"/>',
     book: '<path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5zM5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3M9 7h6"/>',
+    gear: '<path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/>',
   };
   const icon = (name, attrs = '') => `<svg viewBox="0 0 24 24" aria-hidden="true" ${attrs}>${ICONS[name] || ''}</svg>`;
 
@@ -42,8 +43,7 @@
         { key: 'territory', href: '/territory', label: 'My territory', short: 'Territory', icon: 'map' },
         { key: 'submissions', href: '/form#my-submissions-section', label: 'My activities', short: 'History', icon: 'list' },
         { key: 'resources', href: '/resources', label: 'Resources', short: 'Resources', icon: 'book' },
-        // Importing a CRM export is a desktop job; keeps the phone bar at five items.
-        { key: 'import', href: '/import', label: 'Import CRM export', short: 'Import', icon: 'upload', desktopOnly: true },
+        // Importing a CRM export is offered from Log activity, not as its own menu item.
       ],
     },
     manager: {
@@ -109,10 +109,32 @@
         ${items.map(n => `<a class="nav-item" href="${n.href}" title="${esc(n.label)}"${n.key === active ? ' aria-current="page"' : ''}>${icon(n.icon)}<span class="label">${esc(n.label)}</span></a>`).join('')}
         <div class="grow"></div>
         <div class="profile" id="app-profile" hidden>
-          <span class="avatar" id="app-avatar"></span>
-          <div class="who"><b id="app-user-name"></b><span id="app-user-sub"></span></div>
+          <a class="profile-link" href="/settings" title="Settings"${active === 'settings' ? ' aria-current="page"' : ''}>
+            <span class="avatar" id="app-avatar"></span>
+            <div class="who"><b id="app-user-name"></b><span id="app-user-sub"></span></div>
+          </a>
           <button type="button" class="icon-btn" id="app-signout" aria-label="Sign out" title="Sign out">${icon('out')}</button>
         </div>`;
+    }
+    // Phones (reps): the header's sign-out icon becomes a Settings icon;
+    // signing out lives in Settings.
+    const mSignout = document.getElementById('mobile-signout');
+    let mSettings = document.getElementById('mobile-settings');
+    if (mSignout && navKey === 'rep') {
+      if (!mSettings && active !== 'settings') {
+        mSettings = document.createElement('a');
+        mSettings.id = 'mobile-settings';
+        mSettings.className = 'icon-btn mobile-only';
+        mSettings.href = '/settings';
+        mSettings.setAttribute('aria-label', 'Settings');
+        mSettings.title = 'Settings';
+        mSettings.innerHTML = icon('gear');
+        mSignout.parentNode.insertBefore(mSettings, mSignout);
+      }
+      if (active !== 'settings') mSignout.style.setProperty('display', 'none', 'important');
+    } else if (mSignout) {
+      if (mSettings) mSettings.remove();
+      mSignout.style.removeProperty('display');
     }
     const bottom = document.getElementById('app-bottom-nav');
     if (bottom) {

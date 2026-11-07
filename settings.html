@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AUDAC Rep Portal — Settings</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/audac-ui.css">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="AUDAC Reps">
+<meta name="theme-color" content="#0b0c0e">
+<style>
+  .stack { display: grid; gap: var(--space-4); max-width: 720px; }
+  .section { padding: var(--space-5) var(--space-6); }
+  .section .card-title { margin: 0; }
+  .section p.sub { margin: var(--space-2) 0 0; font-size: 14px; line-height: 21px; color: var(--color-text-secondary); }
+  .facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px var(--space-4); margin: var(--space-3) 0 0; font-size: 14px; line-height: 21px; }
+  .facts dt { color: var(--color-text-muted); }
+  .facts dd { margin: 0; color: var(--color-text-primary); overflow-wrap: anywhere; }
+  .name-row { display: flex; gap: var(--space-2); flex-wrap: wrap; margin-top: var(--space-4); }
+  .name-row input { flex: 1 1 220px; }
+  .name-row .button-secondary { width: auto; padding: 0 18px; }
+  .msg { margin: var(--space-2) 0 0; font-size: 13.5px; line-height: 20px; }
+  .msg.ok { color: var(--color-success); }
+  .msg.err { color: var(--color-danger); }
+  .push-card { padding: var(--space-5) var(--space-6); }
+  .signout { width: auto; padding: 0 22px; justify-self: start; }
+  @media (max-width: 760px) { .section, .push-card { padding: var(--space-5); } }
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <aside class="sidebar glass-floating" id="app-sidebar" aria-label="Main menu"></aside>
+  <div class="app-content">
+    <header class="topbar">
+      <h1>Settings</h1>
+      <span class="spacer"></span>
+      <button type="button" class="icon-btn mobile-only" id="mobile-signout" aria-label="Sign out" title="Sign out"></button>
+    </header>
+
+    <main class="page" id="page">
+      <div class="stack">
+        <section class="section surface-card" aria-labelledby="me-h">
+          <h2 class="card-title" id="me-h">Your profile</h2>
+          <dl class="facts">
+            <dt>E-mail</dt><dd id="me-email">…</dd>
+            <dt>Firm</dt><dd id="me-firm">…</dd>
+          </dl>
+          <form class="name-row" id="name-form">
+            <input type="text" id="me-name" placeholder="Your full name" autocomplete="name" aria-label="Your name">
+            <button type="submit" class="button-secondary">Save name</button>
+          </form>
+          <p class="msg" id="name-msg" hidden></p>
+        </section>
+
+        <section class="surface-card push-card" id="push-card" aria-label="Notifications" hidden></section>
+
+        <section class="section surface-card" aria-labelledby="app-h">
+          <h2 class="card-title" id="app-h">The portal on your phone</h2>
+          <p class="sub" id="app-text"></p>
+          <div class="name-row" id="app-actions" hidden><button type="button" class="button-secondary" id="install-btn">Install the app</button></div>
+        </section>
+
+        <button type="button" class="button-secondary signout" id="signout-bottom">Sign out</button>
+      </div>
+    </main>
+  </div>
+</div>
+<nav class="bottom-nav glass-floating" id="app-bottom-nav" aria-label="Main menu"></nav>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/assets/audac-shell.js"></script>
+<script src="/assets/audac-push.js"></script>
+<script>
+  const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
+  const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const $ = (id) => document.getElementById(id);
+
+  AudacShell.mount('settings');
+  const signOut = async () => { await client.auth.signOut(); window.location.href = '/login'; };
+  AudacShell.onSignOut(signOut);
+  $('mobile-signout').innerHTML = AudacShell.icon('out');
+  $('mobile-signout').addEventListener('click', signOut);
+  $('signout-bottom').addEventListener('click', signOut);
+
+  // ---- The app on the phone ----
+  let installPrompt = null;
+  const standalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  function renderApp() {
+    const ua = navigator.userAgent;
+    if (standalone()) { $('app-text').textContent = 'You’re using the installed app. Nothing to do here.'; $('app-actions').hidden = true; return; }
+    $('app-text').textContent = /iPhone|iPad|iPod/.test(ua) ? 'Add the portal to your Home Screen for one-tap logging: in Safari, tap Share, then “Add to Home Screen”. On iPhone this is also needed for notifications.'
+      : /Android/.test(ua) ? 'Install the portal as an app for one-tap logging: in Chrome, open the ⋮ menu, then “Install app”.'
+      : 'Open the portal on your phone and add it to your home screen for one-tap logging.';
+    $('app-actions').hidden = !installPrompt;
+  }
+  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; renderApp(); });
+  $('install-btn').addEventListener('click', async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    if (outcome === 'accepted') { try { localStorage.setItem('audac_installed', '1'); } catch { /* ignore */ } installPrompt = null; $('app-text').textContent = 'Installed. Open it from your home screen.'; $('app-actions').hidden = true; }
+  });
+  renderApp();
+
+  async function init() {
+    const { data: { session } } = await client.auth.getSession();
+    if (!session) { window.location.href = '/login'; return; }
+    const { data: profile } = await client.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
+    const role = profile?.role || 'rep';
+    if (role !== 'rep') AudacShell.useNav(role === 'executive' ? 'executive' : 'manager');
+    const { data: firms } = await client.from('rep_firms').select('id, name');
+    const firm = (firms || []).find(f => f.id === profile?.rep_firm_id);
+
+    $('me-email').textContent = session.user.email;
+    $('me-firm').textContent = firm ? firm.name : (role === 'rep' ? 'Not linked to a firm yet' : 'AUDAC');
+    $('me-name').value = profile?.full_name || '';
+    AudacShell.setUser({ name: profile?.full_name || session.user.email, sub: firm ? firm.name : session.user.email });
+
+    if (window.AudacPush) AudacPush.mountCard($('push-card'), client, { audience: role === 'rep' ? 'rep' : 'manager' });
+  }
+
+  $('name-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = $('me-name').value.trim(), msg = $('name-msg');
+    msg.hidden = false;
+    if (!name) { msg.className = 'msg err'; msg.textContent = 'Fill in your name first.'; return; }
+    const { error } = await client.rpc('set_my_full_name', { p_full_name: name });
+    msg.className = 'msg ' + (error ? 'err' : 'ok');
+    msg.textContent = error ? 'Couldn’t save: ' + error.message : 'Saved.';
+    if (!error) AudacShell.setUser({ name, sub: $('me-firm').textContent });
+  });
+
+  init().catch(err => { const m = $('name-msg'); m.hidden = false; m.className = 'msg err'; m.textContent = 'Couldn’t load your settings: ' + (err.message || err); });
+</script>
+</body>
+</html>

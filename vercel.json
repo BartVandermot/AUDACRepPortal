@@ -55,6 +55,10 @@
     {
       "source": "/crossref",
       "destination": "/crossref.html"
+    },
+    {
+      "source": "/settings",
+      "destination": "/settings.html"
     }
   ],
   "headers": [
