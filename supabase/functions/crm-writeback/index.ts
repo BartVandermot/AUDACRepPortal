@@ -8,7 +8,8 @@
 //   - Owner of every record: Bart.
 //   - Only creates. Never updates, deletes, assigns or merges in Dynamics.
 //     (One exception, approved per record by Bart: the address clean-up in
-//     crm_address_fixes -- City / State / ZIP only, with undo.)
+//     crm_address_fixes -- City / State / ZIP only, with undo -- and setting
+//     the spam records he picked in crm_deactivations to Inactive.)
 //   - Before creating, look for the same record in Dynamics (company: same
 //     name in the same country; contact: same e-mail). Found -> link to it,
 //     don't create. Dynamics' own duplicate detection is switched on as well.
@@ -493,6 +494,26 @@ Deno.serve(async (req) => {
         }
         await svc.from("crm_address_fixes").update({ status, error, applied_at: status === "applied" ? new Date().toISOString() : null }).eq("external_id", f.external_id);
         out.push({ name: f.name, status, error });
+      }
+      return json({ processed: out.length, results: out });
+    }
+
+    // {"applyDeactivations": true} / {"undoDeactivations": true}: set the
+    // records Bart picked one by one (crm_deactivations, migration 0065) to
+    // Inactive in Dynamics -- contacts first, then their accounts -- or back
+    // to Active. Nothing is deleted.
+    if (reqBody?.applyDeactivations || reqBody?.undoDeactivations) {
+      const undo = !!reqBody.undoDeactivations;
+      const { data: rows, error: dErr } = await svc.from("crm_deactivations").select("*").eq("status", undo ? "done" : "approved").limit(200);
+      if (dErr) throw dErr;
+      const ordered = [...(rows || [])].sort((a: any, b: any) => (a.kind === "contact" ? 0 : 1) - (b.kind === "contact" ? 0 : 1));
+      const out: any[] = [];
+      for (const r of ordered) {
+        const set = r.kind === "contact" ? "contacts" : "accounts";
+        const res = await dv("PATCH", `${set}(${r.external_id})`, undo ? { statecode: 0, statuscode: 1 } : { statecode: 1, statuscode: 2 });
+        const status = res.ok ? (undo ? "undone" : "done") : (undo ? "done" : "failed");
+        await svc.from("crm_deactivations").update({ status, error: res.ok ? null : res.error, done_at: new Date().toISOString() }).eq("external_id", r.external_id);
+        out.push({ kind: r.kind, name: r.name, status, error: res.ok ? null : res.error });
       }
       return json({ processed: out.length, results: out });
     }
