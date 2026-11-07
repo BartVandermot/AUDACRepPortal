@@ -464,6 +464,7 @@ async function runPage(svc: any, phase: Phase, cursor: string | null, syncStarte
             zip: r.address1_postalcode || null,
             country_code: countryCode,
             website: r.websiteurl || null,
+            phone: r.telephone1 || null,
             relationship_type: r["customertypecode@OData.Community.Display.V1.FormattedValue"] ?? null,
             business_type: r["businesstypecode@OData.Community.Display.V1.FormattedValue"] ?? null,
             audac_partner_type: r["pvs_audacpartnertype@OData.Community.Display.V1.FormattedValue"] ?? null,
