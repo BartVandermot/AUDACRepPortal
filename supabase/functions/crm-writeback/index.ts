@@ -7,6 +7,8 @@
 //     company exists in Dynamics, and is always linked to it.
 //   - Owner of every record: Bart.
 //   - Only creates. Never updates, deletes, assigns or merges in Dynamics.
+//     (One exception, approved per record by Bart: the address clean-up in
+//     crm_address_fixes -- City / State / ZIP only, with undo.)
 //   - Before creating, look for the same record in Dynamics (company: same
 //     name in the same country; contact: same e-mail). Found -> link to it,
 //     don't create. Dynamics' own duplicate detection is switched on as well.
@@ -100,7 +102,7 @@ async function dvToken(): Promise<string> {
   tokenCache = (await res.json()).access_token;
   return tokenCache!;
 }
-async function dv(method: "GET" | "POST", path: string, body?: unknown, suppressDuplicateCheck = false): Promise<{ ok: boolean; status: number; data: any; error: string }> {
+async function dv(method: "GET" | "POST" | "PATCH", path: string, body?: unknown, suppressDuplicateCheck = false): Promise<{ ok: boolean; status: number; data: any; error: string }> {
   const res = await fetch(`${API}/${path}`, {
     method,
     headers: {
@@ -109,7 +111,7 @@ async function dv(method: "GET" | "POST", path: string, body?: unknown, suppress
       "Content-Type": "application/json; charset=utf-8",
       "OData-MaxVersion": "4.0",
       "OData-Version": "4.0",
-      Prefer: method === "POST" ? "return=representation" : 'odata.include-annotations="OData.Community.Display.V1.FormattedValue"',
+      Prefer: method !== "GET" ? "return=representation" : 'odata.include-annotations="OData.Community.Display.V1.FormattedValue"',
       // Let Dynamics' own duplicate detection rules refuse a duplicate too,
       // unless Bart pressed "Create anyway".
       ...(method === "POST" ? { "MSCRM.SuppressDuplicateDetection": suppressDuplicateCheck ? "true" : "false" } : {}),
@@ -459,6 +461,40 @@ Deno.serve(async (req) => {
         conditions: conditions.ok ? conditions.data.value : { error: conditions.error },
         accounts,
       });
+    }
+
+    // {"applyAddressFixes": true} / {"undoAddressFixes": true}: the one-off
+    // address clean-up Bart approved (crm_address_fixes, migration 0064). Only
+    // City / State / ZIP of the listed accounts are written, and only when
+    // Dynamics still holds the values the proposal was made from; the old
+    // values stay in the table so undo puts them back.
+    if (reqBody?.applyAddressFixes || reqBody?.undoAddressFixes) {
+      const undo = !!reqBody.undoAddressFixes;
+      const { data: fixes, error: fErr } = await svc.from("crm_address_fixes").select("*").eq("status", undo ? "applied" : "approved").limit(200);
+      if (fErr) throw fErr;
+      const same = (a: unknown, b: unknown) => String(a ?? "").trim() === String(b ?? "").trim();
+      const out: any[] = [];
+      for (const f of fixes || []) {
+        const from = undo ? { city: f.new_city, state: f.new_state, zip: f.new_zip } : { city: f.old_city, state: f.old_state, zip: f.old_zip };
+        const to = undo ? { city: f.old_city, state: f.old_state, zip: f.old_zip } : { city: f.new_city, state: f.new_state, zip: f.new_zip };
+        const cur = await dv("GET", `accounts(${f.external_id})?$select=address1_city,address1_stateorprovince,address1_postalcode,statecode`);
+        let status = undo ? "proposed" : "applied", error: string | null = null;
+        if (!cur.ok) { status = undo ? "applied" : "failed"; error = cur.error; }
+        else if (!same(cur.data.address1_city, from.city) || !same(cur.data.address1_stateorprovince, from.state) || !same(cur.data.address1_postalcode, from.zip)) {
+          status = undo ? "applied" : "skipped";
+          error = `Changed in Dynamics since the proposal (now: ${[cur.data.address1_city, cur.data.address1_stateorprovince, cur.data.address1_postalcode].map((v) => v ?? "–").join(" | ")}); left alone.`;
+        } else {
+          const patch: Record<string, unknown> = {};
+          if (!same(to.city, from.city)) patch.address1_city = to.city ?? null;
+          if (!same(to.state, from.state)) patch.address1_stateorprovince = to.state ?? null;
+          if (!same(to.zip, from.zip)) patch.address1_postalcode = to.zip ?? null;
+          const res = await dv("PATCH", `accounts(${f.external_id})`, patch);
+          if (!res.ok) { status = undo ? "applied" : "failed"; error = res.error; }
+        }
+        await svc.from("crm_address_fixes").update({ status, error, applied_at: status === "applied" ? new Date().toISOString() : null }).eq("external_id", f.external_id);
+        out.push({ name: f.name, status, error });
+      }
+      return json({ processed: out.length, results: out });
     }
 
     const { data: flag } = await svc.from("app_flags").select("value").eq("key", "crm_writeback_enabled").maybeSingle();
