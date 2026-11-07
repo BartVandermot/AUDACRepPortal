@@ -14,7 +14,9 @@
 //     crm_push_force): one of its contacts' e-mails or e-mail domains is
 //     already in Dynamics, or crm_lookalike_accounts() finds the same name
 //     without Inc/LLC/Audio/Video/... in the state (or the same first word in
-//     the same city), or Dynamics has such a name in that city right now.
+//     the same city), or Dynamics has such a name in that city right now, or
+//     an account with the same phone number (last 10 digits). A refusal by
+//     Dynamics' own duplicate rules also becomes needs_info, not a retry.
 //   - The rep firm follows the portal's logic (state / ZIP), so the address
 //     goes in as the rep typed it; nothing else decides the firm.
 //   - Required in Dynamics: account name, relationship type, country; contact
@@ -98,7 +100,7 @@ async function dvToken(): Promise<string> {
   tokenCache = (await res.json()).access_token;
   return tokenCache!;
 }
-async function dv(method: "GET" | "POST", path: string, body?: unknown): Promise<{ ok: boolean; status: number; data: any; error: string }> {
+async function dv(method: "GET" | "POST", path: string, body?: unknown, suppressDuplicateCheck = false): Promise<{ ok: boolean; status: number; data: any; error: string }> {
   const res = await fetch(`${API}/${path}`, {
     method,
     headers: {
@@ -108,8 +110,9 @@ async function dv(method: "GET" | "POST", path: string, body?: unknown): Promise
       "OData-MaxVersion": "4.0",
       "OData-Version": "4.0",
       Prefer: method === "POST" ? "return=representation" : 'odata.include-annotations="OData.Community.Display.V1.FormattedValue"',
-      // Let Dynamics' own duplicate detection rules refuse a duplicate too.
-      ...(method === "POST" ? { "MSCRM.SuppressDuplicateDetection": "false" } : {}),
+      // Let Dynamics' own duplicate detection rules refuse a duplicate too,
+      // unless Bart pressed "Create anyway".
+      ...(method === "POST" ? { "MSCRM.SuppressDuplicateDetection": suppressDuplicateCheck ? "true" : "false" } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -119,6 +122,10 @@ async function dv(method: "GET" | "POST", path: string, body?: unknown): Promise
   const error = res.ok ? "" : (data?.error?.message || text || `HTTP ${res.status}`).slice(0, 500);
   return { ok: res.ok, status: res.status, data, error };
 }
+// Dynamics refused the create because one of its duplicate detection rules
+// matched (error 0x80040333): not worth retrying, Bart decides.
+const isDuplicateRefusal = (r: { data: any; error: string }) =>
+  String(r.data?.error?.code || "").toLowerCase() === "0x80040333" || /duplicate/i.test(r.error);
 
 // ---------- local merge: same steps as merge_manual_crm_account / _contact ----------
 async function linkAccountLocally(svc: any, m: any, targetId: string, country: string) {
@@ -269,6 +276,18 @@ async function pushAccount(svc: any, m: any, by: string | null) {
     if ((alike || []).length) {
       return holdFor(`Already in CRM: ${alike.map((a: any) => `"${a.name}"${a.city ? ` (${a.city})` : ""}`).join(", ")}. Is it the same company? Merge it by hand on Accounts & Contacts, or press "Create anyway".`, alike.map((a: any) => a.external_id));
     }
+    // Same phone number, compared on the last 10 digits (Dynamics' own rule
+    // compares the text exactly, so "(513) 555-1234" vs "513-555-1234" slips by).
+    const digits = String(m.phone || "").replace(/\D/g, "");
+    if (digits.length >= 10) {
+      const last10 = digits.slice(-10);
+      const r = await dv("GET", `accounts?$select=accountid,name,address1_city,telephone1&$filter=${encodeURIComponent(`statecode eq 0 and endswith(telephone1, ${lit(last10.slice(-4))})`)}&$top=50`);
+      if (!r.ok) throw new Error(`Dynamics lookup: ${r.error}`);
+      const same = (r.data?.value || []).filter((h: any) => String(h.telephone1 || "").replace(/\D/g, "").slice(-10) === last10);
+      if (same.length) {
+        return holdFor(`Dynamics has ${same.map((h: any) => `"${h.name}"${h.address1_city ? ` (${h.address1_city})` : ""}`).join(", ")} with the same phone number: probably the same company. Merge it by hand on Accounts & Contacts, or press "Create anyway".`, same.map((h: any) => h.accountid));
+      }
+    }
     // ... and live, for companies added to Dynamics since the last nightly sync.
     const { data: core } = await svc.rpc("crm_name_core", { p: m.name });
     const firstWord = String(core || "").split(" ")[0];
@@ -299,7 +318,13 @@ async function pushAccount(svc: any, m: any, by: string | null) {
     "scp_CountryLookup@odata.bind": `/scp_countries(${COUNTRY[country]})`,
     "ownerid@odata.bind": `/systemusers(${OWNER_BART})`,
   };
-  const res = await dv("POST", "accounts", payload);
+  const res = await dv("POST", "accounts", payload, !!m.crm_push_force);
+  if (!res.ok && isDuplicateRefusal(res)) {
+    const msg = "Dynamics' own duplicate rules say this company already exists (same name, phone number, e-mail or website). Merge it by hand on Accounts & Contacts.";
+    await setStatus(svc, "crm_accounts", m, "needs_info", msg, false);
+    await log(svc, "account", m, "needs_info", null, { reason: msg, status: res.status, error: res.error }, by);
+    return { name: m.name, result: "needs_info" };
+  }
   if (!res.ok) {
     await setStatus(svc, "crm_accounts", m, "failed", res.error, true);
     await log(svc, "account", m, "failed", null, { status: res.status, error: res.error }, by);
@@ -359,6 +384,12 @@ async function pushContact(svc: any, m: any, by: string | null) {
     "ownerid@odata.bind": `/systemusers(${OWNER_BART})`,
   };
   const res = await dv("POST", "contacts", payload);
+  if (!res.ok && isDuplicateRefusal(res)) {
+    const msg = "Dynamics' own duplicate rules say this contact already exists. Check it by hand on Accounts & Contacts.";
+    await setStatus(svc, "crm_contacts", m, "needs_info", msg, false);
+    await log(svc, "contact", m, "needs_info", null, { reason: msg, status: res.status, error: res.error }, by);
+    return { name: m.full_name, result: "needs_info" };
+  }
   if (!res.ok) {
     await setStatus(svc, "crm_contacts", m, "failed", res.error, true);
     await log(svc, "contact", m, "failed", null, { status: res.status, error: res.error }, by);
