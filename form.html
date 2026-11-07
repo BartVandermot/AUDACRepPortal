@@ -75,6 +75,11 @@
   .combo-status { font-size: 13px; line-height: 18px; margin-top: var(--space-1); min-height: 18px; color: var(--color-text-muted); }
   .combo-status.linked { color: var(--color-success); }
   .combo-status.error { color: var(--color-danger); }
+  .maybe-same { margin: 0 0 var(--space-4); padding: 12px 14px; border: 1px solid var(--color-gold); border-radius: 10px; font-size: 14px; }
+  .maybe-same p { margin: 0 0 8px; }
+  .maybe-same .maybe-pick { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+  .maybe-same .maybe-pick button { text-align: left; }
+  .maybe-same .muted { color: var(--color-text-muted); font-size: 13px; }
   .new-details { background: var(--color-bg-raised); border: 1px solid var(--color-border); border-radius: var(--radius-tile); padding: var(--space-4) var(--space-4) 0; margin: calc(-1 * var(--space-2)) 0 var(--space-4); }
   .contact-field { display: none; }
   .contact-field.active { display: block; }
@@ -332,6 +337,8 @@
     const stateInput = block.querySelector('.new-account-state');
     const zipInput = block.querySelector('.new-account-zip');
     const phoneInput = block.querySelector('.new-account-phone');
+    const maybeEl = block.querySelector('.new-account-maybe');
+    let maybeShownFor = '';   // name|city|state the rep already saw look-alikes for
 
     function selectAccount(acc, isNew) {
       input.value = acc.name;
@@ -350,8 +357,33 @@
       list.hidden = true;
       details.hidden = false;
       [streetInput, cityInput, stateInput, zipInput, phoneInput].forEach(el => el.value = '');
+      maybeEl.hidden = true;
+      maybeShownFor = '';
       streetInput.focus();
     }
+
+    // Before adding a company: is it already in AUDAC's CRM under a slightly
+    // different name ("ICB" for "ICB Audio Video")? Shown once; pressing
+    // "Add Company" again adds it anyway.
+    async function lookalikesFirst(name) {
+      const key = [name, cityInput.value.trim(), stateInput.value.trim()].join('|').toLowerCase();
+      if (maybeShownFor === key) return false;
+      const { data, error } = await client.rpc('crm_lookalike_accounts', {
+        p_name: name, p_city: cityInput.value.trim(), p_state: stateInput.value.trim().toUpperCase(),
+        p_firm_id: firmSelect.value || null, p_exclude: null, p_limit: 5,
+      });
+      if (error || !data || !data.length) return false;
+      maybeShownFor = key;
+      maybeEl.innerHTML = `<p><b>Already in AUDAC’s CRM?</b> Pick it if it’s the same company:</p>
+        <div class="maybe-pick">${data.map(a => `<button type="button" class="audac-btn-outline" data-external-id="${escapeHtml(a.external_id)}" data-name="${escapeHtml(a.name)}">${escapeHtml(a.name)}${a.city ? ` <span class="combo-item-sub">${escapeHtml([a.city, a.state_code].filter(Boolean).join(', '))}</span>` : ''}</button>`).join('')}</div>
+        <div class="muted">Not one of these? Press “Add Company” again.</div>`;
+      maybeEl.hidden = false;
+      return true;
+    }
+    maybeEl.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-external-id]');
+      if (b) selectAccount({ external_id: b.dataset.externalId, name: b.dataset.name }, false);
+    });
 
     async function createNew(name) {
       if (!name) return;
@@ -366,6 +398,7 @@
       const firmId = firmSelect.value || null;
       details.querySelector('[data-new-account-confirm]').disabled = true;
       try {
+        if (await lookalikesFirst(name)) return;
         const { data, error } = await client.rpc('add_manual_crm_account', {
           p_name: name, p_street: streetInput.value.trim() || null, p_city: cityInput.value.trim(),
           p_state_code: stateInput.value.trim(), p_zip: zipInput.value.trim() || null,
@@ -447,11 +480,13 @@
     const details = block.querySelector('.new-contact-details');
     const emailInput = block.querySelector('.new-contact-email');
     const phoneInput = block.querySelector('.new-contact-phone');
+    const maybeEl = block.querySelector('.new-contact-maybe');
+    let maybeShownFor = '';
 
-    function selectContact(c, isNew) {
+    function selectContact(c, isNew, note) {
       input.value = c.full_name || '';
       block.dataset.contactExternalId = c.external_id;
-      statusEl.textContent = isNew ? '✓ Added as a new CRM contact' : '✓ Linked to existing CRM contact';
+      statusEl.textContent = note || (isNew ? '✓ Added as a new CRM contact' : '✓ Linked to existing CRM contact');
       statusEl.className = 'combo-status contact-status linked';
       list.hidden = true;
       details.hidden = true;
@@ -463,7 +498,29 @@
       details.hidden = false;
       emailInput.value = '';
       phoneInput.value = '';
+      maybeEl.hidden = true;
+      maybeShownFor = '';
       emailInput.focus();
+    }
+
+    // Is this e-mail already a contact in AUDAC's CRM? At this company: just
+    // link to them. At another company: say so once; "Add Contact" again adds
+    // them anyway (people do change jobs).
+    async function existingFirst(accountExternalId) {
+      const email = emailInput.value.trim().toLowerCase();
+      if (maybeShownFor === email) return false;
+      const { data, error } = await client.rpc('find_crm_contact_by_email', { p_email: email, p_firm_id: firmSelect.value || null });
+      if (error || !data || !data.length) return false;
+      const here = data.find(c => c.account_external_id === accountExternalId);
+      if (here) {
+        selectContact({ external_id: here.external_id, full_name: here.full_name }, false, '✓ Already in the CRM: linked to the existing contact');
+        return true;
+      }
+      maybeShownFor = email;
+      maybeEl.innerHTML = `<p><b>${escapeHtml(data[0].full_name || email)}</b> is already in AUDAC’s CRM at <b>${escapeHtml(data[0].account_name || 'another company')}</b>.</p>
+        <div class="muted">If that’s where you met them, change the company above to ${escapeHtml(data[0].account_name || 'that company')}. If they moved, press “Add Contact” again.</div>`;
+      maybeEl.hidden = false;
+      return true;
     }
 
     async function createNew(name) {
@@ -478,6 +535,7 @@
       }
       details.querySelector('[data-new-contact-confirm]').disabled = true;
       try {
+        if (await existingFirst(accountExternalId)) return;
         const { data, error } = await client.rpc('create_manual_crm_contact', {
           p_account_external_id: accountExternalId, p_full_name: name,
           p_email: emailInput.value.trim() || null, p_phone: phoneInput.value.trim() || null,
@@ -1020,6 +1078,7 @@
         <div class="row">
           <div class="field"><label>Phone</label><input type="tel" class="new-account-phone" placeholder="Phone number"></div>
         </div>
+        <div class="maybe-same new-account-maybe" hidden></div>
         <div class="actions" style="justify-content:flex-start; gap:10px; margin-bottom:16px;">
           <button type="button" class="audac-btn-outline" data-new-account-confirm>Add Company</button>
           <button type="button" class="link-btn" data-new-account-cancel>Cancel</button>
@@ -1038,6 +1097,7 @@
           <div class="field"><label>Email</label><input type="email" class="new-contact-email" placeholder="Email address (needed)"></div>
           <div class="field"><label>Phone</label><input type="tel" class="new-contact-phone" placeholder="Phone number"></div>
         </div>
+        <div class="maybe-same new-contact-maybe" hidden></div>
         <div class="actions" style="justify-content:flex-start; gap:10px; margin-bottom:16px;">
           <button type="button" class="audac-btn-outline" data-new-contact-confirm>Add Contact</button>
           <button type="button" class="link-btn" data-new-contact-cancel>Cancel</button>

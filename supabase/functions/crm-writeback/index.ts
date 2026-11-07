@@ -10,9 +10,11 @@
 //   - Before creating, look for the same record in Dynamics (company: same
 //     name in the same country; contact: same e-mail). Found -> link to it,
 //     don't create. Dynamics' own duplicate detection is switched on as well.
-//     Look-alikes (one of its contacts' e-mails already in Dynamics, or a
-//     company in the same city whose name starts with the same word) are
-//     held as "needs_info" for Bart; "Create anyway" sets crm_push_force.
+//     Look-alikes are held as "needs_info" for Bart ("Create anyway" sets
+//     crm_push_force): one of its contacts' e-mails or e-mail domains is
+//     already in Dynamics, or crm_lookalike_accounts() finds the same name
+//     without Inc/LLC/Audio/Video/... in the state (or the same first word in
+//     the same city), or Dynamics has such a name in that city right now.
 //   - The rep firm follows the portal's logic (state / ZIP), so the address
 //     goes in as the rep typed it; nothing else decides the firm.
 //   - Required in Dynamics: account name, relationship type, country; contact
@@ -48,6 +50,14 @@ const TYPE_BY_CONTACT_TYPE: Record<string, { customertypecode: number; businesst
   "End User": { customertypecode: 921970002 },                             // End User
 };
 const DEFAULT_TYPE = { customertypecode: 8 };                              // Prospect
+
+// Free mail providers: a shared domain there says nothing about the company.
+const GENERIC_DOMAINS = new Set([
+  "gmail.com", "googlemail.com", "yahoo.com", "ymail.com", "hotmail.com", "outlook.com", "live.com", "msn.com",
+  "aol.com", "icloud.com", "me.com", "mac.com", "comcast.net", "att.net", "sbcglobal.net", "bellsouth.net",
+  "verizon.net", "cox.net", "charter.net", "earthlink.net", "protonmail.com", "proton.me", "gmx.com", "mail.com",
+  "rogers.com", "shaw.ca", "sympatico.ca", "bell.net", "telus.net", "videotron.ca",
+]);
 
 const STATE_NAME: Record<string, string> = {
   AL: "Alabama", AK: "Alaska", AZ: "Arizona", AR: "Arkansas", CA: "California", CO: "Colorado", CT: "Connecticut",
@@ -213,9 +223,7 @@ async function pushAccount(svc: any, m: any, by: string | null) {
   }
 
   // Maybe Dynamics has it under another name (e.g. "ICB" for "ICB Audio
-  // Video"). Two signs, both sent to Bart instead of creating a duplicate:
-  //   1. a contact the rep added here already exists in Dynamics (same e-mail);
-  //   2. a company in the same city whose name shares the first word.
+  // Video"). Any sign of that goes to Bart instead of creating a duplicate.
   // Skipped when Bart pressed "Create anyway" on a held look-alike (crm_push_force).
   if (!m.crm_push_force) {
     const holdFor = async (msg: string, candidates: string[]) => {
@@ -234,9 +242,38 @@ async function pushAccount(svc: any, m: any, by: string | null) {
         return holdFor(`${c.full_name} is already in Dynamics under ${where}: probably the same company. Merge it by hand on Accounts & Contacts.`, [hit._parentcustomerid_value]);
       }
     }
-    const firstWord = String(m.name).trim().split(/\s+/)[0].replace(/[^\p{L}\p{N}&'-]/gu, "");
+    // Same e-mail domain (not gmail & co.) on a contact or company in Dynamics.
+    const domains = [...new Set((myContacts || []).map((c: any) => String(c.email || "").trim().toLowerCase().split("@")[1]).filter((d: string) => d && d.includes(".") && !GENERIC_DOMAINS.has(d)))];
+    for (const d of domains) {
+      const rc = await dv("GET", `contacts?$select=contactid,_parentcustomerid_value&$filter=${encodeURIComponent(`statecode eq 0 and endswith(emailaddress1, ${lit("@" + d)})`)}&$top=5`);
+      if (!rc.ok) throw new Error(`Dynamics lookup: ${rc.error}`);
+      const hit = (rc.data?.value || []).find((h: any) => h._parentcustomerid_value);
+      if (hit) {
+        const where = hit["_parentcustomerid_value@OData.Community.Display.V1.FormattedValue"] || "another company";
+        return holdFor(`Dynamics already has contacts with @${d} addresses at ${where}: probably the same company. Merge it by hand on Accounts & Contacts, or press "Create anyway".`, [hit._parentcustomerid_value]);
+      }
+      const ra = await dv("GET", `accounts?$select=accountid,name&$filter=${encodeURIComponent(`statecode eq 0 and (endswith(emailaddress1, ${lit("@" + d)}) or contains(websiteurl, ${lit(d)}))`)}&$top=5`);
+      if (!ra.ok) throw new Error(`Dynamics lookup: ${ra.error}`);
+      if ((ra.data?.value || []).length) {
+        const h = ra.data.value[0];
+        return holdFor(`Dynamics has "${h.name}" with the ${d} website or e-mail: probably the same company. Merge it by hand on Accounts & Contacts, or press "Create anyway".`, ra.data.value.map((x: any) => x.accountid));
+      }
+    }
+
+    // Same name without Inc/LLC/Audio/Video/AV/Systems/..., or the same first
+    // word in the same city: on the portal's copy of Dynamics (all firms) ...
+    const { data: alike, error: alikeErr } = await svc.rpc("crm_lookalike_accounts", {
+      p_name: m.name, p_city: m.city, p_state: m.state_code, p_firm_id: null, p_exclude: m.external_id, p_limit: 5,
+    });
+    if (alikeErr) throw new Error(`look-alike check: ${alikeErr.message}`);
+    if ((alike || []).length) {
+      return holdFor(`Already in CRM: ${alike.map((a: any) => `"${a.name}"${a.city ? ` (${a.city})` : ""}`).join(", ")}. Is it the same company? Merge it by hand on Accounts & Contacts, or press "Create anyway".`, alike.map((a: any) => a.external_id));
+    }
+    // ... and live, for companies added to Dynamics since the last nightly sync.
+    const { data: core } = await svc.rpc("crm_name_core", { p: m.name });
+    const firstWord = String(core || "").split(" ")[0];
     if (firstWord.length >= 2) {
-      const r = await dv("GET", `accounts?$select=accountid,name&$filter=${encodeURIComponent(`statecode eq 0 and startswith(name, ${lit(firstWord)}) and address1_city eq ${lit(String(m.city).trim())} and _scp_countrylookup_value eq ${COUNTRY[country]}`)}&$top=5`);
+      const r = await dv("GET", `accounts?$select=accountid,name&$filter=${encodeURIComponent(`statecode eq 0 and contains(name, ${lit(firstWord)}) and address1_city eq ${lit(String(m.city).trim())} and _scp_countrylookup_value eq ${COUNTRY[country]}`)}&$top=5`);
       if (!r.ok) throw new Error(`Dynamics lookup: ${r.error}`);
       const near: any[] = r.data?.value || [];
       if (near.length) {
