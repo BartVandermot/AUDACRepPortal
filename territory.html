@@ -170,7 +170,7 @@
     return `<li data-crm="${esc(d.crm_id)}">
       <div><b>${esc(d.project_name || '(no name)')}</b>
         <span class="sub">${esc(d.account_name || '')}${d.stage ? ' · ' + esc(d.stage) : ''} · <span class="value">${fmtMoney(d.value_usd)}</span></span>
-        <span class="sub${overdue ? ' warn' : ''}">${dateLine}${overdue ? ' — date has passed, please update' : ''}</span></div>
+        <span class="sub${overdue ? ' warn' : ''}">${dateLine}${overdue ? ' — date has passed. Still on?' : ''}</span></div>
       <div class="actions">${pending}${d.status === 'Open' ? `<button type="button" class="button-secondary" data-update="${esc(d.crm_id)}">${overdue ? 'Update status' : 'Update'}</button>` : ''}</div>
     </li>`;
   }
@@ -290,7 +290,7 @@
     const todo = current.filter(l => !followedUp(l));
     const done = current.filter(followedUp);
     $('leads-sub').textContent = current.length
-      ? `${current.length} new lead${current.length === 1 ? '' : 's'} for your firm` +
+      ? `${current.length} recent lead${current.length === 1 ? '' : 's'} for your firm` +
         (todo.length ? ` · ${todo.length} new` : ' · all handled') +
         '. A quick word on what came of each (two clicks) helps AUDAC send you better leads.'
       : 'No new leads right now. When AUDAC forwards an enquiry from your territory, it shows up here and you get an e-mail.';
