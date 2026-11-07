@@ -35,6 +35,20 @@
   .hero .actions { display: flex; gap: var(--space-3); flex-wrap: wrap; }
   .hero .actions .button-primary { flex: 1 1 180px; }
   .hero .actions .button-secondary { flex: 0 1 auto; }
+  .draft { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); margin: 0 0 var(--space-4); padding: var(--space-3) var(--space-4); border-radius: var(--radius-tile); background: var(--well-bg); box-shadow: var(--depth-well); font-size: 14px; line-height: 20px; color: var(--color-text-secondary); text-decoration: none; }
+  .draft b { color: var(--color-text-primary); font-weight: 600; }
+  .draft .go { color: var(--color-gold); font-weight: 600; flex: none; }
+  .again { margin: var(--space-4) 0 0; }
+  .again p { margin: 0 0 var(--space-2); font-size: 13px; color: var(--color-text-muted); }
+  .again .chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .again a { display: inline-flex; align-items: center; min-height: 40px; max-width: 100%; padding: 0 14px; border-radius: 999px; border: 1px solid var(--color-border-strong); color: var(--color-text-primary); font-size: 13.5px; font-weight: 600; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .again a:hover, .again a:focus-visible { border-color: var(--color-gold); outline: none; }
+
+  .trend { margin-top: var(--space-5); }
+  .trend-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-3); font-size: 14px; line-height: 21px; color: var(--color-text-secondary); }
+  .trend-head b { font-size: 20px; color: var(--color-text-primary); font-weight: 650; font-variant-numeric: tabular-nums; }
+  .trend svg { display: block; width: 100%; height: 56px; margin-top: var(--space-2); overflow: visible; }
+  .trend .axis { display: flex; justify-content: space-between; margin-top: 4px; font-size: 12px; color: var(--color-text-muted); }
 
   .kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-3); margin-top: var(--space-4); }
   .kpi { padding: var(--space-4); border-radius: var(--radius-tile); background: var(--well-bg); box-shadow: var(--depth-well); }
@@ -120,10 +134,12 @@
         <section class="hero surface-card surface-card--elevated" aria-labelledby="hero-h">
           <h3 id="hero-h">Something to share?</h3>
           <p class="lead">A company and a few words is enough.</p>
+          <a class="draft" href="/form" id="draft" hidden></a>
           <div class="actions">
             <a class="button-primary" href="/form" id="new-activity-btn"></a>
             <a class="button-secondary" href="https://avlmediagroup.com/project-registration/" target="_blank" rel="noopener">Register a project ↗</a>
           </div>
+          <div class="again" id="again" hidden><p>Log again for</p><div class="chips" id="again-chips"></div></div>
         </section>
 
         <section class="news surface-card" id="news" aria-labelledby="news-h" hidden>
@@ -137,6 +153,11 @@
             <div class="kpi"><span class="value skeleton" id="k-acts">00</span><span class="label">Activities</span></div>
             <div class="kpi"><span class="value skeleton" id="k-accts">00</span><span class="label">Companies reached</span></div>
             <div class="kpi"><span class="value skeleton" id="k-new">00</span><span class="label">New companies</span></div>
+          </div>
+          <div class="trend" id="trend" hidden>
+            <div class="trend-head"><span id="trend-label"></span><b id="trend-total"></b></div>
+            <svg id="trend-svg" viewBox="0 0 300 56" preserveAspectRatio="none" role="img"></svg>
+            <div class="axis"><span id="trend-from"></span><span id="trend-to"></span></div>
           </div>
           <p class="year-line" id="year-line" hidden></p>
         </section>
@@ -216,8 +237,8 @@
     const [firmsRes, monthRes] = await Promise.all([
       client.from('rep_firms').select('id, name, territory'),
       // RLS scopes these to the rep's own entries (or the whole firm for a firm admin)
-      // All of them (small volumes): "new companies" needs to know what was logged before.
-      client.from('activity_entries').select('account_external_id, account_name, reporting_month'),
+      // All of them (small volumes): "new companies", "log again" and the year line need history.
+      client.from('activity_entries').select('account_external_id, account_name, reporting_month, entry_date, created_by'),
     ]);
 
     const firm = (firmsRes.data || []).find(f => f.id === profile?.rep_firm_id);
@@ -237,21 +258,83 @@
     // those get merged into the Dynamics account later and would drop out.)
     const before = new Set(all.filter(r => r.reporting_month < thisMonth).map(accountKey));
     setKpi('new', new Set(rows.map(accountKey).filter(k => !before.has(k))).size);
+    renderTrend(all);
+    renderDraft(session.user.id);
+    renderAgain(all, session.user.id);
     $('page').setAttribute('aria-busy', 'false');
 
     if (firm) await Promise.all([renderNews(session.user.id), profile?.is_rep_admin ? renderTeam() : null]);
     await renderStarter(firm, session.user.id);
   }
 
+  // ---------- Companies reached this year: a line that only goes up ----------
+  // Shown from the third month with activity this year; no comparisons.
+  function renderTrend(all) {
+    const year = String(now.getFullYear());
+    const months = Array.from({ length: now.getMonth() + 1 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
+    const inYear = all.filter(r => String(r.reporting_month || '').startsWith(year + '-'));
+    const firstIdx = months.findIndex(m => inYear.some(r => r.reporting_month === m));
+    if (firstIdx < 0 || months.length - firstIdx < 3) return;
+    const seen = new Set();
+    const series = months.slice(firstIdx).map(m => { inYear.filter(r => r.reporting_month === m).forEach(r => seen.add(accountKey(r))); return seen.size; });
+    const max = Math.max(1, series[series.length - 1]);
+    const W = 300, H = 56, pad = 4;
+    const pts = series.map((v, i) => [(i / (series.length - 1)) * W, H - pad - (v / max) * (H - 2 * pad)]);
+    const line = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
+    $('trend-svg').innerHTML = `<path d="${line} L${W},${H} L0,${H} Z" fill="var(--color-gold)" fill-opacity="0.12"></path>
+      <path d="${line}" fill="none" stroke="var(--color-gold)" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"></path>`;
+    $('trend-svg').setAttribute('aria-label', `Companies reached in ${year}, growing to ${series[series.length - 1]}`);
+    $('trend-label').textContent = `Companies reached in ${year}`;
+    $('trend-total').textContent = series[series.length - 1];
+    const mName = (m) => new Date(m + '-01T12:00:00').toLocaleString('en-US', { month: 'short' });
+    $('trend-from').textContent = mName(months[firstIdx]);
+    $('trend-to').textContent = mName(months[months.length - 1]);
+    $('trend').hidden = false;
+  }
+
+  // ---------- An activity started but not saved (the form keeps a draft) ----------
+  function renderDraft(uid) {
+    let d = null;
+    try { d = JSON.parse(localStorage.getItem(`audac_activity_draft_${uid}`) || 'null'); } catch { d = null; }
+    const e = d && (d.entries || []).find(x => x.account_name || x.topic_opportunity);
+    if (!e) return;
+    $('draft').innerHTML = `<span><b>Unfinished activity</b>${e.account_name ? ' · ' + esc(e.account_name) : ''}</span><span class="go">Finish →</span>`;
+    $('draft').hidden = false;
+  }
+
+  // ---------- Log again: the companies this rep logged most recently ----------
+  function renderAgain(all, uid) {
+    const mine = all.filter(r => r.created_by === uid && r.account_external_id)
+      .sort((a, b) => String(b.entry_date || '').localeCompare(String(a.entry_date || '')));
+    const picks = [];
+    for (const r of mine) {
+      if (!picks.some(p => p.account_external_id === r.account_external_id)) picks.push(r);
+      if (picks.length === 3) break;
+    }
+    if (!picks.length) return;
+    $('again-chips').innerHTML = picks.map(p => `<a href="/form?account=${encodeURIComponent(p.account_external_id)}&name=${encodeURIComponent(p.account_name || '')}" title="${esc(p.account_name)}">${esc(p.account_name)}</a>`).join('');
+    $('again').hidden = false;
+  }
+
   // ---------- New for you: only what's actually new; hidden when nothing is ----------
   async function renderNews(uid) {
-    const [leadRes, dealRes, reviewRes, qRes] = await Promise.all([
+    const [leadRes, dealRes, reviewRes, qRes, newsRes] = await Promise.all([
       client.rpc('get_my_leads'), client.rpc('get_my_deals'), client.rpc('get_my_reviews', { p_limit: 1 }),
       client.from('rep_questions').select('id, answered_at').eq('user_id', uid).eq('status', 'answered').order('answered_at', { ascending: false }).limit(5),
+      // RLS only returns what's current for reps.
+      client.from('rep_news').select('id, title, body, link_url, starts_on').order('starts_on', { ascending: false }).limit(3),
     ]);
     const leads = (!leadRes.error && leadRes.data) || [];
     const deals = (!dealRes.error && dealRes.data) || [];
     const items = [];
+
+    // News from AUDAC (Data Admin -> News for reps).
+    for (const n of (!newsRes.error && newsRes.data) || []) {
+      const safeLink = n.link_url && /^https:\/\//.test(n.link_url) ? n.link_url : null;
+      items.push(safeLink
+        ? `<li><a class="item" href="${esc(safeLink)}" target="_blank" rel="noopener"><span>${esc(n.title)}${n.body ? `<span class="sub">${esc(n.body)}</span>` : ''}</span><span class="go">↗</span></a></li>`
+        : `<li><span class="note-head">${esc(n.title)}</span>${n.body ? `<span class="sub">${esc(n.body)}</span>` : ''}</li>`);
+    }
 
     // Leads handed to the firm recently that nobody reported on yet.
     const leadCutoff = new Date(Date.now() - AudacShell.LEAD_FOLLOW_UP_DAYS * 86400000).toISOString();
