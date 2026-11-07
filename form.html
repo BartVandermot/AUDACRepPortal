@@ -42,6 +42,11 @@
   #add-entry-btn { width: 100%; border-style: dashed; }
   .actions { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); flex-wrap: wrap; margin-top: var(--space-2); }
   #submit-btn { min-width: 220px; }
+  .optional { font-weight: 400; color: var(--color-text-secondary); }
+  .more-notes { margin: 0 0 var(--space-4); }
+  .more-notes > summary { cursor: pointer; font-size: 14px; font-weight: 600; color: var(--color-text-secondary); padding: var(--space-2) 0; }
+  .more-notes > summary:focus-visible { outline: 2px solid var(--color-gold); outline-offset: 2px; }
+  .more-notes[open] > summary { margin-bottom: var(--space-3); }
 
   #error-banner { display: none; padding: 12px 16px; border-radius: var(--radius-tile); margin-bottom: var(--space-4); font-size: 14px; line-height: 21px; }
   #confirmation { display: none; text-align: center; padding: var(--space-10) var(--space-5); }
@@ -175,19 +180,19 @@
 
     <div class="actions" style="margin-top:var(--space-6);">
       <span class="hint" id="entry-count-hint"></span>
-      <button type="submit" class="audac-btn" id="submit-btn">Submit activities</button>
+      <button type="submit" class="audac-btn" id="submit-btn">Save</button>
     </div>
   </form>
 
   <div id="confirmation" class="card">
     <div class="check">&#10003;</div>
-    <h2 id="confirmation-title">Submitted</h2>
+    <h2 id="confirmation-title">Saved</h2>
     <p id="confirmation-detail"></p>
     <button type="button" class="audac-btn-outline" id="submit-more-btn">Log more activities</button>
   </div>
 
   <div id="my-submissions-section" hidden>
-    <div class="submissions-head"><h2 class="section-title" id="my-submissions-heading">My submissions</h2></div>
+    <div class="submissions-head"><h2 class="section-title" id="my-submissions-heading">My activities</h2></div>
     <div id="my-submissions-list"></div>
   </div>
   </div>
@@ -681,7 +686,7 @@
     const section = document.getElementById('my-submissions-section');
     section.hidden = false;
     const showCreator = !!currentProfile?.is_rep_admin;
-    document.getElementById('my-submissions-heading').textContent = showCreator ? "My Firm's Submissions" : 'My Submissions';
+    document.getElementById('my-submissions-heading').textContent = showCreator ? "My firm's activities" : 'My activities';
     const container = document.getElementById('my-submissions-list');
     container.innerHTML = '<div class="hint">Loading…</div>';
     // RLS scopes this automatically -- created_by = auth.uid() for a regular
@@ -689,11 +694,11 @@
     // created it. No explicit filter needed here either way.
     const { data, error } = await client.from('activity_entries').select('*').order('entry_date', { ascending: false });
     if (error) {
-      container.innerHTML = `<div class="hint">Failed to load your submissions: ${escapeHtml(error.message)}</div>`;
+      container.innerHTML = `<div class="hint">Couldn’t load your activities: ${escapeHtml(error.message)}</div>`;
       return;
     }
     if (!data.length) {
-      container.innerHTML = '<div class="hint">No submissions linked to this account yet. Entries you submit while signed in will show up here.</div>';
+      container.innerHTML = '<div class="hint">Nothing logged yet. Activities you save while signed in show up here.</div>';
       return;
     }
     await fetchAllAttachmentCounts();
@@ -715,7 +720,7 @@
 
   function renderMySubmissionsTable(rows, showCreator, profileByCreator) {
     return `<div class="table-scroll"><table class="detail"><thead><tr>
-      <th>Date</th><th>Firm</th>${showCreator ? '<th>Submitted By</th><th>Territory</th>' : ''}<th>Account</th><th>Contact Type</th><th>Activity Type</th><th>Topic / Opportunity</th><th>Files</th><th>Actions</th>
+      <th>Date</th><th>Firm</th>${showCreator ? '<th>Logged by</th><th>Territory</th>' : ''}<th>Account</th><th>Contact Type</th><th>Activity Type</th><th>Notes</th><th>Files</th><th>Actions</th>
     </tr></thead><tbody>${rows.map(r => activityRowHtml(r, showCreator, profileByCreator)).join('')}</tbody></table></div>`;
   }
 
@@ -880,10 +885,10 @@
         <label>Activity Type<select class="ae-activity-type">${ACTIVITY_TYPES.map(v => `<option value="${v}">${v}</option>`).join('')}</select></label>
         <label class="ae-checkbox"><input type="checkbox" class="ae-demo" ${row.demo_gear_used ? 'checked' : ''}> Demo gear used</label>
       </div>
-      <label>Topic / Opportunity<textarea class="ae-topic">${escapeHtml(row.topic_opportunity || '')}</textarea></label>
-      <label>Solution Feedback<textarea class="ae-solution">${escapeHtml(row.solution_feedback || '')}</textarea></label>
-      <label>Competitive Feedback<textarea class="ae-competitive">${escapeHtml(row.competitive_feedback || '')}</textarea></label>
-      <label>Additional Comments<textarea class="ae-additional">${escapeHtml(row.additional_comments || '')}</textarea></label>
+      <label>What happened?<textarea class="ae-topic">${escapeHtml(row.topic_opportunity || '')}</textarea></label>
+      <label>What they said about AUDAC<textarea class="ae-solution">${escapeHtml(row.solution_feedback || '')}</textarea></label>
+      <label>Competitors mentioned<textarea class="ae-competitive">${escapeHtml(row.competitive_feedback || '')}</textarea></label>
+      <label>Anything else<textarea class="ae-additional">${escapeHtml(row.additional_comments || '')}</textarea></label>
       <div class="actions" style="justify-content:flex-start; gap:10px;">
         <button type="button" class="audac-btn" data-ae-save>Save Changes</button>
         <button type="button" class="audac-btn-outline" data-ae-cancel>Cancel</button>
@@ -1034,21 +1039,24 @@
         <label for="demo-gear-${idx}">Demo gear used during this activity</label>
       </div>
       <div class="field">
-        <label>Topic / Opportunity</label>
-        <textarea name="topic_opportunity" placeholder="What was discussed or the opportunity identified"></textarea>
+        <label>What happened? <span class="optional">(optional)</span></label>
+        <textarea name="topic_opportunity" placeholder="Who you met, what you showed, any project in the works. A few words is fine."></textarea>
       </div>
-      <div class="field">
-        <label>Solution Feedback</label>
-        <textarea name="solution_feedback" placeholder="Feedback on AUDAC solutions"></textarea>
-      </div>
-      <div class="field">
-        <label>Competitive Feedback</label>
-        <textarea name="competitive_feedback" placeholder="Competitor mentions or positioning notes"></textarea>
-      </div>
-      <div class="field">
-        <label>Additional Comments</label>
-        <textarea name="additional_comments"></textarea>
-      </div>
+      <details class="more-notes">
+        <summary>More for AUDAC (optional): product feedback, competitors</summary>
+        <div class="field">
+          <label>What they said about AUDAC</label>
+          <textarea name="solution_feedback" placeholder="What they liked, what’s missing, pricing remarks…"></textarea>
+        </div>
+        <div class="field">
+          <label>Competitors mentioned</label>
+          <textarea name="competitive_feedback" placeholder="Which brands or models, and why"></textarea>
+        </div>
+        <div class="field">
+          <label>Anything else</label>
+          <textarea name="additional_comments"></textarea>
+        </div>
+      </details>
       <div class="field">
         <label>Photos (optional — up to 3, JPG/PNG/WEBP/HEIC, max 5MB each)</label>
         <input type="file" class="attachment-input" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple>
@@ -1141,6 +1149,7 @@
     for (const e of draft.entries) {
       const b = addEntry();
       for (const f of DRAFT_FIELDS) if (e[f]) b.querySelector(`[name="${f}"]`).value = e[f];
+      if (e.solution_feedback || e.competitive_feedback || e.additional_comments) b.querySelector('.more-notes').open = true;
       b.querySelector('[name="demo_gear_used"]').checked = !!e.demo_gear_used;
       if (e.contact_type_auto) b.querySelector('[name="contact_type"]').dataset.auto = '1';
       if (e.account_external_id) {
@@ -1299,14 +1308,14 @@
     const dupEntryNumbers = dupChecks.map((r, i) => r.data ? i + 1 : null).filter(Boolean);
     if (dupEntryNumbers.length) {
       const proceed = confirm(
-        `Activity #${dupEntryNumbers.join(', #')} look${dupEntryNumbers.length === 1 ? 's' : ''} like ${dupEntryNumbers.length === 1 ? 'a duplicate' : 'duplicates'} of an entry already logged for the same account, date, and activity type.\n\nSubmit anyway?`
+        `Activity #${dupEntryNumbers.join(', #')} look${dupEntryNumbers.length === 1 ? 's' : ''} like ${dupEntryNumbers.length === 1 ? 'a duplicate' : 'duplicates'} of an entry already logged for the same account, date, and activity type.\n\nSave anyway?`
       );
       if (!proceed) return;
     }
 
     const submitBtn = document.getElementById('submit-btn');
     submitBtn.disabled = true;
-    submitBtn.textContent = 'Submitting…';
+    submitBtn.textContent = 'Saving…';
 
     // A rep whose account isn't tied to a firm yet (signed up without a firm
     // link) gets tied to the firm they're submitting for -- once; after that
@@ -1336,8 +1345,8 @@
 
     if (error) {
       submitBtn.disabled = false;
-      submitBtn.textContent = 'Submit activities';
-      showError('Submission failed: ' + error.message);
+      submitBtn.textContent = 'Save';
+      showError('Couldn’t save: ' + error.message);
       return;
     }
 
@@ -1364,12 +1373,12 @@
     }));
 
     submitBtn.disabled = false;
-    submitBtn.textContent = 'Submit activities';
+    submitBtn.textContent = 'Save';
 
     clearDraft();
     const firmLabel = firmSelect.selectedOptions[0]?.textContent || '';
     document.getElementById('confirmation-detail').textContent =
-      `${entries.length} activity ${entries.length === 1 ? 'entry' : 'entries'} submitted for ${firmLabel}, filed under ${months.join(', ')}.` +
+      `${entries.length} ${entries.length === 1 ? 'activity' : 'activities'} saved for ${firmLabel}, filed under ${months.join(', ')}. Thanks.` +
       (uploadErrors.length ? ` Note: ${uploadErrors.length} photo(s) failed to upload — ${uploadErrors.join('; ')}` : '');
     document.getElementById('activity-form').style.display = 'none';
     document.getElementById('confirmation').style.display = 'block';

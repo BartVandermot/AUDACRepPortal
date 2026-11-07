@@ -97,6 +97,7 @@
           <div>
             <h2 class="card-title" id="deals-h">Your deals</h2>
             <p id="deals-sub">Loading…</p>
+            <p class="meta-note">New project with AUDAC specified? <a href="https://avlmediagroup.com/project-registration/" target="_blank" rel="noopener">Register it with AVL Media Group ↗</a></p>
           </div>
         </div>
         <div id="deals-list"></div>
@@ -137,7 +138,7 @@
       $('key-list').innerHTML = '';
       return;
     }
-    $('key-sub').textContent = `${contacted} of ${rows.length} contacted in the last 3 months. Key accounts are TOP AUDAC LEADs and AUDAC partners in your territory. A visit counts once you log it with the account selected.`;
+    $('key-sub').textContent = `${contacted} of ${rows.length} with a logged visit in the last 3 months. Key accounts are TOP AUDAC LEADs and AUDAC partners in your territory. Log a visit with the account selected and it shows up here.`;
     $('key-meter').hidden = false;
     $('key-meter').querySelector('i').style.width = `${Math.round(contacted / rows.length * 100)}%`;
     $('key-list').innerHTML = `<ul class="list">${rows.map(r => {
@@ -187,10 +188,10 @@
     const closed = rows.filter(d => d.status !== 'Open' && (d.actual_close_date || d.created_date || '') >= yearAgo);
     const openValue = rows.filter(d => d.status === 'Open').reduce((s, d) => s + Number(d.value_usd || 0), 0);
     $('deals-sub').textContent = `${rows.filter(d => d.status === 'Open').length} open (${fmtMoney(openValue)})` +
-      (overdue.length ? ` · ${overdue.length} need${overdue.length === 1 ? 's' : ''} a status update` : '') +
+      (overdue.length ? ` · ${overdue.length} past the close date` : '') +
       '. Know a deal was won, lost or moved? Tell us here and AUDAC updates the CRM.';
     const group = (title, list) => list.length ? `<p class="group-title">${title}</p><ul class="list">${list.map(dealItem).join('')}</ul>` : '';
-    $('deals-list').innerHTML = group('Needs an update', overdue) + group('Open', open) + group('Closed in the last 12 months', closed);
+    $('deals-list').innerHTML = group('Past the close date: still on?', overdue) + group('Open', open) + group('Closed in the last 12 months', closed);
   }
 
   function openUpdateForm(crmId) {
@@ -239,7 +240,7 @@
   //   trade_show = booth visitor from this territory, handed to the firm after the show
   //   info       = web enquiry AVL Media Group answered: for information, no follow-up asked
   // "Qualified" in AUDAC's CRM = turned into an account + contact after the rep made contact.
-  const OUTCOMES = { contacted: 'Contacted', meeting: 'Meeting or demo planned', project: 'Project or quote', not_relevant: 'Not interested / not relevant' };
+  const OUTCOMES = { contacted: 'Contacted', meeting: 'Meeting or demo planned', project: 'Project or quote', not_relevant: 'Not interested / not a real lead' };
   const OUTCOME_CHIP = { contacted: 'gold', meeting: 'gold', project: 'ok', not_relevant: '' };
   const FOLLOW_UP_DAYS = AudacShell.LEAD_FOLLOW_UP_DAYS;
   let leadsCache = [];
@@ -261,7 +262,7 @@
   function leadItem(l) {
     const mine = isActionable(l);
     const age = l.created_on ? daysAgo(leadDay(l)) : null;
-    const late = mine && !followedUp(l) && age !== null && age > 7;
+
     const place = [l.city, l.state_code].filter(Boolean).join(', ');
     const who = l.company && l.full_name ? `${esc(l.full_name)} · ${esc(l.company)}` : esc(l.company || l.full_name || '(no name)');
     const contact = [
@@ -278,8 +279,8 @@
         ${contact ? `<span class="lead-contact">${contact}</span>` : ''}
         ${ask ? `<p class="lead-desc">${esc(ask.length > 220 ? ask.slice(0, 220) + '…' : ask)}</p>` : ''}
         ${l.outcome_note ? `<span class="sub">Your note: ${esc(l.outcome_note)}</span>` : ''}
-        ${late ? `<span class="sub warn">No follow-up reported yet</span>` : ''}</div>
-      <div class="actions">${status}${mine ? `<button type="button" class="button-secondary" data-lead-update="${esc(l.external_id)}">${l.outcome ? 'Update' : 'Report follow-up'}</button>` : ''}</div>
+        </div>
+      <div class="actions">${status}${mine ? `<button type="button" class="button-secondary" data-lead-update="${esc(l.external_id)}">${l.outcome ? 'Update' : 'What came of it?'}</button>` : ''}</div>
     </li>`;
   }
 
@@ -290,11 +291,11 @@
     const done = current.filter(followedUp);
     $('leads-sub').textContent = current.length
       ? `${current.length} new lead${current.length === 1 ? '' : 's'} for your firm` +
-        (todo.length ? ` · ${todo.length} waiting for your follow-up` : ' · all followed up') +
-        '. Contact them, then tell AUDAC in two clicks what came of it.'
+        (todo.length ? ` · ${todo.length} new` : ' · all handled') +
+        '. A quick word on what came of each (two clicks) helps AUDAC send you better leads.'
       : 'No new leads right now. When AUDAC forwards an enquiry from your territory, it shows up here and you get an e-mail.';
     const group = (title, list) => list.length ? `<p class="group-title">${title}</p><ul class="list">${list.map(leadItem).join('')}</ul>` : '';
-    $('leads-list').innerHTML = group('Waiting for your follow-up', todo) + group('Followed up', done) +
+    $('leads-list').innerHTML = group('New for you', todo) + group('Done', done) +
       (earlier.length ? `<details class="older"><summary>Earlier leads from your territory (${earlier.length}) · for reference</summary>
         <p class="empty">Leads from more than ${FOLLOW_UP_DAYS} days ago, such as the InfoComm 2026 booth visitors, and web enquiries AVL Media Group answered. Shown as history; no follow-up is asked.</p>
         <ul class="list">${earlier.map(leadItem).join('')}</ul></details>` : '');
@@ -310,7 +311,7 @@
     form.innerHTML = `
       <div class="field"><label for="l-outcome">What happened?</label>
         <select id="l-outcome">${Object.entries(OUTCOMES).map(([k, v]) => `<option value="${k}"${k === (l.outcome || 'contacted') ? ' selected' : ''}>${v}</option>`).join('')}</select></div>
-      <div class="field"><label for="l-note">Note for AUDAC (optional)</label><textarea id="l-note" placeholder="e.g. demo at their office on the 12th, quoting a school project, or not a fit: residential only"></textarea></div>
+      <div class="field"><label for="l-note">Anything AUDAC should know? (optional)</label><textarea id="l-note" placeholder="e.g. demo at their office on the 12th, quoting a school project, or: not a real project, residential only"></textarea></div>
       <p class="form-msg" id="l-msg" hidden></p>
       <div class="form-actions"><button type="button" class="button-secondary" id="l-cancel">Cancel</button><button type="submit" class="button-primary" id="l-send">Save</button></div>`;
     li.appendChild(form);

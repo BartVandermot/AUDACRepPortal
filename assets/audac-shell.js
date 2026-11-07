@@ -40,7 +40,7 @@
         { key: 'home', href: '/home', label: 'Home', short: 'Home', icon: 'home' },
         { key: 'log', href: '/form', label: 'Log activity', short: 'Log', icon: 'plus' },
         { key: 'territory', href: '/territory', label: 'My territory', short: 'Territory', icon: 'map' },
-        { key: 'submissions', href: '/form#my-submissions-section', label: 'My submissions', short: 'Submissions', icon: 'list' },
+        { key: 'submissions', href: '/form#my-submissions-section', label: 'My activities', short: 'History', icon: 'list' },
         { key: 'resources', href: '/resources', label: 'Resources', short: 'Resources', icon: 'book' },
         // Importing a CRM export is a desktop job; keeps the phone bar at five items.
         { key: 'import', href: '/import', label: 'Import CRM export', short: 'Import', icon: 'upload', desktopOnly: true },

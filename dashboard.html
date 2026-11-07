@@ -1702,12 +1702,12 @@
     const noAccount = firms.filter(f => !(ops.repEmailsByFirm[f.id] || []).length).map(f => f.name);
     if (!emails.length) { alert('None of these firms has a rep account to email yet.'); return; }
     if (noAccount.length && !confirm(`No rep account to email for: ${noAccount.join(', ')}. Open the mail for the others?`)) return;
-    const subject = 'Leads from AUDAC waiting for your follow-up';
+    const subject = 'How did these AUDAC leads go?';
     const body = [
       'Hi,',
       '',
-      'AUDAC passed your firm leads that are still waiting for a follow-up: enquiries forwarded to you and visitors of the AUDAC booth from your territory.',
-      'Please contact them, then tell us in two clicks what came of it (contacted, meeting or demo, project or quote, or not interested).',
+      'We passed your firm a few leads recently: enquiries from your territory and visitors of the AUDAC booth.',
+      'A quick word on what came of each helps us send you better ones. It takes two clicks per lead (contacted, meeting or demo, project or quote, or not a real lead).',
       '',
       `Your leads are here: ${location.origin}/territory#leads`,
       '',
