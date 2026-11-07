@@ -375,6 +375,24 @@ Deno.serve(async (req) => {
       return json({ app_user: uid, privileges });
     }
 
+    // {"inspect": true}: read-only look at Dynamics' duplicate detection rules
+    // (and optionally some accounts by id), to tune the duplicate check.
+    if (reqBody?.inspect) {
+      const rules = await dv("GET", "duplicaterules?$select=duplicateruleid,name,baseentityname,matchingentityname,statecode,statuscode,excludeinactiverecords,iscasesensitive&$top=50");
+      const conditions = await dv("GET", "duplicateruleconditions?$select=baseattributename,matchingattributename,operatorcode,operatorparam,ignoreblankvalues,_regardingobjectid_value&$top=200");
+      const accounts: any[] = [];
+      for (const id of (Array.isArray(reqBody.accounts) ? reqBody.accounts : []).slice(0, 10)) {
+        if (!/^[0-9a-f-]{36}$/i.test(String(id))) continue;
+        const a = await dv("GET", `accounts(${id})?$select=name,address1_city,address1_stateorprovince,customertypecode,businesstypecode,statecode,createdon,description,_ownerid_value,_scp_countrylookup_value,_createdby_value`);
+        accounts.push(a.ok ? a.data : { id, error: a.error });
+      }
+      return json({
+        rules: rules.ok ? rules.data.value : { error: rules.error },
+        conditions: conditions.ok ? conditions.data.value : { error: conditions.error },
+        accounts,
+      });
+    }
+
     const { data: flag } = await svc.from("app_flags").select("value").eq("key", "crm_writeback_enabled").maybeSingle();
     if (flag?.value !== true) return json({ skipped: "Sending to Dynamics is switched off." });
 
