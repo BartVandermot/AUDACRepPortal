@@ -10,6 +10,9 @@
 //   - Before creating, look for the same record in Dynamics (company: same
 //     name in the same country; contact: same e-mail). Found -> link to it,
 //     don't create. Dynamics' own duplicate detection is switched on as well.
+//     Look-alikes (one of its contacts' e-mails already in Dynamics, or a
+//     company in the same city whose name starts with the same word) are
+//     held as "needs_info" for Bart; "Create anyway" sets crm_push_force.
 //   - The rep firm follows the portal's logic (state / ZIP), so the address
 //     goes in as the rep typed it; nothing else decides the firm.
 //   - Required in Dynamics: account name, relationship type, country; contact
@@ -209,6 +212,39 @@ async function pushAccount(svc: any, m: any, by: string | null) {
     return { name: m.name, result: "linked_existing", id: target };
   }
 
+  // Maybe Dynamics has it under another name (e.g. "ICB" for "ICB Audio
+  // Video"). Two signs, both sent to Bart instead of creating a duplicate:
+  //   1. a contact the rep added here already exists in Dynamics (same e-mail);
+  //   2. a company in the same city whose name shares the first word.
+  // Skipped when Bart pressed "Create anyway" on a held look-alike (crm_push_force).
+  if (!m.crm_push_force) {
+    const holdFor = async (msg: string, candidates: string[]) => {
+      await setStatus(svc, "crm_accounts", m, "needs_info", msg, false);
+      await log(svc, "account", m, "needs_info", null, { reason: msg, candidates }, by);
+      return { name: m.name, result: "needs_info" };
+    };
+    const { data: myContacts } = await svc.from("crm_contacts").select("full_name, email").eq("parent_account_external_id", m.external_id).eq("source", "manual");
+    for (const c of myContacts || []) {
+      if (!validEmail(c.email)) continue;
+      const r = await dv("GET", `contacts?$select=contactid,_parentcustomerid_value&$filter=${encodeURIComponent(`statecode eq 0 and emailaddress1 eq ${lit(String(c.email).trim())}`)}&$top=5`);
+      if (!r.ok) throw new Error(`Dynamics lookup: ${r.error}`);
+      const hit = (r.data?.value || []).find((h: any) => h._parentcustomerid_value);
+      if (hit) {
+        const where = hit["_parentcustomerid_value@OData.Community.Display.V1.FormattedValue"] || "another company";
+        return holdFor(`${c.full_name} is already in Dynamics under ${where}: probably the same company. Merge it by hand on Accounts & Contacts.`, [hit._parentcustomerid_value]);
+      }
+    }
+    const firstWord = String(m.name).trim().split(/\s+/)[0].replace(/[^\p{L}\p{N}&'-]/gu, "");
+    if (firstWord.length >= 2) {
+      const r = await dv("GET", `accounts?$select=accountid,name&$filter=${encodeURIComponent(`statecode eq 0 and startswith(name, ${lit(firstWord)}) and address1_city eq ${lit(String(m.city).trim())} and _scp_countrylookup_value eq ${COUNTRY[country]}`)}&$top=5`);
+      if (!r.ok) throw new Error(`Dynamics lookup: ${r.error}`);
+      const near: any[] = r.data?.value || [];
+      if (near.length) {
+        return holdFor(`Dynamics has ${near.map((h) => `"${h.name}"`).join(", ")} in ${m.city}: is it the same company? Merge it by hand on Accounts & Contacts, or press "Create anyway".`, near.map((h) => h.accountid));
+      }
+    }
+  }
+
   // First activity on the company tells what kind it is.
   const { data: firstAct } = await svc.from("activity_entries").select("contact_type").eq("account_external_id", m.external_id).order("entry_date").limit(1).maybeSingle();
   const type = TYPE_BY_CONTACT_TYPE[firstAct?.contact_type || ""] || DEFAULT_TYPE;
@@ -233,8 +269,10 @@ async function pushAccount(svc: any, m: any, by: string | null) {
     return { name: m.name, result: "failed", error: res.error };
   }
   const id = res.data?.accountid;
-  await linkAccountLocally(svc, m, id, country);
+  // Logged before the local merge, so the Dynamics id is never lost; if the
+  // merge fails, the next run finds the company by name and links to it.
   await log(svc, "account", m, "created", id, { customertypecode: type.customertypecode }, by);
+  await linkAccountLocally(svc, m, id, country);
   return { name: m.name, result: "created", id };
 }
 
@@ -290,8 +328,8 @@ async function pushContact(svc: any, m: any, by: string | null) {
     return { name: m.full_name, result: "failed", error: res.error };
   }
   const id = res.data?.contactid;
-  await linkContactLocally(svc, m, id);
   await log(svc, "contact", m, "created", id, {}, by);
+  await linkContactLocally(svc, m, id);
   return { name: m.full_name, result: "created", id };
 }
 
@@ -341,9 +379,9 @@ Deno.serve(async (req) => {
     if (flag?.value !== true) return json({ skipped: "Sending to Dynamics is switched off." });
 
     const results: any[] = [];
-    const accountCols = "external_id, name, name_key, street, city, state_code, zip, country_code, phone, rep_firm_id, created_by, crm_push_attempts";
+    const accountCols = "external_id, name, name_key, street, city, state_code, zip, country_code, phone, rep_firm_id, created_by, crm_push_attempts, crm_push_force";
     const { data: accounts, error: aErr } = await svc.from("crm_accounts").select(accountCols)
-      .eq("source", "manual").in("crm_push_status", ["waiting", "failed"]).lt("crm_push_attempts", MAX_ATTEMPTS).order("updated_at").limit(BATCH);
+      .eq("source", "manual").eq("is_active", true).in("crm_push_status", ["waiting", "failed"]).lt("crm_push_attempts", MAX_ATTEMPTS).order("updated_at").limit(BATCH);
     if (aErr) throw aErr;
     for (const m of accounts || []) {
       try { results.push({ kind: "account", ...(await pushAccount(svc, m, by)) }); }
@@ -358,7 +396,7 @@ Deno.serve(async (req) => {
     // Then contacts whose company is in Dynamics by now (incl. the ones just sent).
     const contactCols = "external_id, full_name, email, email_key, phone, parent_account_external_id, rep_firm_id, created_by, crm_push_attempts";
     const { data: contacts, error: cErr } = await svc.from("crm_contacts").select(contactCols)
-      .eq("source", "manual").in("crm_push_status", ["waiting", "failed"]).lt("crm_push_attempts", MAX_ATTEMPTS)
+      .eq("source", "manual").eq("is_active", true).in("crm_push_status", ["waiting", "failed"]).lt("crm_push_attempts", MAX_ATTEMPTS)
       .not("parent_account_external_id", "like", "manual:%").order("updated_at").limit(BATCH);
     if (cErr) throw cErr;
     for (const m of contacts || []) {

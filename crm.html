@@ -1174,15 +1174,15 @@
     ]);
     document.getElementById('wb-enabled').checked = flagRes.data?.value === true;
     const rows = [
-      ...accountsCache.filter(a => a.source === 'manual').map(a => ({ kind: 'account', id: a.external_id, name: a.name, where: [a.city, a.state_code].filter(Boolean).join(', '), r: a })),
-      ...allContactsCache.filter(c => c.source === 'manual').map(c => ({ kind: 'contact', id: c.external_id, name: c.full_name, where: `${c.email || 'no e-mail'} · ${accountNameByExternalId.get(c.parent_account_external_id) || ''}`, r: c })),
+      ...accountsCache.filter(a => a.source === 'manual' && a.is_active !== false).map(a => ({ kind: 'account', id: a.external_id, name: a.name, where: [a.city, a.state_code].filter(Boolean).join(', '), r: a })),
+      ...allContactsCache.filter(c => c.source === 'manual' && c.is_active !== false).map(c => ({ kind: 'contact', id: c.external_id, name: c.full_name, where: `${c.email || 'no e-mail'} · ${accountNameByExternalId.get(c.parent_account_external_id) || ''}`, r: c })),
     ];
     const waitsForCompany = (x) => x.kind === 'contact' && String(x.r.parent_account_external_id || '').startsWith('manual:');
     document.getElementById('wb-queue').innerHTML = rows.length ? `<div style="overflow-x:auto;"><table class="wb-list"><thead><tr><th>Type</th><th>Name</th><th>Details</th><th>Status</th><th></th></tr></thead><tbody>${rows.map(x => `<tr>
       <td>${x.kind === 'account' ? 'Company' : 'Contact'}</td><td><b>${escapeHtml(x.name || '')}</b></td><td>${escapeHtml(x.where)}</td>
       <td>${pushBadge(x.r) || '<span class="muted">—</span>'}${waitsForCompany(x) && x.r.crm_push_status === 'waiting' ? '<div class="muted" style="font-size:12px;">after its company</div>' : ''}${x.r.crm_push_error ? `<div class="err">${escapeHtml(x.r.crm_push_error)}</div>` : ''}</td>
       <td style="white-space:nowrap;">${x.r.crm_push_status === 'held' || x.r.crm_push_status === 'failed' || x.r.crm_push_status === 'needs_info'
-        ? `<button type="button" class="link-btn" data-wb-release="${x.kind}" data-id="${escapeHtml(x.id)}">Send</button>`
+        ? `<button type="button" class="link-btn" data-wb-release="${x.kind}" data-id="${escapeHtml(x.id)}"${x.kind === 'account' && x.r.crm_push_status === 'needs_info' ? ' data-force="1"' : ''}>${x.kind === 'account' && x.r.crm_push_status === 'needs_info' ? 'Create anyway' : 'Send'}</button>`
         : x.r.crm_push_status === 'waiting' ? `<button type="button" class="link-btn" data-wb-hold="${x.kind}" data-id="${escapeHtml(x.id)}">Don’t send</button>` : ''}</td></tr>`).join('')}</tbody></table></div>`
       : '<div class="empty-note">Nothing waiting: every company and contact reps added is in Dynamics.</div>';
     const ACTION = { created: 'Created in Dynamics', linked_existing: 'Linked to existing', failed: 'Failed', needs_info: 'Needs info' };
@@ -1196,7 +1196,7 @@
     const rel = e.target.closest('[data-wb-release]'), hold = e.target.closest('[data-wb-hold]');
     const b = rel || hold; if (!b) return;
     const table = (rel ? rel.dataset.wbRelease : hold.dataset.wbHold) === 'account' ? 'crm_accounts' : 'crm_contacts';
-    const patch = rel ? { crm_push_status: 'waiting', crm_push_attempts: 0, crm_push_error: null } : { crm_push_status: 'held' };
+    const patch = rel ? { crm_push_status: 'waiting', crm_push_attempts: 0, crm_push_error: null, ...(table === 'crm_accounts' && rel.dataset.force ? { crm_push_force: true } : {}) } : { crm_push_status: 'held' };
     const { error } = await client.from(table).update(patch).eq('external_id', b.dataset.id).eq('source', 'manual');
     if (error) { alert('Could not change it: ' + error.message); return; }
     await loadAll();
