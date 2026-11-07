@@ -87,7 +87,7 @@
   function mountCard(el, client, { audience = 'rep' } = {}) {
     const what = audience === 'manager'
       ? 'Get a notification on this device when a rep asks a question.'
-      : 'Get a notification on this device when AUDAC forwards you a new lead (and one reminder if it's still open after 10 days), leaves you a note, or answers your question.';
+      : 'Get a notification on this device when AUDAC forwards you a new lead (and one reminder if it’s still open after 10 days), leaves you a note, or answers your question.';
     const say = (msg, cls) => {
       let p = el.querySelector('.push-msg');
       if (!p) { p = document.createElement('p'); el.appendChild(p); }
