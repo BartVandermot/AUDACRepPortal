@@ -27,7 +27,7 @@
   .news { grid-column: 1 / -1; padding: var(--space-6); }
   .team { grid-column: 1 / -1; padding: var(--space-6); }
   @media (min-width: 1001px) {
-    .starter { order: 0; } .hero { order: 1; } .kpis { order: 2; } .news { order: 3; } .team { order: 4; }
+    .starter { order: 0; } .hero { order: 1; } .kpis { order: 2; } .news { order: 3; } .old-note { order: 3; } .team { order: 4; }
   }
 
   .hero h3 { margin: 0; font-size: 22px; line-height: 28px; font-weight: 650; }
@@ -67,6 +67,25 @@
   .news-list .note { margin: var(--space-2) 0 0; font-size: 14px; line-height: 21px; color: var(--color-text-primary); white-space: pre-wrap; padding-left: var(--space-3); border-left: 2px solid var(--color-gold); }
   .news-list .note-head { font-size: 15px; line-height: 22px; font-weight: 600; }
   .news-list .meta { margin: var(--space-2) 0 0; font-size: 13.5px; color: var(--color-text-secondary); }
+  .news-list .row { display: flex; align-items: center; gap: var(--space-3); }
+  .news-list .row > :first-child { flex: 1 1 auto; min-width: 0; }
+  .got-it { flex: none; min-height: 36px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--color-border-strong); background: none; color: var(--color-text-secondary); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .got-it:hover, .got-it:focus-visible { border-color: var(--color-gold); color: var(--color-text-primary); outline: none; }
+  .note-actions { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); flex-wrap: wrap; margin-top: var(--space-2); }
+  .note-actions .meta { margin: 0; }
+  /* One thing new: a slim bar instead of a full card. */
+  .news.single { padding: var(--space-2) var(--space-4); }
+  .news.single .news-list { margin: 0; }
+  .news.single .news-list li { padding: var(--space-1) 0; }
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  /* A note the rep already read: one quiet line, still there to reopen. */
+  .old-note { grid-column: 1 / -1; padding: 0 var(--space-2); font-size: 13.5px; color: var(--color-text-muted); }
+  .old-note summary { cursor: pointer; min-height: 32px; display: flex; align-items: center; gap: 6px; list-style: none; }
+  .old-note summary::-webkit-details-marker { display: none; }
+  .old-note .chev { transition: transform .15s; }
+  .old-note[open] .chev { transform: rotate(180deg); }
+  .old-note summary:focus-visible { outline: 2px solid var(--color-gold); outline-offset: 2px; border-radius: 4px; }
+  .old-note .note { margin: var(--space-2) 0 var(--space-3); font-size: 14px; line-height: 21px; color: var(--color-text-primary); white-space: pre-wrap; padding-left: var(--space-3); border-left: 2px solid var(--color-gold); }
 
   .starter-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-3); }
   .starter-head p { margin: var(--space-1) 0 0; font-size: 14px; line-height: 21px; color: var(--color-text-secondary); }
@@ -95,7 +114,8 @@
   @media (max-width: 560px) { .steps { grid-template-columns: 1fr; } }
   @media (max-width: 760px) {
     .bento { gap: var(--space-3); }
-    .hero, .kpis, .news, .team { padding: var(--space-5); }
+    .hero, .kpis, .team { padding: var(--space-5); }
+    .news:not(.single) { padding: var(--space-4) var(--space-5); }
     .kpi-grid { gap: var(--space-2); }
     .kpi { padding: var(--space-3); }
     .kpi .value { font-size: 24px; line-height: 28px; }
@@ -146,6 +166,7 @@
           <h3 class="card-title" id="news-h">New for you</h3>
           <ul class="news-list" id="news-list"></ul>
         </section>
+        <details class="old-note" id="old-note" hidden></details>
 
         <section class="kpis surface-card" aria-labelledby="kpi-h">
           <h3 class="card-title" id="kpi-h">Logged this month</h3>
@@ -316,24 +337,57 @@
     $('again').hidden = false;
   }
 
-  // ---------- New for you: only what's actually new; hidden when nothing is ----------
+  // ---------- New for you: only what's new and not yet seen; hidden when nothing is ----------
+  // Leads and late deals leave once the rep reports on them; news, AUDAC's note
+  // and answered questions leave once seen (table rep_seen, per user).
+  const markSeen = (key) => client.rpc('mark_seen', { p_keys: [key] })
+    .then(({ error }) => { if (error) console.warn('mark_seen', error.message); });
+  let readNote = null;
+  function renderOldNote() {
+    const el = $('old-note');
+    if (!readNote) { el.hidden = true; return; }
+    el.innerHTML = `<summary>Note from AUDAC · ${esc(readNote.label)} <span class="chev" aria-hidden="true">▾</span></summary><p class="note">${esc(readNote.text)}</p>`;
+    el.hidden = false;
+  }
+  function fitNews() {
+    const n = $('news-list').children.length;
+    $('news').hidden = n === 0;
+    $('news').classList.toggle('single', n === 1);
+    $('news-h').classList.toggle('sr-only', n === 1);
+  }
+  $('news-list').addEventListener('click', (e) => {
+    const t = e.target.closest('[data-seen]');
+    if (!t) return;
+    markSeen(t.dataset.seen);
+    if (t.tagName === 'BUTTON') {
+      if (t.dataset.seen.startsWith('note:') && t.dataset.note) { readNote = JSON.parse(t.dataset.note); renderOldNote(); }
+      t.closest('li').remove();
+      fitNews();
+    }
+  });
+
   async function renderNews(uid) {
-    const [leadRes, dealRes, reviewRes, qRes, newsRes] = await Promise.all([
+    const [leadRes, dealRes, reviewRes, qRes, newsRes, seenRes] = await Promise.all([
       client.rpc('get_my_leads'), client.rpc('get_my_deals'), client.rpc('get_my_reviews', { p_limit: 1 }),
       client.from('rep_questions').select('id, answered_at').eq('user_id', uid).eq('status', 'answered').order('answered_at', { ascending: false }).limit(5),
       // RLS only returns what's current for reps.
       client.from('rep_news').select('id, title, body, link_url, starts_on').order('starts_on', { ascending: false }).limit(3),
+      client.from('rep_seen').select('item_key').order('seen_at', { ascending: false }).limit(200),
     ]);
     const leads = (!leadRes.error && leadRes.data) || [];
     const deals = (!dealRes.error && dealRes.data) || [];
+    const seen = new Set(((!seenRes.error && seenRes.data) || []).map(s => s.item_key));
     const items = [];
+    const gotIt = (key, extra = '') => `<button type="button" class="got-it" data-seen="${esc(key)}"${extra}>Got it</button>`;
 
-    // News from AUDAC (Data Admin -> News for reps).
+    // News from AUDAC (Data Admin -> News for reps), until the rep has seen it.
     for (const n of (!newsRes.error && newsRes.data) || []) {
+      const key = 'news:' + n.id;
+      if (seen.has(key)) continue;
       const safeLink = n.link_url && /^https:\/\//.test(n.link_url) ? n.link_url : null;
       items.push(safeLink
-        ? `<li><a class="item" href="${esc(safeLink)}" target="_blank" rel="noopener"><span>${esc(n.title)}${n.body ? `<span class="sub">${esc(n.body)}</span>` : ''}</span><span class="go">↗</span></a></li>`
-        : `<li><span class="note-head">${esc(n.title)}</span>${n.body ? `<span class="sub">${esc(n.body)}</span>` : ''}</li>`);
+        ? `<li class="row"><a class="item" href="${esc(safeLink)}" target="_blank" rel="noopener" data-seen="${esc(key)}"><span>${esc(n.title)}${n.body ? `<span class="sub">${esc(n.body)}</span>` : ''}</span><span class="go">↗</span></a>${gotIt(key)}</li>`
+        : `<li class="row"><span><span class="note-head">${esc(n.title)}</span>${n.body ? `<span class="sub">${esc(n.body)}</span>` : ''}</span>${gotIt(key)}</li>`);
     }
 
     // Leads handed to the firm recently that nobody reported on yet.
@@ -341,17 +395,22 @@
     const newLeads = leads.filter(l => (l.route === 'rep' || l.route === 'trade_show') && !l.outcome && l.crm_status_reason !== 'Qualified' && (l.created_on || '') >= leadCutoff).length;
     if (newLeads) items.push(`<li><a class="item" href="/territory#leads"><span>${newLeads} new lead${newLeads === 1 ? '' : 's'} from AUDAC<span class="sub">Enquiries from your territory, with contact details.</span></span><span class="go">→</span></a></li>`);
 
-    // AUDAC's latest written note, for about six weeks after the month it's about.
+    // AUDAC's latest written note, for about six weeks after the month it's about:
+    // in full until "Got it", then one quiet line below.
     const r = !reviewRes.error && reviewRes.data && reviewRes.data[0];
     if (r && String(r.rep_feedback || '').trim() && daysSince(r.reporting_month + '-01T12:00:00') < 75) {
       const label = new Date(r.reporting_month + '-01T12:00:00').toLocaleString('en-US', { month: 'long' });
-      items.push(`<li><span class="note-head">A note from AUDAC · ${esc(label)}</span>
+      const key = 'note:' + r.reporting_month;
+      const note = { label, text: r.rep_feedback };
+      if (seen.has(key)) { readNote = note; renderOldNote(); }
+      else items.push(`<li><span class="note-head">A note from AUDAC · ${esc(label)}</span>
         <p class="note">${esc(r.rep_feedback)}</p>
-        <p class="meta">Questions, or something AUDAC could do better? <a href="/resources#ask">Let us know →</a></p></li>`);
+        <div class="note-actions"><p class="meta">Questions, or something AUDAC could do better? <a href="/resources#ask">Let us know →</a></p>${gotIt(key, ` data-note="${esc(JSON.stringify(note))}"`)}</div></li>`);
     }
 
-    // Answers to the rep's questions in the last two weeks.
-    const answered = ((!qRes.error && qRes.data) || []).filter(q => q.answered_at && daysSince(q.answered_at) <= 14).length;
+    // Answers to the rep's questions in the last two weeks, until the rep opens them
+    // (Resources -> Ask AUDAC marks them seen).
+    const answered = ((!qRes.error && qRes.data) || []).filter(q => q.answered_at && daysSince(q.answered_at) <= 14 && !seen.has('q:' + q.id)).length;
     if (answered) items.push(`<li><a class="item" href="/resources#ask"><span>AUDAC answered ${answered === 1 ? 'your question' : answered + ' of your questions'}</span><span class="go">→</span></a></li>`);
 
     // Deals in AUDAC's CRM whose expected close date has passed.
@@ -359,7 +418,8 @@
     const stale = deals.filter(d => d.status === 'Open' && d.expected_close_date && d.expected_close_date < iso && !d.pending_status).length;
     if (stale) items.push(`<li><a class="item" href="/territory#deals"><span>${stale} deal${stale === 1 ? '' : 's'} past the close date<span class="sub">Still on? A quick word keeps AUDAC’s CRM right.</span></span><span class="go">→</span></a></li>`);
 
-    if (items.length) { $('news-list').innerHTML = items.join(''); $('news').hidden = false; }
+    $('news-list').innerHTML = items.join('');
+    fitNews();
 
     // This year, only when there's something to celebrate.
     const won = deals.filter(d => d.status === 'Won' && (d.actual_close_date || '') >= yearStart);

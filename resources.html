@@ -176,12 +176,21 @@
       .eq('user_id', me.id).order('created_at', { ascending: false }).limit(10);
     const list = $('ask-list');
     if (error || !data || !data.length) { list.hidden = true; return; }
+    // Answers the rep hasn't opened yet get a "New" tag; opening this page marks
+    // them seen, so "AUDAC answered your question" leaves Home.
+    const answeredIds = data.filter(q => q.status === 'answered').map(q => 'q:' + q.id);
+    const { data: seenRows } = answeredIds.length
+      ? await client.from('rep_seen').select('item_key').in('item_key', answeredIds) : { data: [] };
+    const seen = new Set((seenRows || []).map(s => s.item_key));
     list.innerHTML = `<p class="group-title" style="margin:0 0 4px;">Your questions</p>` + data.map(q => `<li>
       <div><div class="q">${esc(q.message.length > 240 ? q.message.slice(0, 240) + '…' : q.message)}</div>
-        <div class="meta">${esc(fmtDate(q.created_at))} · ${esc(TOPIC_LABEL[q.topic] || q.topic)}${q.channel && q.channel !== 'email' ? ' · via ' + (q.channel === 'teams' ? 'Teams' : 'WhatsApp') : ''}</div></div>
-      <div>${q.status === 'answered' ? `<span class="chip ok">${AudacShell.icon('check')}Answered</span>` : '<span class="chip">Open</span>'}</div>
+        <div class="meta">${esc(fmtDate(q.created_at))} · ${esc(TOPIC_LABEL[q.topic] || q.topic)}${q.channel && q.channel !== 'email' ? ' · via ' + (q.channel === 'teams' ? 'Teams' : 'WhatsApp') : ''}${q.status === 'answered' && q.answered_at ? ' · answered ' + esc(fmtDate(q.answered_at)) + ', check your ' + (q.channel === 'email' ? 'e-mail' : q.channel === 'teams' ? 'Teams' : q.channel === 'whatsapp' ? 'WhatsApp' : 'messages') : ''}</div></div>
+      <div>${q.status === 'answered' ? `<span class="chip ok">${AudacShell.icon('check')}${seen.has('q:' + q.id) ? 'Answered' : 'New answer'}</span>` : '<span class="chip">Open</span>'}</div>
     </li>`).join('');
     list.hidden = false;
+    const unseen = answeredIds.filter(k => !seen.has(k));
+    if (unseen.length) client.rpc('mark_seen', { p_keys: unseen })
+      .then(({ error: e }) => { if (e) console.warn('mark_seen', e.message); });
   }
 
   $('ask-form').addEventListener('submit', (e) => e.preventDefault());
