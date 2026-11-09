@@ -39,7 +39,6 @@
     <header class="topbar">
       <h1>Settings</h1>
       <span class="spacer"></span>
-      <button type="button" class="icon-btn mobile-only" id="mobile-signout" aria-label="Sign out" title="Sign out"></button>
     </header>
 
     <main class="page" id="page">
@@ -59,7 +58,7 @@
 
         <section class="surface-card push-card" id="push-card" aria-label="Notifications" hidden></section>
 
-        <section class="section surface-card" aria-labelledby="app-h">
+        <section class="section surface-card" id="app-card" aria-labelledby="app-h">
           <h2 class="card-title" id="app-h">The portal on your phone</h2>
           <p class="sub" id="app-text"></p>
           <div class="name-row" id="app-actions" hidden><button type="button" class="button-secondary" id="install-btn">Install the app</button></div>
@@ -84,8 +83,6 @@
   AudacShell.mount('settings');
   const signOut = async () => { await client.auth.signOut(); window.location.href = '/login'; };
   AudacShell.onSignOut(signOut);
-  $('mobile-signout').innerHTML = AudacShell.icon('out');
-  $('mobile-signout').addEventListener('click', signOut);
   $('signout-bottom').addEventListener('click', signOut);
 
   // ---- The app on the phone ----
@@ -93,7 +90,7 @@
   const standalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
   function renderApp() {
     const ua = navigator.userAgent;
-    if (standalone()) { $('app-text').textContent = 'You’re using the installed app. Nothing to do here.'; $('app-actions').hidden = true; return; }
+    if (standalone()) { $('app-card').hidden = true; return; } // already the installed app
     $('app-text').textContent = /iPhone|iPad|iPod/.test(ua) ? 'Add the portal to your Home Screen for one-tap logging: in Safari, tap Share, then “Add to Home Screen”. On iPhone this is also needed for notifications.'
       : /Android/.test(ua) ? 'Install the portal as an app for one-tap logging: in Chrome, open the ⋮ menu, then “Install app”.'
       : 'Open the portal on your phone and add it to your home screen for one-tap logging.';

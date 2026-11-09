@@ -37,7 +37,6 @@
   .kind[aria-checked="true"] { border-color: var(--color-gold); box-shadow: 0 0 0 1px var(--color-gold) inset; }
   .kind:focus-visible { outline: 2px solid var(--color-gold); outline-offset: 2px; }
   .ask .channel { display: inline-flex; align-items: center; gap: 8px; width: auto; min-height: 44px; padding: 0 18px; }
-  @media (max-width: 560px) { .kinds { grid-template-columns: 1fr; } }
   .ask .form-actions { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
   .ask .button-primary { width: auto; padding: 0 22px; }
   .msg { margin: 0; font-size: 13.5px; line-height: 20px; }
@@ -48,7 +47,30 @@
   .questions li:first-child { border-top: 0; }
   .questions .q { font-size: 14px; line-height: 21px; color: var(--color-text-primary); white-space: pre-line; overflow-wrap: anywhere; }
   .questions .meta { font-size: 12.5px; color: var(--color-text-muted); }
-  @media (max-width: 760px) { .section { padding: var(--space-5); } }
+  .links { padding: var(--space-5) var(--space-6); margin-bottom: var(--space-4); }
+  .links ul { list-style: none; margin: var(--space-2) 0 0; padding: 0; }
+  .links li + li { border-top: 1px solid var(--color-border); }
+  .links a { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: 56px; padding: var(--space-2) 0; color: inherit; text-decoration: none; }
+  .links a b { display: block; font-size: 15px; line-height: 21px; font-weight: 600; }
+  .links a span span { display: block; font-size: 13px; line-height: 18px; color: var(--color-text-secondary); }
+  .links .go { color: var(--color-gold); flex: none; }
+  .links a:focus-visible { outline: 2px solid var(--color-gold); outline-offset: 2px; border-radius: 6px; }
+  @media (max-width: 760px) {
+    .section, .links { padding: var(--space-5); }
+    /* The two main tools side by side, short. */
+    .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); margin-bottom: var(--space-4); }
+    .tile { padding: var(--space-4); gap: 4px; }
+    .tile b { font-size: 14.5px; line-height: 20px; }
+    .tile span { font-size: 12.5px; line-height: 17px; }
+    .tile .go { font-size: 12.5px; }
+  }
+  /* Phones: the three kinds as one row of compact choices. */
+  @media (max-width: 560px) {
+    .kinds { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .kind { padding: 10px 8px; text-align: center; }
+    .kind b { font-size: 13.5px; }
+    .kind span { display: none; }
+  }
 </style>
 </head>
 <body>
@@ -62,44 +84,22 @@
     </header>
 
     <main class="page" id="page">
-      <p class="intro">Everything you need around AUDAC in one place: product information, the competitor cross-reference, training, and a direct line to AUDAC.</p>
-
       <div class="tiles">
         <a class="tile surface-card featured" href="/crossref">
           <b>Competitor cross-reference</b>
-          <span>Look up a competitor model (Atlas IED, JBL, QSC, Bose, Biamp…) and get the AUDAC alternative with a ready-to-use pitch.</span>
+          <span>Atlas IED, JBL, QSC, Bose, Biamp… → the AUDAC alternative, with a pitch.</span>
           <span class="go">Open →</span>
         </a>
         <a class="tile surface-card featured" href="https://avlmediagroup.com/project-registration/" target="_blank" rel="noopener">
           <b>Register a project</b>
-          <span>Working on a project with AUDAC specified? Register it with AVL Media Group, AUDAC’s distributor in the US and Canada.</span>
-          <span class="go">avlmediagroup.com ↗</span>
-        </a>
-        <a class="tile surface-card" href="https://audac.eu/noram/" target="_blank" rel="noopener">
-          <b>AUDAC products (North America)</b>
-          <span>The full product range with datasheets, manuals and specifications.</span>
-          <span class="go">audac.eu/noram ↗</span>
-        </a>
-        <a class="tile surface-card" href="https://education.audac.eu/" target="_blank" rel="noopener">
-          <b>AUDAC Education</b>
-          <span>Free online training and certification for you and your team.</span>
-          <span class="go">education.audac.eu ↗</span>
-        </a>
-        <a class="tile surface-card" href="https://audac.eu/noram/support" target="_blank" rel="noopener">
-          <b>Support & downloads</b>
-          <span>Software, firmware, drawings and frequently asked questions.</span>
-          <span class="go">audac.eu/noram/support ↗</span>
-        </a>
-        <a class="tile surface-card" href="https://avlmediagroup.com/" target="_blank" rel="noopener">
-          <b>AVL Media Group</b>
-          <span>AUDAC's distributor in the US and Canada: pricing, stock and orders.</span>
-          <span class="go">avlmediagroup.com ↗</span>
+          <span>AUDAC specified? Register it with AVL Media Group.</span>
+          <span class="go">Open ↗</span>
         </a>
       </div>
 
       <section class="section surface-card" id="ask" aria-labelledby="ask-h">
         <h2 class="card-title" id="ask-h">Ask AUDAC</h2>
-        <p class="sub">Technical questions go to AVL Media Group’s technical team; sales questions reach Bart directly, by Teams, WhatsApp or e-mail. Every question is also saved in the portal, so nothing gets lost.</p>
+        <p class="sub">Technical questions go to AVL Media Group’s technical team, sales questions straight to Bart. Every question is saved here too.</p>
         <form class="ask" id="ask-form">
           <div class="field">
             <span class="label-like" id="ask-kind-label">What is it about?</span>
@@ -114,6 +114,16 @@
           <div class="form-actions" id="ask-actions"></div>
         </form>
         <ul class="questions" id="ask-list" hidden></ul>
+      </section>
+
+      <section class="links surface-card" aria-labelledby="links-h">
+        <h2 class="card-title" id="links-h">Useful links</h2>
+        <ul>
+          <li><a href="https://audac.eu/noram/" target="_blank" rel="noopener"><span><b>AUDAC products</b><span>Datasheets, manuals and specs for North America</span></span><span class="go">↗</span></a></li>
+          <li><a href="https://education.audac.eu/" target="_blank" rel="noopener"><span><b>AUDAC Education</b><span>Free online training and certification</span></span><span class="go">↗</span></a></li>
+          <li><a href="https://audac.eu/noram/support" target="_blank" rel="noopener"><span><b>Support &amp; downloads</b><span>Software, firmware, drawings, FAQ</span></span><span class="go">↗</span></a></li>
+          <li><a href="https://avlmediagroup.com/" target="_blank" rel="noopener"><span><b>AVL Media Group</b><span>Distributor in the US and Canada: pricing, stock, orders</span></span><span class="go">↗</span></a></li>
+        </ul>
       </section>
     </main>
   </div>

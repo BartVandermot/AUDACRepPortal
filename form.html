@@ -204,7 +204,7 @@
     </div>
     <div id="auth-signed-in" hidden>
       <span class="signed-in-label">Signed in as <strong id="signed-in-email"></strong></span>
-      <button type="button" class="icon-btn mobile-only" id="sign-out-btn" aria-label="Sign out" title="Sign out"></button>
+      <button type="button" class="icon-btn mobile-only" id="mobile-signout" aria-label="Sign out" title="Sign out"></button>
     </div>
   </div>
 </header>
@@ -297,7 +297,7 @@
   }
   window.addEventListener('hashchange', () => { mountShell(); scrollToSubmissionsIfAsked(); });
   AudacShell.onSignOut(() => client.auth.signOut());
-  document.getElementById('sign-out-btn').innerHTML = AudacShell.icon('out');
+  document.getElementById('mobile-signout').innerHTML = AudacShell.icon('out');
 
   const CONTACT_TYPES = ['Dealer', 'Consultant', 'End User'];
   const ACTIVITY_TYPES = [
@@ -845,7 +845,7 @@
     document.getElementById('show-signin-btn').click();
   });
 
-  document.getElementById('sign-out-btn').addEventListener('click', async () => {
+  document.getElementById('mobile-signout').addEventListener('click', async () => {
     await client.auth.signOut();
   });
 
