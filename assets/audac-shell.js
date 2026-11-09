@@ -41,7 +41,7 @@
         { key: 'home', href: '/home', label: 'Home', short: 'Home', icon: 'home' },
         { key: 'log', href: '/form', label: 'Log activity', short: 'Log', icon: 'plus' },
         { key: 'territory', href: '/territory', label: 'My territory', short: 'Territory', icon: 'map' },
-        { key: 'submissions', href: '/form#my-submissions-section', label: 'My activities', short: 'History', icon: 'list' },
+        { key: 'submissions', href: '/history', label: 'History', short: 'History', icon: 'list' },
         { key: 'resources', href: '/resources', label: 'Resources', short: 'Resources', icon: 'book' },
         // Importing a CRM export is offered from Log activity, not as its own menu item.
       ],

@@ -102,6 +102,7 @@
   }
   #confirmation h2 { font-size: 22px; line-height: 28px; margin: 0 0 var(--space-2); }
   #confirmation p { color: var(--color-text-secondary); font-size: 15px; margin: 0 0 var(--space-6); }
+  #confirmation .confirm-actions { display: flex; flex-direction: column; align-items: center; gap: var(--space-4); }
   select.firm-locked { color: var(--color-text-secondary); background-color: var(--color-bg-raised); }
 
   /* CRM account/contact search */
@@ -139,53 +140,13 @@
   .inline-notice { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
   .inline-notice input { flex: 1; min-width: 200px; }
   .inline-notice .button-secondary { min-height: 48px; }
-  .submissions-head { margin: var(--space-10) 0 var(--space-2); padding-top: var(--space-6); border-top: 1px solid var(--color-border); }
 
-  /* My activities: cards grouped by month */
-  .act-month { display: flex; align-items: baseline; gap: 8px; margin: var(--space-5) 0 var(--space-2); font-size: 12px; line-height: 16px; font-weight: 650; letter-spacing: 1.2px; text-transform: uppercase; color: var(--color-text-muted); }
-  .act-month span { letter-spacing: 0; font-variant-numeric: tabular-nums; color: var(--color-text-muted); font-weight: 500; }
-  .acts { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
-  .act { padding: var(--space-3) var(--space-4); border-radius: var(--radius-tile); background: var(--color-surface); border: 1px solid var(--color-border); }
-  .act-top { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-3); }
-  .act-top b { font-size: 15.5px; line-height: 22px; font-weight: 650; min-width: 0; overflow-wrap: anywhere; }
-  .act-day { flex: none; font-size: 13px; color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
-  .act-tags { display: flex; flex-wrap: wrap; gap: 4px 0; margin-top: 2px; font-size: 13px; line-height: 19px; color: var(--color-text-secondary); }
-  .act-tags span + span::before { content: '·'; margin: 0 6px; color: var(--color-text-muted); }
-  .act-note { margin: var(--space-2) 0 0; font-size: 14px; line-height: 20px; color: var(--color-text-primary); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  .act-actions { display: flex; align-items: center; gap: var(--space-4); margin-top: var(--space-2); min-height: 32px; }
-  .act-actions .spacer { flex: 1; }
-  .act-actions .link-btn { font-size: 13.5px; color: var(--color-text-secondary); }
-  .act-actions .link-btn.danger { color: var(--color-danger); }
-  .act-locked { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; color: var(--color-text-muted); }
-  .act-locked svg { width: 14px; height: 14px; }
-  .act-panel:empty { display: none; }
-  .act-panel { margin: var(--space-3) calc(-1 * var(--space-4)) calc(-1 * var(--space-3)); }
-  .act-more { width: 100%; margin-top: var(--space-4); }
-
-  /* My activities: inline editor + photos (inside the card) */
-  .activity-edit-row .edit-cell { background: var(--color-surface-elevated); padding: var(--space-4); border-top: 2px solid var(--color-gold); border-radius: 0 0 var(--radius-tile) var(--radius-tile); }
-  .edit-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--space-3) var(--space-4); margin-bottom: var(--space-3); }
-  .edit-grid label, .activity-edit-row .edit-cell > label { display: block; font-size: 13px; font-weight: 600; margin-bottom: var(--space-3); }
-  .edit-grid input, .edit-grid select, .activity-edit-row textarea { display: block; margin-top: var(--space-1); }
-  .activity-edit-row textarea { min-height: 64px; }
-  .activity-edit-row .actions {
-    position: sticky; bottom: 0; justify-content: flex-start;
-    background: var(--color-surface-elevated); margin: var(--space-4) calc(-1 * var(--space-4)) calc(-1 * var(--space-4)); padding: var(--space-3) var(--space-4);
-    border-top: 1px solid var(--color-border-strong); border-radius: 0 0 var(--radius-tile) var(--radius-tile);
-  }
-  .ae-checkbox { display: flex !important; align-items: center; gap: var(--space-2); margin-top: var(--space-6); }
-  .ae-checkbox input { margin: 0; }
-  .ae-status { font-size: 13px; margin-left: var(--space-2); color: var(--color-danger); }
-  .attachments-row { background: var(--color-surface-elevated); padding: var(--space-4); border-radius: 0 0 var(--radius-tile) var(--radius-tile); }
   .attachment-preview { display: flex; gap: var(--space-2); flex-wrap: wrap; margin-top: var(--space-2); }
   .attachment-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; font-size: 13px; background: var(--color-surface-elevated); border: 1px solid var(--color-border); color: var(--color-text-primary); }
   .attachment-chip-remove { background: none; border: none; color: var(--color-danger); cursor: pointer; font-size: 16px; font-weight: 700; padding: 10px; margin: -10px -6px -10px 0; line-height: 1; }
 
   @media (max-width: 760px) {
     .card, .activity-entry { padding: var(--space-5); }
-    /* Keep the editor's Save/Cancel bar above the floating bottom menu. */
-    .activity-edit-row .actions { bottom: calc(92px + env(safe-area-inset-bottom, 0px)); flex-direction: row; align-items: center; }
-    .activity-edit-row .actions .audac-btn { min-height: 46px; flex: 1; }
     .edit-grid { grid-template-columns: 1fr; }
     .actions { flex-direction: column-reverse; align-items: stretch; }
     .actions .hint { text-align: center; }
@@ -256,20 +217,19 @@
     <div class="check">&#10003;</div>
     <h2 id="confirmation-title">Saved</h2>
     <p id="confirmation-detail"></p>
-    <button type="button" class="audac-btn-outline" id="submit-more-btn">Log more activities</button>
+    <div class="confirm-actions">
+      <button type="button" class="audac-btn-outline" id="submit-more-btn">Log another</button>
+      <a class="link-btn" href="/history">See your history</a>
+    </div>
   </div>
 
-  <div id="my-submissions-section" hidden>
-    <div class="submissions-head"><h2 class="section-title" id="my-submissions-heading">My activities</h2></div>
-    <div id="my-submissions-list"></div>
-  </div>
   </div>
 </main>
 </div>
 </div>
 <nav class="bottom-nav glass-floating" id="app-bottom-nav" aria-label="Main menu"></nav>
 
-<script src="/assets/audac-shell.js?v=a11b65d6"></script>
+<script src="/assets/audac-shell.js?v=2be5df8a"></script>
 <script src="/assets/audac-outbox.js?v=6c442eab"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0"></script>
 <script>
@@ -278,7 +238,8 @@
   const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   // ---------- App shell (shared nav from /assets/audac-shell.js) ----------
-  const onSubmissionsView = () => location.hash === '#my-submissions-section';
+  // My activities moved to its own page (/history, 2026-11-09); old links still work.
+  if (location.hash === '#my-submissions-section') location.replace('/history');
   let managerItemAdded = false;
   function applyShellUser() {
     if (!currentSession) { AudacShell.setUser({}); AudacShell.setSection(''); return; }
@@ -291,14 +252,9 @@
     }
   }
   function mountShell() {
-    AudacShell.mount(onSubmissionsView() ? 'submissions' : 'log'); // extra items persist inside the shell
+    AudacShell.mount('log'); // extra items persist inside the shell
     applyShellUser();
   }
-  function scrollToSubmissionsIfAsked() {
-    const sec = document.getElementById('my-submissions-section');
-    if (onSubmissionsView() && !sec.hidden) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
-  window.addEventListener('hashchange', () => { mountShell(); scrollToSubmissionsIfAsked(); });
   AudacShell.onSignOut(() => client.auth.signOut());
   document.getElementById('mobile-signout').innerHTML = AudacShell.icon('out');
 
@@ -720,7 +676,7 @@
     });
   }
 
-  // ---------- Light auth (via the shared /login page) + My Submissions ----------
+  // ---------- Light auth (via the shared /login page) ----------
   // The public form stays fully anonymous by default (no login required to
   // submit, matching the original design). Signing in is purely opt-in, and
   // the actual sign-in UI (Google/Microsoft/password) lives on /login, not
@@ -749,7 +705,6 @@
         await handleSignedIn();
       } else {
         currentProfile = null;
-        document.getElementById('my-submissions-section').hidden = true;
       }
     });
   }
@@ -784,7 +739,6 @@
     restoreDraft();
     applyAccountFromUrl();
     refreshMonthNotes();
-    await loadMySubmissions();
   }
 
   // Activities saved without a connection: shown on top, sent automatically.
@@ -794,7 +748,6 @@
     outboxStarted = true;
     AudacOutbox.mountNotice(document.getElementById('outbox-notice'));
     AudacOutbox.init(client, currentSession.user.id);
-    window.addEventListener('audac-outbox-sent', () => loadMySubmissions());
   }
   // A query that gives up after ms (slow networks); the error then reads as a
   // network error, so the save goes to the outbox instead of hanging.
@@ -830,7 +783,6 @@
     if (currentProfile) currentProfile.full_name = name;
     document.getElementById('name-prompt-bar').hidden = true;
     updateSignedInGreeting();
-    loadMySubmissions();
   });
 
   function lockFirmToProfile(firmId) {
@@ -873,313 +825,6 @@
   document.getElementById('mobile-signout').addEventListener('click', async () => {
     await client.auth.signOut();
   });
-
-  let attachmentCountByEntry = new Map();
-
-  async function loadMySubmissions() {
-    const section = document.getElementById('my-submissions-section');
-    section.hidden = false;
-    const showCreator = !!currentProfile?.is_rep_admin;
-    document.getElementById('my-submissions-heading').textContent = showCreator ? "My firm's activities" : 'My activities';
-    const container = document.getElementById('my-submissions-list');
-    container.innerHTML = '<div class="hint">Loading…</div>';
-    // RLS scopes this automatically -- created_by = auth.uid() for a regular
-    // rep, or (if is_rep_admin) any entry for their firm regardless of who
-    // created it. No explicit filter needed here either way.
-    const [{ data, error }] = await Promise.all([
-      client.from('activity_entries').select('*').order('entry_date', { ascending: false }),
-      fetchAllAttachmentCounts(),
-    ]);
-    if (error) {
-      container.innerHTML = `<div class="hint">Couldn’t load your activities: ${escapeHtml(error.message)}</div>`;
-      return;
-    }
-    if (!data.length) {
-      container.innerHTML = '<div class="hint">Nothing logged yet. Activities you save while signed in show up here.</div>';
-      return;
-    }
-    const profileByCreator = showCreator ? await fetchProfilesByCreator(data) : new Map();
-    const draw = () => {
-      container.innerHTML = renderMySubmissionsList(data, showCreator, profileByCreator);
-      wireActivityRows(container, data, loadMySubmissions);
-      container.querySelector('[data-more-activities]')?.addEventListener('click', () => { actShown += ACT_PAGE; draw(); });
-    };
-    draw();
-    scrollToSubmissionsIfAsked();
-  }
-
-  // Only fetched for admins viewing the whole firm's list (see is_rep_admin
-  // above) -- a regular rep already knows their own name/territory.
-  async function fetchProfilesByCreator(rows) {
-    const creatorIds = [...new Set(rows.map(r => r.created_by).filter(Boolean))];
-    if (!creatorIds.length) return new Map();
-    const { data, error } = await client.from('profiles').select('id, full_name, territory_note').in('id', creatorIds);
-    if (error || !data) return new Map();
-    return new Map(data.map(p => [p.id, p]));
-  }
-
-  // My activities: one card per activity, grouped by month, newest first.
-  // Phones get the same list as computers (the old wide table scrolled sideways).
-  const ACT_PAGE = 20;
-  let actShown = ACT_PAGE;
-  function renderMySubmissionsList(rows, showCreator, profileByCreator) {
-    const visible = rows.slice(0, actShown);
-    const monthLabel = (m) => new Date(m + '-01T12:00:00').toLocaleString('en-US', { month: 'long', year: 'numeric' });
-    let html = '', current = null;
-    for (const r of visible) {
-      const m = String(r.entry_date || '').slice(0, 7);
-      if (m !== current) {
-        if (current !== null) html += '</ul>';
-        const n = rows.filter(x => String(x.entry_date || '').startsWith(m)).length;
-        html += `<p class="act-month">${escapeHtml(monthLabel(m))} <span>${n}</span></p><ul class="acts">`;
-        current = m;
-      }
-      html += activityRowHtml(r, showCreator, profileByCreator);
-    }
-    if (current !== null) html += '</ul>';
-    if (rows.length > visible.length) html += `<button type="button" class="audac-btn-outline act-more" data-more-activities>Show ${Math.min(ACT_PAGE, rows.length - visible.length)} more</button>`;
-    return html;
-  }
-
-  function activityRowHtml(r, showCreator, profileByCreator) {
-    const creatorProfile = profileByCreator?.get(r.created_by);
-    const day = new Date(r.entry_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    const attCount = attachmentCountByEntry.get(r.id) || 0;
-    const tags = [
-      `<span>${escapeHtml(r.activity_type || '')}</span>`,
-      `<span>${escapeHtml(r.contact_type || '')}</span>`,
-      r.contact_name ? `<span>${escapeHtml(r.contact_name)}</span>` : '',
-      r.demo_gear_used ? '<span>Demo gear</span>' : '',
-      showCreator ? `<span>by ${escapeHtml(creatorProfile?.full_name || r.created_by_email || 'unknown')}</span>` : '',
-    ].filter(Boolean).join('');
-    // Mirrors the Manager Dashboard's own locked-row treatment (renderActivityTable
-    // there) -- a rep used to see Edit/Delete on a finalized entry regardless, and
-    // only found out it was locked once Save was rejected by the DB trigger.
-    const locked = isPeriodLocked(r.rep_firm_id, r.reporting_month);
-    const actions = locked
-      ? `<span class="act-locked" title="AUDAC has finalized this month">${AudacShell.icon('lock')}Finalized</span>`
-      : `<button type="button" class="link-btn" data-edit-activity="${r.id}">Edit</button>
-         <button type="button" class="link-btn danger" data-delete-activity="${r.id}">Delete</button>`;
-    return `
-      <li class="act" data-activity-id="${r.id}">
-        <div class="act-top"><b>${escapeHtml(r.account_name)}</b><span class="act-day">${escapeHtml(day)}</span></div>
-        <div class="act-tags">${tags}</div>
-        ${r.topic_opportunity ? `<p class="act-note">${escapeHtml(r.topic_opportunity)}</p>` : ''}
-        <div class="act-actions">
-          ${attCount > 0 ? `<button type="button" class="link-btn" data-toggle-attachments="${r.id}">${attCount} photo${attCount === 1 ? '' : 's'}</button>` : ''}
-          <span class="spacer"></span>${actions}
-        </div>
-        <div class="act-panel" hidden></div>
-      </li>
-    `;
-  }
-
-  function wireActivityRows(container, rows, onChanged) {
-    const byId = new Map(rows.map(r => [String(r.id), r]));
-    container.querySelectorAll('[data-edit-activity]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        openActivityEditor(btn.closest('.act'), byId.get(btn.dataset.editActivity), onChanged);
-      });
-    });
-    container.querySelectorAll('[data-delete-activity]').forEach(btn => {
-      btn.addEventListener('click', () => deleteActivityEntry(btn.dataset.deleteActivity, onChanged));
-    });
-    container.querySelectorAll('[data-toggle-attachments]').forEach(btn => {
-      btn.addEventListener('click', () => toggleAttachments(btn.closest('.act'), btn.dataset.toggleAttachments));
-    });
-  }
-
-  // The card's panel holds either the photos or the editor, never both.
-  function openPanel(card, kind) {
-    const list = card.closest('#my-submissions-list');
-    const panel = card.querySelector('.act-panel');
-    if (!panel.hidden && panel.dataset.kind === kind) return null; // caller toggles closed
-    list.querySelectorAll('.act-panel').forEach(p => { if (p !== panel && p.dataset.kind === 'photos') { p.hidden = true; p.innerHTML = ''; } });
-    panel.dataset.kind = kind;
-    panel.hidden = false;
-    return panel;
-  }
-
-  async function fetchAllAttachmentCounts() {
-    const { data } = await client.from('activity_attachments').select('activity_entry_id');
-    attachmentCountByEntry = new Map();
-    (data || []).forEach(a => {
-      attachmentCountByEntry.set(a.activity_entry_id, (attachmentCountByEntry.get(a.activity_entry_id) || 0) + 1);
-    });
-  }
-
-  async function toggleAttachments(card, entryId) {
-    const panel = card.querySelector('.act-panel');
-    if (!panel.hidden && panel.dataset.kind === 'edit' && panel.querySelector('.activity-edit-row') && !closeEditRowWithConfirm(panel.querySelector('.activity-edit-row'))) return;
-    const open = openPanel(card, 'photos');
-    if (!open) { panel.hidden = true; panel.innerHTML = ''; return; }
-    open.innerHTML = '<div class="attachments-row"></div>';
-    await renderAttachmentsInto(open.firstElementChild, entryId);
-  }
-
-  async function renderAttachmentsInto(attRow, entryId) {
-    const td = attRow;
-    td.innerHTML = '<div class="hint">Loading attachments…</div>';
-    const { data, error } = await client.from('activity_attachments').select('*').eq('activity_entry_id', entryId).order('uploaded_at');
-    if (error) { td.innerHTML = `<div class="hint">Failed to load attachments: ${escapeHtml(error.message)}</div>`; return; }
-    if (!data.length) { td.innerHTML = '<div class="hint">No attachments.</div>'; return; }
-
-    const withUrls = await Promise.all(data.map(async (a) => {
-      const { data: signed } = await client.storage.from('activity-attachments').createSignedUrl(a.storage_path, 3600);
-      return { ...a, url: signed?.signedUrl || null };
-    }));
-
-    td.innerHTML = `<div style="display:flex; gap:14px; flex-wrap:wrap;">${withUrls.map(a => `
-      <div style="text-align:center;">
-        ${a.url ? `<a href="${a.url}" target="_blank" rel="noopener"><img src="${a.url}" alt="${escapeHtml(a.file_name || '')}" style="width:100px; height:100px; object-fit:cover; border-radius:12px; border:1px solid var(--color-border); display:block;"></a>` : '<div class="hint">Preview unavailable</div>'}
-        <div style="font-size:12px; color:var(--color-text-muted); max-width:100px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(a.file_name || '')}</div>
-        <button type="button" class="link-btn danger" data-delete-attachment="${a.id}" data-storage-path="${escapeHtml(a.storage_path)}" style="font-size:11px;">Delete</button>
-      </div>
-    `).join('')}</div>`;
-
-    td.querySelectorAll('[data-delete-attachment]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        if (!confirm('Delete this attachment?')) return;
-        await client.storage.from('activity-attachments').remove([btn.dataset.storagePath]);
-        await client.from('activity_attachments').delete().eq('id', btn.dataset.deleteAttachment);
-        await fetchAllAttachmentCounts();
-        renderAttachmentsInto(attRow, entryId);
-      });
-    });
-  }
-
-  // Reads the edit form's current values into the same shape used for the DB
-  // patch -- shared by the dirty-check below and the real save, so they can
-  // never drift out of sync with each other.
-  function collectEditFields(editRow) {
-    return {
-      entry_date: editRow.querySelector('.ae-date').value,
-      account_name: editRow.querySelector('.ae-account').value.trim(),
-      contact_name: editRow.querySelector('.ae-contact').value.trim() || null,
-      contact_type: editRow.querySelector('.ae-contact-type').value,
-      activity_type: editRow.querySelector('.ae-activity-type').value,
-      demo_gear_used: editRow.querySelector('.ae-demo').checked,
-      topic_opportunity: editRow.querySelector('.ae-topic').value.trim() || null,
-      solution_feedback: editRow.querySelector('.ae-solution').value.trim() || null,
-      competitive_feedback: editRow.querySelector('.ae-competitive').value.trim() || null,
-      additional_comments: editRow.querySelector('.ae-additional').value.trim() || null,
-    };
-  }
-
-  function editRowIsDirty(editRow) {
-    const current = collectEditFields(editRow);
-    return Object.keys(current).some(k => (current[k] ?? null) !== (editRow._original[k] ?? null));
-  }
-
-  // Re-clicking Edit on the row already open, and clicking Edit on a different
-  // row while one is open, both used to silently discard whatever was typed --
-  // exactly the "almost lost my changes" report this fixes.
-  function closeEditRowWithConfirm(editRow) {
-    if (editRowIsDirty(editRow) && !confirm('You have unsaved changes on this entry. Discard them?')) return false;
-    editRow.remove();
-    return true;
-  }
-
-  function openActivityEditor(card, row, onChanged) {
-    const mine = card.querySelector('.act-panel .activity-edit-row');
-    if (mine) { closeEditRowWithConfirm(mine); return; }
-    const otherOpen = card.closest('#my-submissions-list').querySelector('.activity-edit-row');
-    if (otherOpen && !closeEditRowWithConfirm(otherOpen)) return;
-
-    const panel = openPanel(card, 'edit');
-    panel.innerHTML = '';
-    const editRow = document.createElement('div');
-    editRow.className = 'activity-edit-row';
-    editRow.innerHTML = `<div class="edit-cell">
-      <div class="edit-grid">
-        <label>Date<input type="date" class="ae-date" value="${row.entry_date}" max="${todayISO()}"></label>
-        <label>Account<input type="text" class="ae-account" value="${escapeHtml(row.account_name)}">${row.account_external_id ? '<span class="hint" style="display:block; font-weight:400;">Changing the name removes the link to the AUDAC CRM account.</span>' : ''}</label>
-        <label>Contact<input type="text" class="ae-contact" value="${escapeHtml(row.contact_name || '')}"${row.account_external_id ? ` list="ae-contacts-${escapeHtml(row.id)}" autocomplete="off"` : ''}>${row.account_external_id ? `<datalist id="ae-contacts-${escapeHtml(row.id)}"></datalist><span class="hint" style="display:block; font-weight:400;">Pick one of the company's contacts. A new contact? Add it via Log activity.</span>` : ''}</label>
-        <label>Contact Type<select class="ae-contact-type">${CONTACT_TYPES.map(v => `<option value="${v}">${v}</option>`).join('')}</select></label>
-        <label>Activity Type<select class="ae-activity-type">${ACTIVITY_TYPES.map(v => `<option value="${v}">${v}</option>`).join('')}</select></label>
-        <label class="ae-checkbox"><input type="checkbox" class="ae-demo" ${row.demo_gear_used ? 'checked' : ''}> Demo gear used</label>
-      </div>
-      <label>What happened?<textarea class="ae-topic">${escapeHtml(row.topic_opportunity || '')}</textarea></label>
-      <label>What they said about AUDAC<textarea class="ae-solution">${escapeHtml(row.solution_feedback || '')}</textarea></label>
-      <label>Competitors mentioned<textarea class="ae-competitive">${escapeHtml(row.competitive_feedback || '')}</textarea></label>
-      <label>Anything else<textarea class="ae-additional">${escapeHtml(row.additional_comments || '')}</textarea></label>
-      <div class="actions" style="justify-content:flex-start; gap:10px;">
-        <button type="button" class="audac-btn" data-ae-save>Save Changes</button>
-        <button type="button" class="audac-btn-outline" data-ae-cancel>Cancel</button>
-        <span class="ae-status"></span>
-      </div>
-    </div>`;
-    panel.appendChild(editRow);
-    editRow.querySelector('.ae-contact-type').value = row.contact_type;
-    editRow.querySelector('.ae-activity-type').value = row.activity_type;
-    editRow._original = collectEditFields(editRow);
-    // The linked company's contacts, for the picker and for checking on save.
-    editRow._contacts = [];
-    if (row.account_external_id) {
-      client.rpc('search_crm_contacts', { p_account_external_id: row.account_external_id, p_firm_id: row.rep_firm_id }).then(({ data }) => {
-        editRow._contacts = data || [];
-        const dl = editRow.querySelector('datalist');
-        if (dl) dl.innerHTML = editRow._contacts.map(c => `<option value="${escapeHtml(c.full_name || '')}"></option>`).join('');
-      });
-    }
-
-    editRow.querySelector('[data-ae-cancel]').addEventListener('click', () => {
-      if (editRowIsDirty(editRow) && !confirm('Discard your unsaved changes to this entry?')) return;
-      editRow.remove();
-    });
-    editRow.querySelector('[data-ae-save]').addEventListener('click', async () => {
-      const statusEl = editRow.querySelector('.ae-status');
-      const patch = collectEditFields(editRow);
-      if (!patch.account_name) { statusEl.textContent = 'Account name is required.'; return; }
-      if (patch.entry_date > todayISO()) { statusEl.textContent = 'Entry date can\'t be in the future.'; return; }
-      statusEl.style.color = 'var(--color-text-muted)';
-      statusEl.textContent = 'Saving…';
-      // The month follows the date (as on the form/import), and a renamed
-      // account or contact must drop its CRM link -- otherwise the entry stays
-      // linked to the OLD account's record under the new name.
-      const fullPatch = { ...patch, reporting_month: patch.entry_date.slice(0, 7) };
-      if (patch.account_name !== (row.account_name || '')) {
-        fullPatch.account_external_id = null;
-        fullPatch.contact_external_id = null;
-      } else if ((patch.contact_name || null) !== (row.contact_name || null)) {
-        fullPatch.contact_external_id = null;
-        // Still linked to a CRM company: the contact must be one of its contacts.
-        if (row.account_external_id && patch.contact_name) {
-          const match = (editRow._contacts || []).find(c => (c.full_name || '').trim().toLowerCase() === patch.contact_name.toLowerCase());
-          if (!match) {
-            statusEl.style.color = 'var(--color-danger)';
-            statusEl.textContent = 'Pick one of the company’s contacts from the list, or leave the contact empty. A new contact can be added via Log activity.';
-            return;
-          }
-          fullPatch.contact_external_id = match.external_id;
-          fullPatch.contact_name = match.full_name;
-        }
-      }
-      const { error } = await client.from('activity_entries').update(fullPatch).eq('id', row.id);
-      if (error) {
-        statusEl.style.color = 'var(--color-danger)';
-        statusEl.textContent = 'Error: ' + error.message;
-        return;
-      }
-      editRow._original = patch;
-      onChanged();
-    });
-  }
-
-  async function deleteActivityEntry(id, onChanged) {
-    if (!confirm('Delete this submission? This cannot be undone.')) return;
-    // The FK cascade removes the activity_attachments row when the entry goes,
-    // but not the actual file in Storage -- and once that metadata row is gone,
-    // nothing can reach the file via RLS to clean it up later. Remove the storage
-    // objects first so nothing gets orphaned.
-    const { data: attachments } = await client.from('activity_attachments').select('storage_path').eq('activity_entry_id', id);
-    if (attachments && attachments.length) {
-      await client.storage.from('activity-attachments').remove(attachments.map(a => a.storage_path));
-    }
-    const { error } = await client.from('activity_entries').delete().eq('id', id);
-    if (error) { alert('Delete failed: ' + error.message); return; }
-    onChanged();
-  }
 
   function addEntry() {
     entryCounter += 1;
@@ -1662,11 +1307,10 @@
         if (metaErr) uploadErrors.push(`${file.name}: ${metaErr.message}`);
       }
     }));
-    if (notSent.length) { await queued({ rowsSent: true, files: notSent }); loadMySubmissions(); return; }
+    if (notSent.length) { await queued({ rowsSent: true, files: notSent }); return; }
 
     showDone('Saved', `${what}, filed under ${months.map(monthLabel).join(' and ')}. Thanks.` +
       (uploadErrors.length ? ` Note: ${uploadErrors.length} photo(s) failed to upload — ${uploadErrors.join('; ')}` : ''));
-    loadMySubmissions();
   });
 
   document.getElementById('submit-more-btn').addEventListener('click', () => {
@@ -1681,7 +1325,7 @@
   (async () => {
     // The form shows as soon as the session is known; the firm list and the
     // finalized months load meanwhile. handleSignedIn waits for them (firm lock,
-    // My activities' month locks).
+    // the month notes).
     firmsReady = Promise.all([loadFirms(), loadFinalizedPeriods()]);
     await initAuth(); // may lock firmSelect to the rep's own firm (lockFirmToProfile), programmatically -- no 'change' event fires for that
     await firmsReady;

@@ -59,6 +59,10 @@
     {
       "source": "/settings",
       "destination": "/settings.html"
+    },
+    {
+      "source": "/history",
+      "destination": "/history.html"
     }
   ],
   "headers": [

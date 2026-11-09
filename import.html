@@ -158,7 +158,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/assets/audac-shell.js?v=a11b65d6"></script>
+<script src="/assets/audac-shell.js?v=2be5df8a"></script>
 <script>
   const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
@@ -699,7 +699,7 @@
         <div class="stat"><b>${linked}</b><span>Matched to CRM</span></div>
       </div>
       ${months.length ? `<div class="hint" style="margin-bottom:10px;">Filed under reporting month${months.length > 1 ? 's' : ''}: ${months.join(', ')}</div>` : ''}
-      ${noFeedback && ok.length ? `<div class="notice info">${noFeedback} of ${ok.length} activities have no solution or competitive feedback. That feedback is what AUDAC values most — consider adding it afterwards in <b>My Submissions</b> on the activity form for the important visits.</div>` : ''}
+      ${noFeedback && ok.length ? `<div class="notice info">${noFeedback} of ${ok.length} activities have no solution or competitive feedback. That feedback is what AUDAC values most — consider adding it afterwards in <a href="/history">History</a> (Edit) for the important visits.</div>` : ''}
       <div class="filter-bar" role="group" aria-label="Filter rows">
         ${[['all', `All (${rows.length})`], ['ok', `Ready (${ok.length})`], ['dup', `Duplicates (${dups.length})`], ['err', `Can't import (${errors.length})`], ['nocrm', 'Not in CRM']]
           .map(([k, l]) => `<button type="button" class="audac-btn-outline${state.filter === k ? ' active' : ''}" data-filter="${k}">${l}</button>`).join('')}
@@ -776,7 +776,7 @@
     $('result').hidden = false;
     $('result').innerHTML = `<div class="notice success">
       <b>${data.inserted} activit${data.inserted === 1 ? 'y' : 'ies'} imported</b> for ${escapeHtml(firm)}${skipped ? ` (${skipped} row${skipped === 1 ? '' : 's'} skipped)` : ''}.
-      ${state.profile?.role === 'manager' ? '' : 'They now show under My Submissions on the <a href="/form">activity form</a>, where you can still edit each one.'}
+      ${state.profile?.role === 'manager' ? '' : 'They now show in <a href="/history">History</a>, where you can still edit each one.'}
       Your column matching is saved for next time.
     </div>`;
     $('file-input').value = '';
