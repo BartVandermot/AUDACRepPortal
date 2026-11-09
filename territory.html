@@ -47,9 +47,15 @@
   .update-form.lead-form { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }
   .form-msg { grid-column: 1 / -1; margin: 0; font-size: 13.5px; color: var(--color-danger); }
 
-  .search-bar { margin: 0 0 var(--space-4); }
+  /* Search stays at hand while scrolling a long territory. */
+  .search-bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; margin: 0 calc(-1 * var(--space-2)) var(--space-4); padding: var(--space-2); border-radius: 18px; background: rgba(11, 12, 14, 0.82); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+  .section { scroll-margin-top: 130px; }
+  .filters .count { display: inline-grid; place-items: center; min-width: 20px; height: 20px; margin-left: 6px; padding: 0 6px; border-radius: 999px; background: var(--color-gold); color: #171714; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .acct-head .sub .key { color: var(--color-gold-light); font-weight: 600; }
+  .meta-note { margin: var(--space-1) 0 0; font-size: 13px; line-height: 19px; color: var(--color-text-muted); }
+  .meta-note a { color: var(--color-text-secondary); }
   .search-bar input[type="search"] { width: 100%; min-height: 48px; font-size: 16px; }
-  .filters { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
+  .filters { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
   .filters button { min-height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--color-border); background: rgba(255,255,255,0.04); color: var(--color-text-secondary); font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; }
   .filters button[aria-pressed="true"] { color: var(--color-gold-light); background: var(--color-gold-tint); border-color: rgba(217,166,83,0.4); }
   .filters button:focus-visible { outline: 2px solid var(--color-gold); outline-offset: 2px; }
@@ -78,8 +84,9 @@
   .show-more { margin-top: var(--space-3); }
   @media (max-width: 760px) {
     .acct-detail { grid-template-columns: 1fr; }
-    .acct-head { flex-wrap: wrap; }
-    .acct-head .tags { max-width: none; justify-content: flex-start; order: 3; width: 100%; }
+    .filters { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: 6px; }
+    .filters::-webkit-scrollbar { display: none; }
+    .filters button { flex: none; padding: 0 12px; font-size: 13px; }
   }
 
   @media (max-width: 760px) {
@@ -101,17 +108,15 @@
     </header>
 
     <main class="page" id="page" aria-busy="true">
-      <p class="intro" id="intro">Everything AUDAC’s CRM knows about your territory: companies, contacts, deals and leads.</p>
       <div id="gate"></div>
 
       <div class="search-bar" id="search-bar" role="search">
-
-        <input type="search" id="q" aria-label="Search your territory" placeholder="Search a company, person, city or project" autocomplete="off" enterkeyhint="search">
+        <input type="search" id="q" aria-label="Search your territory" placeholder="Company, person, city or project" autocomplete="off" enterkeyhint="search">
         <div class="filters" role="group" aria-label="Show">
           <button type="button" data-filter="all" aria-pressed="true">All</button>
+          <button type="button" data-filter="leads" aria-pressed="false">Leads<span class="count" id="n-leads" hidden></span></button>
+          <button type="button" data-filter="deals" aria-pressed="false">Deals<span class="count" id="n-deals" hidden></span></button>
           <button type="button" data-filter="key" aria-pressed="false">Key accounts</button>
-          <button type="button" data-filter="deals" aria-pressed="false">Deals</button>
-          <button type="button" data-filter="leads" aria-pressed="false">Leads</button>
         </div>
       </div>
       <div class="notice info no-results" id="no-results" hidden></div>
@@ -126,16 +131,6 @@
         <div id="leads-list"></div>
       </section>
 
-      <section class="section surface-card" id="companies-section" aria-labelledby="companies-h">
-        <div class="section-head">
-          <div>
-            <h2 class="card-title" id="companies-h">Companies</h2>
-            <p id="companies-sub">Loading…</p>
-          </div>
-        </div>
-        <div id="companies-list"></div>
-      </section>
-
       <section class="section surface-card" id="deals-section" aria-labelledby="deals-h">
         <div class="section-head">
           <div>
@@ -146,6 +141,17 @@
         </div>
         <div id="deals-list"></div>
       </section>
+
+      <section class="section surface-card" id="companies-section" aria-labelledby="companies-h">
+        <div class="section-head">
+          <div>
+            <h2 class="card-title" id="companies-h">Companies</h2>
+            <p id="companies-sub">Loading…</p>
+          </div>
+        </div>
+        <div id="companies-list"></div>
+      </section>
+
     </main>
   </div>
 </div>
@@ -171,6 +177,8 @@
   const DAY = 86400000;
   const fmtDate = (iso) => iso ? new Date(iso + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
   const fmtMoney = (n) => n == null ? '' : Number(n).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+  // "Nov 6" this year, "Nov 6, 2025" otherwise.
+  const fmtShort = (iso) => iso ? new Date(iso + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...(iso.slice(0, 4) === String(today.getFullYear()) ? {} : { year: 'numeric' }) }) : '';
   const daysAgo = (iso) => Math.round((today - new Date(iso + 'T00:00:00')) / DAY);
 
   // ---------- Search & filters ----------
@@ -224,16 +232,17 @@
     const open = openAcct === a.external_id;
     const place = [a.city, a.state_code].filter(Boolean).join(', ');
     const nDeals = (a.open_deals || []).length;
-    const tags = [
-      a.key_reason ? `<span class="chip gold">${esc(a.key_reason)}</span>` : '',
-      nDeals ? `<span class="chip">${nDeals} open deal${nDeals === 1 ? '' : 's'}</span>` : '',
-      a.added_by_firm ? '<span class="chip">Added by your firm</span>' : '',
-    ].join('');
-    const sub = [place, a.last_logged ? `last logged ${fmtDate(a.last_logged)}` : ''].filter(Boolean).join(' · ');
+    // One line under the name: key-account reason (gold), place, deals, last logged.
+    const sub = [
+      a.key_reason ? `<span class="key">${esc(a.key_reason)}</span>` : '',
+      esc(place),
+      nDeals ? `${nDeals} open deal${nDeals === 1 ? '' : 's'}` : '',
+      a.added_by_firm ? 'added by your firm' : '',
+      a.last_logged ? `logged ${esc(fmtShort(a.last_logged))}` : '',
+    ].filter(Boolean).join(' · ');
     return `<li data-acct="${esc(a.external_id)}">
       <button type="button" class="acct-head" aria-expanded="${open}" aria-controls="acct-${esc(a.external_id)}">
-        <span><b>${esc(a.name)}</b>${sub ? `<span class="sub">${esc(sub)}</span>` : ''}</span>
-        <span class="tags">${tags}</span>
+        <span><b>${esc(a.name)}</b>${sub ? `<span class="sub">${sub}</span>` : ''}</span>
         <span class="caret">${AudacShell.icon('down')}</span>
       </button>
       ${open ? companyDetail(a) : ''}
@@ -253,7 +262,7 @@
       ? `${rows.length} ${rows.length === 1 ? 'company' : 'companies'} found.`
       : filter === 'key'
         ? `${rows.length} key accounts: TOP AUDAC LEADs and AUDAC partners in your territory.`
-        : `${accountsCache.length} companies in your territory in AUDAC’s CRM` + (keyCount ? `, ${keyCount} of them key accounts.` : '.') + ' Tap one for contacts, address and deals.';
+        : `${accountsCache.length} in AUDAC’s CRM` + (keyCount ? `, key accounts first.` : '.') + ' Tap one for contacts and address.';
     const limit = (query || showAllCompanies) ? 200 : COMPANY_PAGE;
     $('companies-list').innerHTML = rows.length
       ? `<ul class="accts">${rows.slice(0, limit).map(companyItem).join('')}</ul>` +
@@ -312,9 +321,7 @@
     const yearAgo = new Date(today.getTime() - 365 * DAY).toISOString().slice(0, 10);
     const closed = rows.filter(d => d.status !== 'Open' && (d.actual_close_date || d.created_date || '') >= yearAgo);
     const openValue = rows.filter(d => d.status === 'Open').reduce((s, d) => s + Number(d.value_usd || 0), 0);
-    $('deals-sub').textContent = `${rows.filter(d => d.status === 'Open').length} open (${fmtMoney(openValue)})` +
-      (overdue.length ? ` · ${overdue.length} past the close date` : '') +
-      '. Know a deal was won, lost or moved? Tell us here and AUDAC updates the CRM.';
+    $('deals-sub').textContent = `${rows.filter(d => d.status === 'Open').length} open · ${fmtMoney(openValue)}. Won, lost or moved? Tap Update and AUDAC fixes the CRM.`;
     const group = (title, list) => list.length ? `<p class="group-title">${title}</p><ul class="list">${list.map(dealItem).join('')}</ul>` : '';
     $('deals-list').innerHTML = group('Past the close date: still on?', overdue) + group('Open', open) + group('Closed in the last 12 months', closed);
     return rows.length;
@@ -425,10 +432,10 @@
     const todo = current.filter(l => !followedUp(l));
     const done = current.filter(followedUp);
     $('leads-sub').textContent = current.length
-      ? `${current.length} recent lead${current.length === 1 ? '' : 's'} for your firm` +
-        (todo.length ? ` · ${todo.length} new` : ' · all handled') +
-        '. A quick word on what came of each (two clicks) helps AUDAC send you better leads.'
-      : 'No new leads right now. When AUDAC forwards an enquiry from your territory, it shows up here and you get an e-mail.';
+      ? (todo.length
+        ? `${todo.length} new. A quick “What came of it?” helps AUDAC send you better leads.`
+        : 'All recent leads handled. Thanks.')
+      : 'No new leads right now. New enquiries from your territory show up here, and you get an e-mail.';
     const group = (title, list) => list.length ? `<p class="group-title">${title}</p><ul class="list">${list.map(leadItem).join('')}</ul>` : '';
     $('leads-list').innerHTML = group('New for you', todo) + group('Done', done) +
       (earlier.length ? `<details class="older"><summary>Earlier leads from your territory (${earlier.length}) · for reference</summary>
@@ -437,7 +444,15 @@
     return leadsCache.length;
   }
 
+  // Gold counts on the filters: leads waiting for a word, deals past their date.
+  function renderCounts() {
+    const set = (id, n) => { $(id).textContent = n || ''; $(id).hidden = !n; };
+    set('n-leads', leadsCache.filter(l => isActionable(l) && !followedUp(l)).length);
+    set('n-deals', dealsCache.filter(needsUpdate).length);
+  }
+
   function renderAll() {
+    renderCounts();
     const n = renderLeads() + renderCompanies() + renderDeals();
     const nr = $('no-results');
     nr.hidden = !query || n > 0;
@@ -508,7 +523,6 @@
       return;
     }
     try { localStorage.setItem('audac_seen_territory', '1'); } catch { /* private mode */ }
-    $('intro').textContent = `${firm.name}: everything AUDAC’s CRM knows about your territory. Companies, contacts, deals and leads.`;
     const [acctRes, dealRes, leadRes] = await Promise.all([client.rpc('get_my_territory'), client.rpc('get_my_deals'), client.rpc('get_my_leads')]);
     leadsCache = leadRes.data || [];
     dealsCache = dealRes.data || [];
