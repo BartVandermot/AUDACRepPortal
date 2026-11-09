@@ -138,30 +138,53 @@
   .inline-notice { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
   .inline-notice input { flex: 1; min-width: 200px; }
   .inline-notice .button-secondary { min-height: 48px; }
-  #my-submissions-list td:first-child { white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .submissions-head { margin: var(--space-10) 0 var(--space-4); padding-top: var(--space-6); border-top: 1px solid var(--color-border); }
+  .submissions-head { margin: var(--space-10) 0 var(--space-2); padding-top: var(--space-6); border-top: 1px solid var(--color-border); }
 
-  /* My Submissions: inline editor + attachments */
-  tr.activity-edit-row td { background: var(--color-surface-elevated); padding: var(--space-5); border-bottom: 2px solid var(--color-gold); }
+  /* My activities: cards grouped by month */
+  .act-month { display: flex; align-items: baseline; gap: 8px; margin: var(--space-5) 0 var(--space-2); font-size: 12px; line-height: 16px; font-weight: 650; letter-spacing: 1.2px; text-transform: uppercase; color: var(--color-text-muted); }
+  .act-month span { letter-spacing: 0; font-variant-numeric: tabular-nums; color: var(--color-text-muted); font-weight: 500; }
+  .acts { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+  .act { padding: var(--space-3) var(--space-4); border-radius: var(--radius-tile); background: var(--color-surface); border: 1px solid var(--color-border); }
+  .act-top { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-3); }
+  .act-top b { font-size: 15.5px; line-height: 22px; font-weight: 650; min-width: 0; overflow-wrap: anywhere; }
+  .act-day { flex: none; font-size: 13px; color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
+  .act-tags { display: flex; flex-wrap: wrap; gap: 4px 0; margin-top: 2px; font-size: 13px; line-height: 19px; color: var(--color-text-secondary); }
+  .act-tags span + span::before { content: '·'; margin: 0 6px; color: var(--color-text-muted); }
+  .act-note { margin: var(--space-2) 0 0; font-size: 14px; line-height: 20px; color: var(--color-text-primary); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .act-actions { display: flex; align-items: center; gap: var(--space-4); margin-top: var(--space-2); min-height: 32px; }
+  .act-actions .spacer { flex: 1; }
+  .act-actions .link-btn { font-size: 13.5px; color: var(--color-text-secondary); }
+  .act-actions .link-btn.danger { color: var(--color-danger); }
+  .act-locked { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; color: var(--color-text-muted); }
+  .act-locked svg { width: 14px; height: 14px; }
+  .act-panel:empty { display: none; }
+  .act-panel { margin: var(--space-3) calc(-1 * var(--space-4)) calc(-1 * var(--space-3)); }
+  .act-more { width: 100%; margin-top: var(--space-4); }
+
+  /* My activities: inline editor + photos (inside the card) */
+  .activity-edit-row .edit-cell { background: var(--color-surface-elevated); padding: var(--space-4); border-top: 2px solid var(--color-gold); border-radius: 0 0 var(--radius-tile) var(--radius-tile); }
   .edit-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--space-3) var(--space-4); margin-bottom: var(--space-3); }
-  .edit-grid label, tr.activity-edit-row > td > label { display: block; font-size: 13px; font-weight: 600; margin-bottom: var(--space-3); }
-  .edit-grid input, .edit-grid select, tr.activity-edit-row textarea { display: block; margin-top: var(--space-1); }
-  tr.activity-edit-row textarea { min-height: 64px; }
-  tr.activity-edit-row .actions {
+  .edit-grid label, .activity-edit-row .edit-cell > label { display: block; font-size: 13px; font-weight: 600; margin-bottom: var(--space-3); }
+  .edit-grid input, .edit-grid select, .activity-edit-row textarea { display: block; margin-top: var(--space-1); }
+  .activity-edit-row textarea { min-height: 64px; }
+  .activity-edit-row .actions {
     position: sticky; bottom: 0; justify-content: flex-start;
-    background: var(--color-surface-elevated); margin: var(--space-4) calc(-1 * var(--space-5)) calc(-1 * var(--space-5)); padding: var(--space-3) var(--space-5);
-    border-top: 1px solid var(--color-border-strong); box-shadow: 0 -8px 18px rgba(0,0,0,.25);
+    background: var(--color-surface-elevated); margin: var(--space-4) calc(-1 * var(--space-4)) calc(-1 * var(--space-4)); padding: var(--space-3) var(--space-4);
+    border-top: 1px solid var(--color-border-strong); border-radius: 0 0 var(--radius-tile) var(--radius-tile);
   }
   .ae-checkbox { display: flex !important; align-items: center; gap: var(--space-2); margin-top: var(--space-6); }
   .ae-checkbox input { margin: 0; }
   .ae-status { font-size: 13px; margin-left: var(--space-2); color: var(--color-danger); }
-  tr.attachments-row td { background: var(--color-surface-elevated); padding: var(--space-4) var(--space-5); }
+  .attachments-row { background: var(--color-surface-elevated); padding: var(--space-4); border-radius: 0 0 var(--radius-tile) var(--radius-tile); }
   .attachment-preview { display: flex; gap: var(--space-2); flex-wrap: wrap; margin-top: var(--space-2); }
   .attachment-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; font-size: 13px; background: var(--color-surface-elevated); border: 1px solid var(--color-border); color: var(--color-text-primary); }
   .attachment-chip-remove { background: none; border: none; color: var(--color-danger); cursor: pointer; font-size: 16px; font-weight: 700; padding: 10px; margin: -10px -6px -10px 0; line-height: 1; }
 
   @media (max-width: 760px) {
     .card, .activity-entry { padding: var(--space-5); }
+    /* Keep the editor's Save/Cancel bar above the floating bottom menu. */
+    .activity-edit-row .actions { bottom: calc(92px + env(safe-area-inset-bottom, 0px)); flex-direction: row; align-items: center; }
+    .activity-edit-row .actions .audac-btn { min-height: 46px; flex: 1; }
     .edit-grid { grid-template-columns: 1fr; }
     .actions { flex-direction: column-reverse; align-items: stretch; }
     .actions .hint { text-align: center; }
@@ -849,8 +872,12 @@
     }
     await fetchAllAttachmentCounts();
     const profileByCreator = showCreator ? await fetchProfilesByCreator(data) : new Map();
-    container.innerHTML = renderMySubmissionsTable(data, showCreator, profileByCreator);
-    wireActivityRows(container, data, loadMySubmissions);
+    const draw = () => {
+      container.innerHTML = renderMySubmissionsList(data, showCreator, profileByCreator);
+      wireActivityRows(container, data, loadMySubmissions);
+      container.querySelector('[data-more-activities]')?.addEventListener('click', () => { actShown += ACT_PAGE; draw(); });
+    };
+    draw();
     scrollToSubmissionsIfAsked();
   }
 
@@ -864,42 +891,59 @@
     return new Map(data.map(p => [p.id, p]));
   }
 
-  function renderMySubmissionsTable(rows, showCreator, profileByCreator) {
-    return `<div class="table-scroll"><table class="detail"><thead><tr>
-      <th>Date</th><th>Firm</th>${showCreator ? '<th>Logged by</th><th>Territory</th>' : ''}<th>Account</th><th>Contact Type</th><th>Activity Type</th><th>Notes</th><th>Files</th><th>Actions</th>
-    </tr></thead><tbody>${rows.map(r => activityRowHtml(r, showCreator, profileByCreator)).join('')}</tbody></table></div>`;
+  // My activities: one card per activity, grouped by month, newest first.
+  // Phones get the same list as computers (the old wide table scrolled sideways).
+  const ACT_PAGE = 20;
+  let actShown = ACT_PAGE;
+  function renderMySubmissionsList(rows, showCreator, profileByCreator) {
+    const visible = rows.slice(0, actShown);
+    const monthLabel = (m) => new Date(m + '-01T12:00:00').toLocaleString('en-US', { month: 'long', year: 'numeric' });
+    let html = '', current = null;
+    for (const r of visible) {
+      const m = String(r.entry_date || '').slice(0, 7);
+      if (m !== current) {
+        if (current !== null) html += '</ul>';
+        const n = rows.filter(x => String(x.entry_date || '').startsWith(m)).length;
+        html += `<p class="act-month">${escapeHtml(monthLabel(m))} <span>${n}</span></p><ul class="acts">`;
+        current = m;
+      }
+      html += activityRowHtml(r, showCreator, profileByCreator);
+    }
+    if (current !== null) html += '</ul>';
+    if (rows.length > visible.length) html += `<button type="button" class="audac-btn-outline act-more" data-more-activities>Show ${Math.min(ACT_PAGE, rows.length - visible.length)} more</button>`;
+    return html;
   }
 
   function activityRowHtml(r, showCreator, profileByCreator) {
-    const firmName = escapeHtml((firmsCache.find(f => f.id === r.rep_firm_id) || {}).name || '');
     const creatorProfile = profileByCreator?.get(r.created_by);
-    const creatorCell = showCreator
-      ? `<td>${escapeHtml(creatorProfile?.full_name || r.created_by_email || 'Anonymous')}</td><td>${escapeHtml(creatorProfile?.territory_note || '')}</td>`
-      : '';
+    const day = new Date(r.entry_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     const attCount = attachmentCountByEntry.get(r.id) || 0;
-    const filesCell = attCount > 0
-      ? `<button type="button" class="link-btn" data-toggle-attachments="${r.id}">📎 ${attCount}</button>`
-      : '<span class="muted">—</span>';
+    const tags = [
+      `<span>${escapeHtml(r.activity_type || '')}</span>`,
+      `<span>${escapeHtml(r.contact_type || '')}</span>`,
+      r.contact_name ? `<span>${escapeHtml(r.contact_name)}</span>` : '',
+      r.demo_gear_used ? '<span>Demo gear</span>' : '',
+      showCreator ? `<span>by ${escapeHtml(creatorProfile?.full_name || r.created_by_email || 'unknown')}</span>` : '',
+    ].filter(Boolean).join('');
     // Mirrors the Manager Dashboard's own locked-row treatment (renderActivityTable
     // there) -- a rep used to see Edit/Delete on a finalized entry regardless, and
     // only found out it was locked once Save was rejected by the DB trigger.
     const locked = isPeriodLocked(r.rep_firm_id, r.reporting_month);
-    const actionsCell = locked
-      ? '<span class="muted" title="This reporting period has been finalized">🔒 Locked</span>'
+    const actions = locked
+      ? `<span class="act-locked" title="AUDAC has finalized this month">${AudacShell.icon('lock')}Finalized</span>`
       : `<button type="button" class="link-btn" data-edit-activity="${r.id}">Edit</button>
          <button type="button" class="link-btn danger" data-delete-activity="${r.id}">Delete</button>`;
     return `
-      <tr data-activity-id="${r.id}">
-        <td>${r.entry_date}</td>
-        <td>${firmName}</td>
-        ${creatorCell}
-        <td>${escapeHtml(r.account_name)}</td>
-        <td>${r.contact_type}</td>
-        <td>${r.activity_type}</td>
-        <td>${escapeHtml(r.topic_opportunity || '')}</td>
-        <td>${filesCell}</td>
-        <td>${actionsCell}</td>
-      </tr>
+      <li class="act" data-activity-id="${r.id}">
+        <div class="act-top"><b>${escapeHtml(r.account_name)}</b><span class="act-day">${escapeHtml(day)}</span></div>
+        <div class="act-tags">${tags}</div>
+        ${r.topic_opportunity ? `<p class="act-note">${escapeHtml(r.topic_opportunity)}</p>` : ''}
+        <div class="act-actions">
+          ${attCount > 0 ? `<button type="button" class="link-btn" data-toggle-attachments="${r.id}">${attCount} photo${attCount === 1 ? '' : 's'}</button>` : ''}
+          <span class="spacer"></span>${actions}
+        </div>
+        <div class="act-panel" hidden></div>
+      </li>
     `;
   }
 
@@ -907,19 +951,26 @@
     const byId = new Map(rows.map(r => [String(r.id), r]));
     container.querySelectorAll('[data-edit-activity]').forEach(btn => {
       btn.addEventListener('click', () => {
-        const tr = btn.closest('tr');
-        openActivityEditor(tr, byId.get(btn.dataset.editActivity), onChanged);
+        openActivityEditor(btn.closest('.act'), byId.get(btn.dataset.editActivity), onChanged);
       });
     });
     container.querySelectorAll('[data-delete-activity]').forEach(btn => {
       btn.addEventListener('click', () => deleteActivityEntry(btn.dataset.deleteActivity, onChanged));
     });
     container.querySelectorAll('[data-toggle-attachments]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const tr = btn.closest('tr');
-        toggleAttachments(tr, btn.dataset.toggleAttachments);
-      });
+      btn.addEventListener('click', () => toggleAttachments(btn.closest('.act'), btn.dataset.toggleAttachments));
     });
+  }
+
+  // The card's panel holds either the photos or the editor, never both.
+  function openPanel(card, kind) {
+    const list = card.closest('#my-submissions-list');
+    const panel = card.querySelector('.act-panel');
+    if (!panel.hidden && panel.dataset.kind === kind) return null; // caller toggles closed
+    list.querySelectorAll('.act-panel').forEach(p => { if (p !== panel && p.dataset.kind === 'photos') { p.hidden = true; p.innerHTML = ''; } });
+    panel.dataset.kind = kind;
+    panel.hidden = false;
+    return panel;
   }
 
   async function fetchAllAttachmentCounts() {
@@ -930,24 +981,17 @@
     });
   }
 
-  async function toggleAttachments(tr, entryId) {
-    const table = tr.closest('table');
-    const existingNext = tr.nextElementSibling;
-    if (existingNext && existingNext.classList.contains('attachments-row')) {
-      existingNext.remove();
-      return;
-    }
-    table.querySelectorAll('.attachments-row').forEach(el => el.remove());
-    const colspan = tr.children.length;
-    const attRow = document.createElement('tr');
-    attRow.className = 'attachments-row';
-    attRow.innerHTML = `<td colspan="${colspan}"></td>`;
-    tr.after(attRow);
-    await renderAttachmentsInto(attRow, entryId);
+  async function toggleAttachments(card, entryId) {
+    const panel = card.querySelector('.act-panel');
+    if (!panel.hidden && panel.dataset.kind === 'edit' && panel.querySelector('.activity-edit-row') && !closeEditRowWithConfirm(panel.querySelector('.activity-edit-row'))) return;
+    const open = openPanel(card, 'photos');
+    if (!open) { panel.hidden = true; panel.innerHTML = ''; return; }
+    open.innerHTML = '<div class="attachments-row"></div>';
+    await renderAttachmentsInto(open.firstElementChild, entryId);
   }
 
   async function renderAttachmentsInto(attRow, entryId) {
-    const td = attRow.querySelector('td');
+    const td = attRow;
     td.innerHTML = '<div class="hint">Loading attachments…</div>';
     const { data, error } = await client.from('activity_attachments').select('*').eq('activity_entry_id', entryId).order('uploaded_at');
     if (error) { td.innerHTML = `<div class="hint">Failed to load attachments: ${escapeHtml(error.message)}</div>`; return; }
@@ -1009,20 +1053,17 @@
     return true;
   }
 
-  function openActivityEditor(tr, row, onChanged) {
-    const table = tr.closest('table');
-    const existingNext = tr.nextElementSibling;
-    if (existingNext && existingNext.classList.contains('activity-edit-row')) {
-      closeEditRowWithConfirm(existingNext);
-      return;
-    }
-    const otherOpen = table.querySelector('.activity-edit-row');
+  function openActivityEditor(card, row, onChanged) {
+    const mine = card.querySelector('.act-panel .activity-edit-row');
+    if (mine) { closeEditRowWithConfirm(mine); return; }
+    const otherOpen = card.closest('#my-submissions-list').querySelector('.activity-edit-row');
     if (otherOpen && !closeEditRowWithConfirm(otherOpen)) return;
 
-    const colspan = tr.children.length;
-    const editRow = document.createElement('tr');
+    const panel = openPanel(card, 'edit');
+    panel.innerHTML = '';
+    const editRow = document.createElement('div');
     editRow.className = 'activity-edit-row';
-    editRow.innerHTML = `<td colspan="${colspan}">
+    editRow.innerHTML = `<div class="edit-cell">
       <div class="edit-grid">
         <label>Date<input type="date" class="ae-date" value="${row.entry_date}" max="${todayISO()}"></label>
         <label>Account<input type="text" class="ae-account" value="${escapeHtml(row.account_name)}">${row.account_external_id ? '<span class="hint" style="display:block; font-weight:400;">Changing the name removes the link to the AUDAC CRM account.</span>' : ''}</label>
@@ -1040,8 +1081,8 @@
         <button type="button" class="audac-btn-outline" data-ae-cancel>Cancel</button>
         <span class="ae-status"></span>
       </div>
-    </td>`;
-    tr.after(editRow);
+    </div>`;
+    panel.appendChild(editRow);
     editRow.querySelector('.ae-contact-type').value = row.contact_type;
     editRow.querySelector('.ae-activity-type').value = row.activity_type;
     editRow._original = collectEditFields(editRow);
