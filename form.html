@@ -31,17 +31,60 @@
     background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-card);
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), var(--shadow-card);
   }
-  .activity-entry .entry-title { font-size: 12px; line-height: 16px; font-weight: 650; letter-spacing: 1.2px; text-transform: uppercase; color: var(--color-gold); margin-bottom: var(--space-4); }
+  /* One activity: no "Activity 1" / Remove header. Several: a small numbered head. */
+  .entry-head { display: flex; justify-content: space-between; align-items: center; margin: calc(-1 * var(--space-2)) 0 var(--space-3); }
+  #entries-container > .activity-entry:only-child .entry-head { display: none; }
+  .entry-title { font-size: 12px; line-height: 16px; font-weight: 650; letter-spacing: 1.2px; text-transform: uppercase; color: var(--color-gold); }
   .remove-entry {
-    position: absolute; top: 12px; right: 12px; min-height: 44px; padding: 0 12px;
+    min-height: 40px; padding: 0 10px; margin-right: -10px;
     background: none; border: none; color: var(--color-danger); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; border-radius: 12px;
   }
   .remove-entry:hover { background: var(--color-danger-tint); }
-  .checkbox-field { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4); min-height: 44px; }
-  .checkbox-field label { margin: 0; font-weight: 500; }
-  #add-entry-btn { width: 100%; border-style: dashed; }
+  .label-like { display: block; font-size: 14px; line-height: 20px; font-weight: 600; color: var(--color-text-primary); margin-bottom: var(--space-2); }
+  .account-input { font-size: 17px; min-height: 52px; }
+
+  /* Tap-to-pick (contact type, activity type) */
+  .picked-select { position: absolute; width: 1px; height: 1px; min-height: 0; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); border: 0; opacity: 0; pointer-events: none; }
+  .picks { display: flex; flex-wrap: wrap; gap: var(--space-2); border-radius: 14px; }
+  .pick {
+    display: inline-flex; align-items: center; gap: 6px; min-height: 42px; padding: 0 15px;
+    border-radius: 999px; border: 1px solid var(--color-border-strong); background: var(--color-input);
+    color: var(--color-text-primary); font: inherit; font-size: 14.5px; font-weight: 550; cursor: pointer;
+    transition: border-color 150ms var(--ease), background-color 150ms var(--ease), color 150ms var(--ease);
+  }
+  @media (hover: hover) { .pick:hover { border-color: var(--color-gold); } }
+  .pick:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(217,166,83,0.35); }
+  .pick[aria-checked="true"] { background: var(--color-gold-tint); border-color: var(--color-gold); color: var(--color-gold-light); font-weight: 650; }
+  .pick[aria-checked="true"]::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--color-gold); }
+  .picks.missing { box-shadow: 0 0 0 2px rgba(231,127,123,0.5); padding: 4px; margin: -4px; }
+  .missing-msg { margin-top: var(--space-2); font-size: 13.5px; line-height: 19px; color: #f4b3b0; }
+
+  /* Demo gear, photos, date: one row of small pills */
+  .extras { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-3); }
+  .toggle-pill, .date-pill {
+    display: inline-flex; align-items: center; gap: 7px; min-height: 42px; margin: 0; padding: 0 12px;
+    border-radius: 999px; border: 1px solid var(--color-border); background: var(--color-bg-raised);
+    font-size: 13.5px; font-weight: 550; white-space: nowrap; color: var(--color-text-secondary); cursor: pointer; position: relative;
+  }
+  .toggle-pill svg { width: 18px; height: 18px; }
+  .toggle-pill input[type="checkbox"] { width: 17px; height: 17px; margin: 0; }
+  .toggle-pill:has(input:checked) { border-color: var(--color-gold); color: var(--color-gold-light); background: var(--color-gold-tint); }
+  .toggle-pill:focus-within, .date-pill:focus-within { border-color: var(--color-gold); }
+  .date-pill { padding-right: 6px; }
+  .date-pill span { color: var(--color-text-muted); }
+  .date-pill input[type="date"] { width: auto; min-height: 0; padding: 6px 4px; border: 0; background: none; box-shadow: none; font-size: 15px; color: var(--color-text-primary); }
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  .attachment-preview:empty { display: none; }
+  .attachment-preview { margin: 0 0 var(--space-3); }
+  .entry-month-note:empty { display: none; }
+
+  .firm-pick { margin-bottom: var(--space-4); }
+  .form-foot { display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-2); }
+  #submit-btn { width: 100%; }
+  .foot-links { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); flex-wrap: wrap; padding: 0 6px; }
+  .foot-links .link-btn { color: var(--color-text-secondary); font-size: 14px; }
+  #add-entry-btn { color: var(--color-gold-light); font-weight: 600; text-decoration: none; }
   .actions { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); flex-wrap: wrap; margin-top: var(--space-2); }
-  #submit-btn { min-width: 220px; }
   .optional { font-weight: 400; color: var(--color-text-secondary); }
   .more-notes { margin: 0 0 var(--space-4); }
   .more-notes > summary { cursor: pointer; font-size: 14px; font-weight: 600; color: var(--color-text-secondary); padding: var(--space-2) 0; }
@@ -120,7 +163,6 @@
   @media (max-width: 760px) {
     .card, .activity-entry { padding: var(--space-5); }
     .edit-grid { grid-template-columns: 1fr; }
-    #submit-btn { width: 100%; }
     .actions { flex-direction: column-reverse; align-items: stretch; }
     .actions .hint { text-align: center; }
   }
@@ -166,26 +208,22 @@
     <button type="button" class="link-btn" id="draft-discard-btn">Discard draft</button>
   </div>
 
-  <form id="activity-form">
-    <div class="card">
-      <div class="field" style="margin-bottom:0;">
-        <label for="firm-select">Rep firm</label>
-        <select id="firm-select" required></select>
-        <div class="hint">Each activity is filed under the month of its own date.</div>
-      </div>
+  <form id="activity-form" novalidate>
+    <!-- Only shown to a rep who isn't tied to a firm yet; everyone else's firm is fixed. -->
+    <div class="field firm-pick" id="firm-card" hidden>
+      <label for="firm-select">Your rep firm</label>
+      <select id="firm-select" required></select>
     </div>
 
-    <div style="display:flex; justify-content:space-between; align-items:center; gap:var(--space-3); flex-wrap:wrap; margin:var(--space-6) 0 var(--space-4);">
-      <h2 class="section-title">Activities</h2>
-      <a href="/import" id="import-link" class="audac-btn-outline">Upload from CRM export</a>
-    </div>
     <div id="entries-container"></div>
 
-    <button type="button" class="audac-btn-outline" id="add-entry-btn">+ Add another activity</button>
-
-    <div class="actions" style="margin-top:var(--space-6);">
-      <span class="hint" id="entry-count-hint"></span>
+    <div class="form-foot">
       <button type="submit" class="audac-btn" id="submit-btn">Save</button>
+      <div class="foot-links">
+        <button type="button" class="link-btn" id="add-entry-btn">+ Another activity</button>
+        <span class="hint" id="entry-count-hint"></span>
+        <a href="/import" id="import-link" class="link-btn">Upload a CRM export</a>
+      </div>
     </div>
   </form>
 
@@ -305,6 +343,37 @@
     for (const v of values) html += `<option value="${v}">${v}</option>`;
     return html;
   }
+
+  // Contact type and activity type: tap buttons on top of the (hidden) selects,
+  // which stay the source of truth for the draft, the CRM suggestion and saving.
+  const CAMERA_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>';
+  function pickButtons(values) {
+    return values.map(v => `<button type="button" class="pick" role="radio" aria-checked="false" data-value="${escapeHtml(v)}">${escapeHtml(v)}</button>`).join('');
+  }
+  function syncPicks(block) {
+    block.querySelectorAll('.picks').forEach(group => {
+      const val = block.querySelector(`[name="${group.dataset.for}"]`).value;
+      group.classList.remove('missing');
+      group.querySelectorAll('.pick').forEach(b => b.setAttribute('aria-checked', String(b.dataset.value === val)));
+    });
+  }
+  entriesContainer.addEventListener('click', (e) => {
+    const b = e.target.closest('.pick');
+    if (!b) return;
+    const block = b.closest('.activity-entry');
+    const sel = block.querySelector(`[name="${b.closest('.picks').dataset.for}"]`);
+    sel.value = b.dataset.value;
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    syncPicks(block);
+    b.closest('.field').querySelector('.missing-msg')?.remove();
+  });
+  entriesContainer.addEventListener('keydown', (e) => {
+    const b = e.target.closest('.pick');
+    if (!b || !['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp'].includes(e.key)) return;
+    const all = [...b.parentElement.children], i = all.indexOf(b);
+    const next = all[(i + (e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : all.length - 1)) % all.length];
+    next.focus(); next.click(); e.preventDefault();
+  });
 
   function escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
@@ -457,6 +526,7 @@
     if (sel.value && sel.dataset.auto !== '1') return; // rep picked one while we were asking
     sel.value = data;
     sel.dataset.auto = '1';
+    syncPicks(block);
     hint.textContent = 'Filled in from the AUDAC CRM. Change it if it’s not right.';
     saveDraft();
   }
@@ -722,6 +792,7 @@
     firmSelect.innerHTML = `<option value="${match.id}" selected>${escapeHtml(match.name)} — ${escapeHtml(match.territory)}</option>`;
     firmSelect.disabled = true;
     firmSelect.classList.add('firm-locked');
+    document.getElementById('firm-card').hidden = true;
   }
 
   // Signing in is required (anonymous submission was retired 2026-11 -- the DB
@@ -1049,22 +1120,17 @@
     wrap.className = 'activity-entry';
     wrap.dataset.idx = idx;
     wrap.innerHTML = `
-      <button type="button" class="remove-entry" data-remove="${idx}">Remove</button>
-      <div class="entry-title">Activity #<span class="entry-num">${idx}</span></div>
-      <div class="row">
-        <div class="field">
-          <label>Entry Date</label>
-          <input type="date" name="entry_date" value="${todayISO()}" max="${todayISO()}" required>
-          <div class="hint entry-month-note"></div>
+      <div class="entry-head">
+        <span class="entry-title">Activity <span class="entry-num">${idx}</span></span>
+        <button type="button" class="remove-entry" data-remove="${idx}">Remove</button>
+      </div>
+      <div class="field">
+        <label for="account-${idx}">Company</label>
+        <div class="combo">
+          <input type="text" id="account-${idx}" name="account_name" class="account-input" placeholder="Search or type a company" autocomplete="off" required>
+          <div class="combo-list account-list" hidden></div>
         </div>
-        <div class="field">
-          <label>Account / Company</label>
-          <div class="combo">
-            <input type="text" name="account_name" class="account-input" placeholder="Start typing a company name…" autocomplete="off" required>
-            <div class="combo-list account-list" hidden></div>
-          </div>
-          <div class="combo-status account-status"></div>
-        </div>
+        <div class="combo-status account-status"></div>
       </div>
       <div class="new-details new-account-details" hidden>
         <div class="row">
@@ -1103,27 +1169,32 @@
           <button type="button" class="link-btn" data-new-contact-cancel>Cancel</button>
         </div>
       </div>
-      <div class="row">
-        <div class="field">
-          <label>Contact Type</label>
-          <select name="contact_type" required>${buildOptions(CONTACT_TYPES, 'Select contact type')}</select>
-          <div class="hint contact-type-hint"></div>
-        </div>
-        <div class="field">
-          <label>Activity Type</label>
-          <select name="activity_type" required>${buildOptions(ACTIVITY_TYPES, 'Select activity type')}</select>
-        </div>
-      </div>
-      <div class="checkbox-field">
-        <input type="checkbox" name="demo_gear_used" id="demo-gear-${idx}">
-        <label for="demo-gear-${idx}">Demo gear used during this activity</label>
+      <div class="field">
+        <span class="label-like" id="ct-label-${idx}">Who is it?</span>
+        <select name="contact_type" class="picked-select" tabindex="-1" aria-hidden="true">${buildOptions(CONTACT_TYPES, 'Select contact type')}</select>
+        <div class="picks" role="radiogroup" aria-labelledby="ct-label-${idx}" data-for="contact_type">${pickButtons(CONTACT_TYPES)}</div>
+        <div class="hint contact-type-hint"></div>
       </div>
       <div class="field">
-        <label>What happened? <span class="optional">(optional)</span></label>
-        <textarea name="topic_opportunity" placeholder="Who you met, what you showed, any project in the works. A few words is fine."></textarea>
+        <span class="label-like" id="at-label-${idx}">What did you do?</span>
+        <select name="activity_type" class="picked-select" tabindex="-1" aria-hidden="true">${buildOptions(ACTIVITY_TYPES, 'Select activity type')}</select>
+        <div class="picks" role="radiogroup" aria-labelledby="at-label-${idx}" data-for="activity_type">${pickButtons(ACTIVITY_TYPES)}</div>
       </div>
+      <div class="field">
+        <label for="topic-${idx}">What happened? <span class="optional">(optional)</span></label>
+        <textarea id="topic-${idx}" name="topic_opportunity" placeholder="Who you met, what you showed, any project in the works. A few words is fine."></textarea>
+      </div>
+      <div class="extras">
+        <label class="toggle-pill" for="demo-gear-${idx}"><input type="checkbox" name="demo_gear_used" id="demo-gear-${idx}">Demo gear used</label>
+        <label class="toggle-pill" for="photos-${idx}">${CAMERA_ICON}Photos
+          <input type="file" id="photos-${idx}" class="attachment-input sr-only" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple></label>
+        <label class="date-pill" for="date-${idx}"><span>Date</span>
+          <input type="date" id="date-${idx}" name="entry_date" value="${todayISO()}" max="${todayISO()}" required></label>
+      </div>
+      <div class="attachment-preview"></div>
+      <div class="hint entry-month-note"></div>
       <details class="more-notes">
-        <summary>More for AUDAC (optional): product feedback, competitors</summary>
+        <summary>Product feedback, competitors <span class="optional">(optional)</span></summary>
         <div class="field">
           <label>What they said about AUDAC</label>
           <textarea name="solution_feedback" placeholder="What they liked, what’s missing, pricing remarks…"></textarea>
@@ -1137,11 +1208,6 @@
           <textarea name="additional_comments"></textarea>
         </div>
       </details>
-      <div class="field">
-        <label>Photos (optional — up to 3, JPG/PNG/WEBP/HEIC, max 5MB each)</label>
-        <input type="file" class="attachment-input" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple>
-        <div class="attachment-preview"></div>
-      </div>
     `;
     entriesContainer.appendChild(wrap);
     wireCompanyCombo(wrap);
@@ -1232,6 +1298,7 @@
       if (e.solution_feedback || e.competitive_feedback || e.additional_comments) b.querySelector('.more-notes').open = true;
       b.querySelector('[name="demo_gear_used"]').checked = !!e.demo_gear_used;
       if (e.contact_type_auto) b.querySelector('[name="contact_type"]').dataset.auto = '1';
+      syncPicks(b);
       if (e.account_external_id) {
         b.dataset.accountExternalId = e.account_external_id;
         const st = b.querySelector('.account-status');
@@ -1279,7 +1346,9 @@
 
   function updateEntryHint() {
     const n = entriesContainer.children.length;
-    document.getElementById('entry-count-hint').textContent = `${n} activity ${n === 1 ? 'entry' : 'entries'}`;
+    document.getElementById('entry-count-hint').textContent = n > 1 ? `${n} activities` : '';
+    entriesContainer.querySelectorAll('.entry-num').forEach((el, i) => { el.textContent = i + 1; });
+    document.getElementById('submit-btn').textContent = n > 1 ? `Save ${n} activities` : 'Save';
   }
 
   entriesContainer.addEventListener('click', (e) => {
@@ -1311,6 +1380,7 @@
         firmSelect.innerHTML = `<option value="${match.id}" selected>${match.name} — ${match.territory}</option>`;
         firmSelect.disabled = true;
         firmSelect.classList.add('firm-locked');
+        document.getElementById('firm-card').hidden = true;
         return;
       }
     }
@@ -1339,6 +1409,32 @@
         additional_comments: get('additional_comments').value.trim() || null,
       };
     });
+  }
+
+  // Points at the first thing still missing: says what, scrolls there, marks it.
+  function showMissing(i, what, el) {
+    const field = el.closest('.field') || el.closest('.extras') || el;
+    const msg = document.createElement('div');
+    msg.className = 'missing-msg';
+    msg.setAttribute('role', 'alert');
+    msg.textContent = what;
+    field.appendChild(msg);
+    if (el.classList.contains('picks')) el.classList.add('missing');
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (!el.classList.contains('picks')) el.focus({ preventScroll: true });
+    return true;
+  }
+  function checkRequired(entries) {
+    entriesContainer.querySelectorAll('.missing-msg').forEach(m => m.remove());
+    const blocks = [...entriesContainer.querySelectorAll('.activity-entry')];
+    for (const [i, e] of entries.entries()) {
+      const b = blocks[i];
+      if (!e.account_name) return showMissing(i, 'Which company was it? Type a name.', b.querySelector('.account-input'));
+      if (!e.contact_type) return showMissing(i, 'Pick who it is: dealer, consultant or end user.', b.querySelector('[data-for="contact_type"]'));
+      if (!e.activity_type) return showMissing(i, 'Pick what you did.', b.querySelector('[data-for="activity_type"]'));
+      if (!e.entry_date) return showMissing(i, 'Fill in the date.', b.querySelector('[name="entry_date"]'));
+    }
+    return false;
   }
 
   function validate(firmId, entries) {
@@ -1370,6 +1466,7 @@
     const blocks = [...entriesContainer.querySelectorAll('.activity-entry')];
     const entries = collectEntries();
 
+    if (firmId && checkRequired(entries)) return;
     const validationError = validate(firmId, entries);
     if (validationError) {
       showError(validationError);
@@ -1425,7 +1522,7 @@
 
     if (error) {
       submitBtn.disabled = false;
-      submitBtn.textContent = 'Save';
+      updateEntryHint();
       showError('Couldn’t save: ' + error.message);
       return;
     }
@@ -1453,12 +1550,13 @@
     }));
 
     submitBtn.disabled = false;
-    submitBtn.textContent = 'Save';
+    updateEntryHint();
 
     clearDraft();
-    const firmLabel = firmSelect.selectedOptions[0]?.textContent || '';
+    const monthLabel = (m) => new Date(m + '-01T12:00:00').toLocaleString('en-US', { month: 'long', year: 'numeric' });
+    const names = [...new Set(entries.map(x => x.account_name))];
     document.getElementById('confirmation-detail').textContent =
-      `${entries.length} ${entries.length === 1 ? 'activity' : 'activities'} saved for ${firmLabel}, filed under ${months.join(', ')}. Thanks.` +
+      `${entries.length === 1 ? names[0] : `${entries.length} activities`}, filed under ${months.map(monthLabel).join(' and ')}. Thanks.` +
       (uploadErrors.length ? ` Note: ${uploadErrors.length} photo(s) failed to upload — ${uploadErrors.join('; ')}` : '');
     document.getElementById('activity-form').style.display = 'none';
     document.getElementById('confirmation').style.display = 'block';
@@ -1479,6 +1577,7 @@
     // firmsCache must be populated before My Submissions can show firm names
     await Promise.all([loadFirms(), loadFinalizedPeriods()]);
     await initAuth(); // may lock firmSelect to the rep's own firm (lockFirmToProfile), programmatically -- no 'change' event fires for that
+    document.getElementById('firm-card').hidden = firmSelect.disabled;
     refreshMonthNotes();
   })();
 </script>
