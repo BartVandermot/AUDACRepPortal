@@ -5,8 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>AUDAC Rep Portal — Log activity</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/assets/audac-ui.css">
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
+<link rel="stylesheet" href="/assets/audac-ui.css?v=e4e7bc94">
 <!-- Lets a rep add this to their phone's home screen as a standalone app
      (see manifest.json) instead of re-typing/re-finding the URL every time.
      iOS ignores the manifest for "Add to Home Screen" and uses these
@@ -226,6 +227,7 @@
   <div id="error-banner"></div>
 
   <div id="signed-in-area" hidden>
+  <div id="outbox-notice" class="notice info outbox" role="status" hidden></div>
   <div id="draft-notice" class="notice info inline-notice" hidden>
     <span id="draft-notice-text" style="flex:1; min-width:200px;"></span>
     <button type="button" class="link-btn" id="draft-discard-btn">Discard draft</button>
@@ -267,8 +269,9 @@
 </div>
 <nav class="bottom-nav glass-floating" id="app-bottom-nav" aria-label="Main menu"></nav>
 
-<script src="/assets/audac-shell.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/assets/audac-shell.js?v=a11b65d6"></script>
+<script src="/assets/audac-outbox.js?v=6c442eab"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0"></script>
 <script>
   const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
@@ -310,6 +313,7 @@
   let currentSession = null;
   let currentProfile = null;
   let finalizedPeriods = new Set(); // "rep_firm_id|reporting_month" -- see loadFinalizedPeriods
+  let firmsReady = Promise.resolve(); // firm list + finalized months; set at start-up
   const PENDING_FIRM_KEY = 'audac_pending_firm_id';
   const entriesContainer = document.getElementById('entries-container');
   const firmSelect = document.getElementById('firm-select');
@@ -751,7 +755,11 @@
   }
 
   async function handleSignedIn() {
-    const { data: profile } = await client.from('profiles').select('*').eq('id', currentSession.user.id).maybeSingle();
+    // The profile and the firm list load side by side (slow networks).
+    const [{ data: profile }] = await Promise.all([
+      client.from('profiles').select('*').eq('id', currentSession.user.id).maybeSingle(),
+      firmsReady,
+    ]);
     currentProfile = profile;
 
     // Only reps belong to a firm -- a manager opening a ?firm= link must not
@@ -769,6 +777,7 @@
     }
 
     if (currentProfile?.is_active === false) { showDeactivated(); return; }
+    startOutbox();
     if (isRep && currentProfile?.rep_firm_id) lockFirmToProfile(currentProfile.rep_firm_id);
     document.getElementById('name-prompt-bar').hidden = !!currentProfile?.full_name;
     updateSignedInGreeting();
@@ -776,6 +785,22 @@
     applyAccountFromUrl();
     refreshMonthNotes();
     await loadMySubmissions();
+  }
+
+  // Activities saved without a connection: shown on top, sent automatically.
+  let outboxStarted = false;
+  function startOutbox() {
+    if (outboxStarted || !window.AudacOutbox) return;
+    outboxStarted = true;
+    AudacOutbox.mountNotice(document.getElementById('outbox-notice'));
+    AudacOutbox.init(client, currentSession.user.id);
+    window.addEventListener('audac-outbox-sent', () => loadMySubmissions());
+  }
+  // A query that gives up after ms (slow networks); the error then reads as a
+  // network error, so the save goes to the outbox instead of hanging.
+  function withTimeout(query, ms) {
+    try { if (window.AbortSignal && AbortSignal.timeout && query.abortSignal) return query.abortSignal(AbortSignal.timeout(ms)); } catch { /* old browser */ }
+    return query;
   }
 
   // A deactivated rep (left their firm) can sign in but not log anything.
@@ -861,7 +886,10 @@
     // RLS scopes this automatically -- created_by = auth.uid() for a regular
     // rep, or (if is_rep_admin) any entry for their firm regardless of who
     // created it. No explicit filter needed here either way.
-    const { data, error } = await client.from('activity_entries').select('*').order('entry_date', { ascending: false });
+    const [{ data, error }] = await Promise.all([
+      client.from('activity_entries').select('*').order('entry_date', { ascending: false }),
+      fetchAllAttachmentCounts(),
+    ]);
     if (error) {
       container.innerHTML = `<div class="hint">Couldn’t load your activities: ${escapeHtml(error.message)}</div>`;
       return;
@@ -870,7 +898,6 @@
       container.innerHTML = '<div class="hint">Nothing logged yet. Activities you save while signed in show up here.</div>';
       return;
     }
-    await fetchAllAttachmentCounts();
     const profileByCreator = showCreator ? await fetchProfilesByCreator(data) : new Map();
     const draw = () => {
       container.innerHTML = renderMySubmissionsList(data, showCreator, profileByCreator);
@@ -1514,30 +1541,44 @@
       return;
     }
 
-    // Soft duplicate warning, not a hard block -- two genuinely separate visits
-    // can share every one of these fields, so this asks rather than refuses.
-    // A rep can only SELECT their own entries, so this goes through a narrow
-    // security-definer RPC that checks the whole firm.
-    const dupChecks = await Promise.all(entries.map(e =>
-      client.rpc('check_duplicate_activity', {
-        p_rep_firm_id: firmId, p_account_name: e.account_name, p_entry_date: e.entry_date, p_activity_type: e.activity_type,
-      })
-    ));
-    const dupEntryNumbers = dupChecks.map((r, i) => r.data ? i + 1 : null).filter(Boolean);
-    if (dupEntryNumbers.length) {
-      const proceed = confirm(
-        `Activity #${dupEntryNumbers.join(', #')} look${dupEntryNumbers.length === 1 ? 's' : ''} like ${dupEntryNumbers.length === 1 ? 'a duplicate' : 'duplicates'} of an entry already logged for the same account, date, and activity type.\n\nSave anyway?`
-      );
-      if (!proceed) return;
-    }
+    // No connection (or a very slow one): the activity is kept on the phone and
+    // sent automatically later (assets/audac-outbox.js).
+    const canQueue = !!window.AudacOutbox && 'indexedDB' in window;
+    let offline = !navigator.onLine;
 
     const submitBtn = document.getElementById('submit-btn');
     submitBtn.disabled = true;
     submitBtn.textContent = 'Saving…';
 
+    // Soft duplicate warning, not a hard block -- two genuinely separate visits
+    // can share every one of these fields, so this asks rather than refuses.
+    // A rep can only SELECT their own entries, so this goes through a narrow
+    // security-definer RPC that checks the whole firm. Skipped without a
+    // connection: a check that can't run never stops a save.
+    if (!offline) {
+      const dupChecks = await Promise.all(entries.map(e =>
+        withTimeout(client.rpc('check_duplicate_activity', {
+          p_rep_firm_id: firmId, p_account_name: e.account_name, p_entry_date: e.entry_date, p_activity_type: e.activity_type,
+        }), 8000)
+      ));
+      if (dupChecks.some(r => r.error && canQueue && AudacOutbox.isNetworkError(r.error, r.status))) offline = true;
+      const dupEntryNumbers = dupChecks.map((r, i) => r.data ? i + 1 : null).filter(Boolean);
+      if (dupEntryNumbers.length) {
+        const proceed = confirm(
+          `Activity #${dupEntryNumbers.join(', #')} look${dupEntryNumbers.length === 1 ? 's' : ''} like ${dupEntryNumbers.length === 1 ? 'a duplicate' : 'duplicates'} of an entry already logged for the same account, date, and activity type.\n\nSave anyway?`
+        );
+        if (!proceed) { submitBtn.disabled = false; updateEntryHint(); return; }
+      }
+    }
+
     // A rep whose account isn't tied to a firm yet (signed up without a firm
     // link) gets tied to the firm they're submitting for -- once; after that
     // the firm is locked to their profile like everyone else's.
+    if (currentProfile?.role === 'rep' && !currentProfile.rep_firm_id && offline) {
+      submitBtn.disabled = false; updateEntryHint();
+      showError('No connection right now. Your very first activity needs one (it links you to your firm). It’s kept as a draft: press Save again when you’re online.');
+      return;
+    }
     if (currentProfile?.role === 'rep' && !currentProfile.rep_firm_id) {
       const { error: claimErr } = await client.rpc('claim_rep_firm', { p_firm_id: firmId });
       if (!claimErr) {
@@ -1558,8 +1599,35 @@
       ...e,
     }));
     const months = [...new Set(rows.map(r => r.reporting_month))].sort();
+    const monthLabel = (m) => new Date(m + '-01T12:00:00').toLocaleString('en-US', { month: 'long', year: 'numeric' });
+    const names = [...new Set(entries.map(x => x.account_name))];
+    const what = entries.length === 1 ? names[0] : `${entries.length} activities`;
+    const filesOf = (pick) => blocks.flatMap((block, i) => (block.pendingFiles || []).filter(pick).map(file => ({ entryId: rows[i].id, file })));
+    const showDone = (title, detail) => {
+      submitBtn.disabled = false;
+      updateEntryHint();
+      clearDraft();
+      document.getElementById('confirmation-title').textContent = title;
+      document.getElementById('confirmation-detail').textContent = detail;
+      document.getElementById('activity-form').style.display = 'none';
+      document.getElementById('confirmation').style.display = 'block';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+    const queued = async (opts) => {
+      await AudacOutbox.add(opts?.rowsSent ? [] : rows, opts?.files || filesOf(() => true), opts);
+      showDone('Saved on your phone', opts?.rowsSent
+        ? `${what} is saved. The photos go up automatically as soon as you’re online.`
+        : `${what}: no connection right now, so it’s kept on this phone and sent automatically as soon as you’re online. You can close the app.`);
+    };
 
-    const { error } = await client.from('activity_entries').insert(rows);
+    let error = null, status = 200;
+    if (!offline) ({ error, status } = await withTimeout(client.from('activity_entries').insert(rows), 20000));
+    if (offline || (error && canQueue && AudacOutbox.isNetworkError(error, status))) {
+      if (canQueue) { await queued(); return; }
+      submitBtn.disabled = false; updateEntryHint();
+      showError('No connection right now. Your activity is kept as a draft on this phone: press Save again when you’re online.');
+      return;
+    }
 
     if (error) {
       submitBtn.disabled = false;
@@ -1574,6 +1642,7 @@
     // missing, surfaced in the confirmation message.
     submitBtn.textContent = 'Uploading photos…';
     const uploadErrors = [];
+    const notSent = []; // photos that hit a dropped connection: they go via the outbox
     await Promise.all(blocks.map(async (block, i) => {
       const files = block.pendingFiles || [];
       if (!files.length) return;
@@ -1581,7 +1650,11 @@
       for (const file of files) {
         const path = `${entryId}/${Date.now()}-${file.name}`;
         const { error: upErr } = await client.storage.from('activity-attachments').upload(path, file, { contentType: file.type });
-        if (upErr) { uploadErrors.push(`${file.name}: ${upErr.message}`); continue; }
+        if (upErr) {
+          if (canQueue && AudacOutbox.isNetworkError(upErr)) notSent.push({ entryId, file });
+          else uploadErrors.push(`${file.name}: ${upErr.message}`);
+          continue;
+        }
         const { error: metaErr } = await client.from('activity_attachments').insert({
           activity_entry_id: entryId, storage_path: path, file_name: file.name,
           content_type: file.type, uploaded_by: currentSession.user.id,
@@ -1589,19 +1662,10 @@
         if (metaErr) uploadErrors.push(`${file.name}: ${metaErr.message}`);
       }
     }));
+    if (notSent.length) { await queued({ rowsSent: true, files: notSent }); loadMySubmissions(); return; }
 
-    submitBtn.disabled = false;
-    updateEntryHint();
-
-    clearDraft();
-    const monthLabel = (m) => new Date(m + '-01T12:00:00').toLocaleString('en-US', { month: 'long', year: 'numeric' });
-    const names = [...new Set(entries.map(x => x.account_name))];
-    document.getElementById('confirmation-detail').textContent =
-      `${entries.length === 1 ? names[0] : `${entries.length} activities`}, filed under ${months.map(monthLabel).join(' and ')}. Thanks.` +
-      (uploadErrors.length ? ` Note: ${uploadErrors.length} photo(s) failed to upload — ${uploadErrors.join('; ')}` : '');
-    document.getElementById('activity-form').style.display = 'none';
-    document.getElementById('confirmation').style.display = 'block';
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    showDone('Saved', `${what}, filed under ${months.map(monthLabel).join(' and ')}. Thanks.` +
+      (uploadErrors.length ? ` Note: ${uploadErrors.length} photo(s) failed to upload — ${uploadErrors.join('; ')}` : ''));
     loadMySubmissions();
   });
 
@@ -1615,9 +1679,12 @@
   mountShell();
   addEntry();
   (async () => {
-    // firmsCache must be populated before My Submissions can show firm names
-    await Promise.all([loadFirms(), loadFinalizedPeriods()]);
+    // The form shows as soon as the session is known; the firm list and the
+    // finalized months load meanwhile. handleSignedIn waits for them (firm lock,
+    // My activities' month locks).
+    firmsReady = Promise.all([loadFirms(), loadFinalizedPeriods()]);
     await initAuth(); // may lock firmSelect to the rep's own firm (lockFirmToProfile), programmatically -- no 'change' event fires for that
+    await firmsReady;
     document.getElementById('firm-card').hidden = firmSelect.disabled;
     refreshMonthNotes();
   })();

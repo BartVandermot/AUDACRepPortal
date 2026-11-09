@@ -179,9 +179,9 @@
     }
   }
 
-  // The service worker (/sw.js) only handles push notifications -- it never
-  // caches pages. Registered on every page so the portal installs as an app
-  // from any page (Chrome/Edge on Android) and notifications keep working.
+  // The service worker (/sw.js) handles push notifications and keeps the
+  // versioned files on the phone for a fast start on slow networks (see sw.js).
+  // Registered on every page so the portal installs as an app from any page.
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {}); });
   }

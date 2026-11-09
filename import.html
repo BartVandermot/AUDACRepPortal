@@ -11,8 +11,9 @@
 <meta name="apple-mobile-web-app-title" content="AUDAC Reps">
 <title>AUDAC Rep Portal — Import from CRM Export</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/assets/audac-ui.css">
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
+<link rel="stylesheet" href="/assets/audac-ui.css?v=e4e7bc94">
 <style>
   /* Page-specific layout only -- tokens and components come from /assets/audac-ui.css */
   :root { --err: var(--color-danger); }
@@ -155,9 +156,9 @@
 </div>
 <nav class="bottom-nav glass-floating" id="app-bottom-nav" aria-label="Main menu"></nav>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/assets/audac-shell.js"></script>
+<script src="/assets/audac-shell.js?v=a11b65d6"></script>
 <script>
   const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';

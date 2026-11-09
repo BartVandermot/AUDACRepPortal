@@ -5,8 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>AUDAC Rep Portal — Sign In</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/assets/audac-ui.css">
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
+<link rel="stylesheet" href="/assets/audac-ui.css?v=e4e7bc94">
 <meta name="theme-color" content="#0b0c0e">
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
@@ -36,7 +37,7 @@
 <body>
 <div class="wrap">
   <div class="card surface-card--elevated">
-    <div class="brand"><img class="brand-logo" src="/assets/audac-logo.webp" alt="AUDAC" width="56" height="60"><span>Rep Portal</span></div>
+    <div class="brand"><img class="brand-logo" src="/assets/audac-logo.webp?v=29bf3c15" alt="AUDAC" width="56" height="60"><span>Rep Portal</span></div>
     <div id="error-msg"></div>
 
     <div id="signin-view">
@@ -99,7 +100,7 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0"></script>
 <script>
   const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
@@ -299,6 +300,6 @@
     }
   });
 </script>
-<script src="/assets/audac-shell.js"></script>
+<script src="/assets/audac-shell.js?v=a11b65d6"></script>
 </body>
 </html>

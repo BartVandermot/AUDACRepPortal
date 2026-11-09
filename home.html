@@ -5,8 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>AUDAC Rep Portal — Home</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/assets/audac-ui.css">
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
+<link rel="stylesheet" href="/assets/audac-ui.css?v=e4e7bc94">
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -139,6 +140,7 @@
         <h2 id="headline">Welcome back.</h2>
       </div>
 
+      <div id="outbox-notice" class="notice info outbox" role="status" hidden></div>
       <div class="bento">
         <section class="starter surface-card" id="starter" aria-labelledby="starter-h" hidden>
           <div class="starter-head">
@@ -197,9 +199,10 @@
 </div>
 <nav class="bottom-nav glass-floating" id="app-bottom-nav" aria-label="Main menu"></nav>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="/assets/audac-shell.js"></script>
-<script src="/assets/audac-push.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0"></script>
+<script src="/assets/audac-shell.js?v=a11b65d6"></script>
+<script src="/assets/audac-outbox.js?v=6c442eab"></script>
+<script src="/assets/audac-push.js?v=65f76408"></script>
 <script>
   const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
@@ -234,9 +237,16 @@
     const { data: { session } } = await client.auth.getSession();
     if (!session) { window.location.href = '/login'; return; }
 
+    // Slow networks: everything Home needs leaves at once instead of one after the other.
+    const newsData = fetchNews(session.user.id);
+    const firmsP = client.from('rep_firms').select('id, name, territory');
+    // RLS scopes these to the rep's own entries (or the whole firm for a firm admin)
+    // All of them (small volumes): "new companies", "log again" and the year line need history.
+    const monthP = client.from('activity_entries').select('account_external_id, account_name, reporting_month, entry_date, created_by');
     let { data: profile } = await client.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
     if (profile?.role === 'manager') { window.location.href = '/dashboard'; return; }
     if (profile?.role === 'executive') { window.location.href = '/executive'; return; }
+    if (window.AudacOutbox) { AudacOutbox.mountNotice($('outbox-notice')); AudacOutbox.init(client, session.user.id); }
     if (profile?.is_active === false) {
       $('headline').textContent = 'This account is no longer active.';
       document.querySelector('.bento').innerHTML = '<div class="notice info" style="grid-column:1/-1;">Your portal account has been deactivated, so you can’t log activities anymore. Everything you logged before is kept. If this is a mistake, contact AUDAC.</div>';
@@ -255,12 +265,7 @@
       }
     }
 
-    const [firmsRes, monthRes] = await Promise.all([
-      client.from('rep_firms').select('id, name, territory'),
-      // RLS scopes these to the rep's own entries (or the whole firm for a firm admin)
-      // All of them (small volumes): "new companies", "log again" and the year line need history.
-      client.from('activity_entries').select('account_external_id, account_name, reporting_month, entry_date, created_by'),
-    ]);
+    const [firmsRes, monthRes] = await Promise.all([firmsP, monthP]);
 
     const firm = (firmsRes.data || []).find(f => f.id === profile?.rep_firm_id);
     const name = profile?.full_name || session.user.email;
@@ -284,8 +289,11 @@
     renderAgain(all, session.user.id);
     $('page').setAttribute('aria-busy', 'false');
 
-    if (firm) await Promise.all([renderNews(session.user.id), profile?.is_rep_admin ? renderTeam() : null]);
-    await renderStarter(firm, session.user.id);
+    await Promise.all([
+      firm ? renderNews(newsData) : null,
+      firm && profile?.is_rep_admin ? renderTeam() : null,
+      renderStarter(firm, session.user.id),
+    ]);
   }
 
   // ---------- Companies reached this year: a line that only goes up ----------
@@ -366,14 +374,17 @@
     }
   });
 
-  async function renderNews(uid) {
-    const [leadRes, dealRes, reviewRes, qRes, newsRes, seenRes] = await Promise.all([
+  function fetchNews(uid) {
+    return Promise.all([
       client.rpc('get_my_leads'), client.rpc('get_my_deals'), client.rpc('get_my_reviews', { p_limit: 1 }),
       client.from('rep_questions').select('id, answered_at').eq('user_id', uid).eq('status', 'answered').order('answered_at', { ascending: false }).limit(5),
       // RLS only returns what's current for reps.
       client.from('rep_news').select('id, title, body, link_url, starts_on').order('starts_on', { ascending: false }).limit(3),
       client.from('rep_seen').select('item_key').order('seen_at', { ascending: false }).limit(200),
     ]);
+  }
+  async function renderNews(newsData) {
+    const [leadRes, dealRes, reviewRes, qRes, newsRes, seenRes] = await newsData;
     const leads = (!leadRes.error && leadRes.data) || [];
     const deals = (!dealRes.error && dealRes.data) || [];
     const seen = new Set(((!seenRes.error && seenRes.data) || []).map(s => s.item_key));

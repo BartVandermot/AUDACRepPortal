@@ -83,6 +83,18 @@ Opportunity and Product read access is already granted on the security role for 
 2. Import the repo into Vercel as a static project (no build step needed — `vercel.json` handles routing).
 3. Distribute rep-specific form links as `https://<domain>/form?firm=<rep_firm_id>` (get each firm's `id` from the `rep_firms` table).
 
+### Changing a file in `/assets` — stamp it
+
+`sw.js` keeps the versioned files on the phone (fast start on slow networks), so every `/assets/...` reference in the HTML carries a content hash (`?v=3f9a1c2b`). After editing anything in `/assets`, run:
+
+```
+node tools/stamp-assets.js
+```
+
+`node tools/stamp-assets.js --check` fails when a stamp is out of date. CDN libraries are pinned to an exact version (`supabase-js@2.119.0`) for the same reason. Pages themselves always come from the network first; the phone's copy is only used when the network takes more than 3 seconds.
+
+Activities saved without a connection wait in IndexedDB (`assets/audac-outbox.js`) and are sent automatically once the phone is back online.
+
 ## Phase 2 (not in this build)
 
 Live Dataverse sync currently covers Account + Contact only (see above). Opportunity (pipeline) and Product data still come in via CSV/XLSX upload — the security role already has read access for when that's built.

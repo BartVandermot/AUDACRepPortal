@@ -229,6 +229,13 @@ input[type="date"]::-webkit-calendar-picker-indicator, input[type="month"]::-web
 .notice.error, #error-banner, #error-msg { background: var(--color-danger-tint); color: #f4b3b0; border: 1px solid rgba(231,127,123,0.35); }
 .notice.info { background: var(--color-gold-tint); color: #f1d9ad; border-color: rgba(217,166,83,0.3); }
 .notice.success { background: rgba(113,198,139,0.10); color: #b5e6c4; border-color: rgba(113,198,139,0.3); }
+/* Activities waiting on the phone (assets/audac-outbox.js) */
+.notice.outbox { display: grid; gap: var(--space-3); }
+.notice.outbox .outbox-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+.notice.outbox .outbox-row + .outbox-row { padding-top: var(--space-3); border-top: 1px solid rgba(217,166,83,0.25); }
+.notice.outbox .outbox-row span { flex: 1 1 220px; }
+.notice.outbox .outbox-row b { color: var(--color-text-primary); font-weight: 600; }
+.notice.outbox .button-secondary { min-height: 40px; flex: none; }
 
 /* ---------- Tables (dense data: opaque, quiet) ---------- */
 .table-scroll, .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: var(--radius-tile); background: rgba(17, 18, 21, 0.84); box-shadow: var(--depth-well); -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter); }

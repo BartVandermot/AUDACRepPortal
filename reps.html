@@ -11,8 +11,9 @@
 <meta name="apple-mobile-web-app-title" content="AUDAC Reps">
 <title>AUDAC Rep Portal — Reps</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/assets/audac-ui.css">
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
+<link rel="stylesheet" href="/assets/audac-ui.css?v=e4e7bc94">
 <style>
   :root {
     --audac-gold: #d9a653;
@@ -84,7 +85,7 @@
     letter-spacing: .4px; text-transform: uppercase; cursor: pointer; border-radius: 3px;
   }
 </style>
-<link rel="stylesheet" href="/assets/audac-legacy.css">
+<link rel="stylesheet" href="/assets/audac-legacy.css?v=b88c6a8e">
 </head>
 <body data-nav="manager" data-active="reps">
 
@@ -194,10 +195,10 @@
 </div>
 <nav class="bottom-nav glass-floating" id="app-bottom-nav" aria-label="Main menu"></nav>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="/assets/audac-shell.js"></script>
-<script src="/assets/audac-data.js"></script>
-<script src="/assets/audac-sync.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0"></script>
+<script src="/assets/audac-shell.js?v=a11b65d6"></script>
+<script src="/assets/audac-data.js?v=3934996a"></script>
+<script src="/assets/audac-sync.js?v=00c3dc32"></script>
 <script>
   const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
