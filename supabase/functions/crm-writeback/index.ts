@@ -46,6 +46,7 @@ const PAG_CANADA_FIRM_ID = "c1a84e17-3e17-4af0-8f8b-47c229e8fda1";
 const LANGUAGE_EN = 921970001;                                        // pvs_contactlanguage
 const MAX_ATTEMPTS = 5;
 const BATCH = 15;
+const SETTLE_MINUTES = 15;
 
 // Relationship type (customertypecode) and business type from how the rep
 // described the company on its first activity.
@@ -523,8 +524,16 @@ Deno.serve(async (req) => {
 
     const results: any[] = [];
     const accountCols = "external_id, name, name_key, street, city, state_code, zip, country_code, phone, rep_firm_id, created_by, crm_push_attempts, crm_push_force";
-    const { data: accounts, error: aErr } = await svc.from("crm_accounts").select(accountCols)
-      .eq("source", "manual").eq("is_active", true).in("crm_push_status", ["waiting", "failed"]).lt("crm_push_attempts", MAX_ATTEMPTS).order("updated_at").limit(BATCH);
+    // The scheduler leaves a record alone until it has been untouched for
+    // SETTLE_MINUTES: the rep may still be on the Log form with its temporary
+    // "manual:" id (adding a contact, saving the activity). "Send now" by a
+    // manager doesn't wait. A stale id that slips through anyway is translated
+    // by crm_current_id() in the database (migration 0069).
+    const settled = new Date(Date.now() - SETTLE_MINUTES * 60_000).toISOString();
+    let accQ = svc.from("crm_accounts").select(accountCols)
+      .eq("source", "manual").eq("is_active", true).in("crm_push_status", ["waiting", "failed"]).lt("crm_push_attempts", MAX_ATTEMPTS);
+    if (!by) accQ = accQ.lt("updated_at", settled);
+    const { data: accounts, error: aErr } = await accQ.order("updated_at").limit(BATCH);
     if (aErr) throw aErr;
     for (const m of accounts || []) {
       try { results.push({ kind: "account", ...(await pushAccount(svc, m, by)) }); }
@@ -538,9 +547,11 @@ Deno.serve(async (req) => {
 
     // Then contacts whose company is in Dynamics by now (incl. the ones just sent).
     const contactCols = "external_id, full_name, email, email_key, phone, parent_account_external_id, rep_firm_id, created_by, crm_push_attempts";
-    const { data: contacts, error: cErr } = await svc.from("crm_contacts").select(contactCols)
+    let conQ = svc.from("crm_contacts").select(contactCols)
       .eq("source", "manual").eq("is_active", true).in("crm_push_status", ["waiting", "failed"]).lt("crm_push_attempts", MAX_ATTEMPTS)
-      .not("parent_account_external_id", "like", "manual:%").order("updated_at").limit(BATCH);
+      .not("parent_account_external_id", "like", "manual:%");
+    if (!by) conQ = conQ.lt("updated_at", settled);
+    const { data: contacts, error: cErr } = await conQ.order("updated_at").limit(BATCH);
     if (cErr) throw cErr;
     for (const m of contacts || []) {
       try { results.push({ kind: "contact", ...(await pushContact(svc, m, by)) }); }
