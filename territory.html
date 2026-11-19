@@ -152,6 +152,16 @@
         <div id="deals-list"></div>
       </section>
 
+      <section class="section surface-card" id="projects-section" aria-labelledby="projects-h">
+        <div class="section-head">
+          <div>
+            <h2 class="card-title" id="projects-h">Projects from your CRM</h2>
+            <p id="projects-sub">Loading…</p>
+          </div>
+        </div>
+        <div id="projects-list"></div>
+      </section>
+
       <section class="section surface-card" id="companies-section" aria-labelledby="companies-h">
         <div class="section-head">
           <div>
@@ -474,9 +484,58 @@
     set('n-deals', dealsCache.filter(needsUpdate).length);
   }
 
+  // ---------- Projects imported from the firm's own CRM ----------
+  let projectsCache = [];
+  const AVL_REGISTRATION = 'https://avlmediagroup.com/project-registration/';
+  function projectItem(p) {
+    const where = [p.dealer_name, p.location, p.stage].filter(Boolean).map(esc).join(' · ');
+    const reg = p.registered
+      ? `<span class="chip">${AudacShell.icon('check')}Registered with AVL</span>${p.crm_project_name && norm(p.crm_project_name) !== norm(p.project_name) ? `<span>as “${esc(p.crm_project_name)}”</span>` : ''}`
+      : (p.status === 'Open' ? `<span>Not registered yet</span>` : '');
+    const value = p.value_usd != null ? `<span class="value">${fmtMoney(p.value_usd)}</span>` : '';
+    const dateLine = p.status === 'Open'
+      ? (p.expected_close_date ? `Expected close ${fmtDate(p.expected_close_date)}` : 'No expected close date')
+      : p.status;
+    return `<li>
+      <div><b>${esc(p.project_name)}</b>
+        ${where ? `<span class="sub">${where}</span>` : ''}
+        ${reg || value ? `<span class="deal-meta">${reg}${value}</span>` : ''}
+        <span class="sub">${dateLine}${p.in_last_import ? '' : ' · not in your last import'}</span></div>
+      <div class="actions">${!p.registered && p.status === 'Open'
+        ? `<a class="button-secondary" href="${AVL_REGISTRATION}" target="_blank" rel="noopener">Register with AVL ↗</a>` : ''}</div>
+    </li>`;
+  }
+  function renderProjects() {
+    const show = filter === 'all' || filter === 'deals';
+    const rows = projectsCache.filter(p => hit(norm([p.project_name, p.dealer_name, p.location, p.stage, p.rep_crm_id, p.crm_project_name].join(' '))));
+    $('projects-section').hidden = !show || (!!query && !rows.length);
+    if (!show) return 0;
+    const desktopLink = `<a href="/import-projects">${projectsCache.length ? 'Upload a new export' : 'Upload your projects'}</a> (on a laptop)`;
+    if (!projectsCache.length) {
+      $('projects-sub').innerHTML = `Keep your AUDAC projects in your own CRM (QuickRep, Salesforce, Excel…)? Upload an export once and see here which ones are registered with AVL. ${desktopLink}.`;
+      $('projects-list').innerHTML = '';
+      return 0;
+    }
+    const current = rows.filter(p => p.in_last_import);
+    const open = current.filter(p => p.status === 'Open');
+    const notReg = open.filter(p => !p.registered);
+    const last = projectsCache.reduce((m, p) => p.last_imported_at > m ? p.last_imported_at : m, '');
+    $('projects-sub').innerHTML = query
+      ? `${rows.length} ${rows.length === 1 ? 'project' : 'projects'} found.`
+      : `${open.length} open, ${open.length - notReg.length} registered with AVL. Last upload ${fmtDate(String(last).slice(0, 10))}. ${desktopLink}.`;
+    const group = (title, list) => list.length ? `<p class="group-title">${title}</p><ul class="list">${list.map(projectItem).join('')}</ul>` : '';
+    $('projects-list').innerHTML = query
+      ? `<ul class="list">${rows.map(projectItem).join('')}</ul>`
+      : group('Open, not registered with AVL yet', notReg)
+        + group('Open, registered', open.filter(p => p.registered))
+        + group('Won or lost', current.filter(p => p.status !== 'Open'))
+        + group('No longer in your CRM export', rows.filter(p => !p.in_last_import));
+    return rows.length;
+  }
+
   function renderAll() {
     renderCounts();
-    const n = renderLeads() + renderCompanies() + renderDeals();
+    const n = renderLeads() + renderCompanies() + (renderDeals() || 0) + renderProjects();
     const nr = $('no-results');
     nr.hidden = !query || n > 0;
     if (!nr.hidden) nr.innerHTML = `Nothing in your territory matches “${esc(query)}”. Not in AUDAC’s CRM yet? <a href="/form">Log activity</a> and add it as a new company.`;
@@ -532,7 +591,7 @@
     if (!session) { window.location.href = '/login'; return; }
     // Slow networks: all five requests leave at once (the RPCs are firm-scoped
     // on the server, so they need nothing from the profile).
-    const dataP = Promise.all([client.rpc('get_my_territory'), client.rpc('get_my_deals'), client.rpc('get_my_leads')]);
+    const dataP = Promise.all([client.rpc('get_my_territory'), client.rpc('get_my_deals'), client.rpc('get_my_leads'), client.rpc('get_rep_projects')]);
     const [{ data: profile }, { data: firms }] = await Promise.all([
       client.from('profiles').select('*').eq('id', session.user.id).maybeSingle(),
       client.from('rep_firms').select('id, name'),
@@ -547,14 +606,15 @@
       $('gate').innerHTML = `<div class="notice info">${profile?.is_active === false
         ? 'Your portal account has been deactivated, so this page is not available.'
         : 'Your account isn’t linked to a rep firm yet. Use your firm’s signup link, or pick your firm on your first activity.'}</div>`;
-      $('search-bar').hidden = true; $('companies-section').hidden = true; $('deals-section').hidden = true; $('leads-section').hidden = true;
+      $('search-bar').hidden = true; $('companies-section').hidden = true; $('deals-section').hidden = true; $('leads-section').hidden = true; $('projects-section').hidden = true;
       $('page').setAttribute('aria-busy', 'false');
       return;
     }
     try { localStorage.setItem('audac_seen_territory', '1'); } catch { /* private mode */ }
-    const [acctRes, dealRes, leadRes] = await dataP;
+    const [acctRes, dealRes, leadRes, projRes] = await dataP;
     leadsCache = leadRes.data || [];
     dealsCache = dealRes.data || [];
+    projectsCache = projRes.data || [];
     accountsCache = (acctRes.data || []).map(a => ({ ...a, _hay: companyHay(a) }));
     // ?q= opens the page on a search (e.g. from a link elsewhere in the portal).
     const q0 = new URLSearchParams(location.search).get('q');
@@ -563,8 +623,10 @@
     if (leadRes.error) $('leads-sub').textContent = 'Could not load leads: ' + leadRes.error.message;
     if (acctRes.error) $('companies-sub').textContent = 'Could not load companies: ' + acctRes.error.message;
     if (dealRes.error) $('deals-sub').textContent = 'Could not load deals: ' + dealRes.error.message;
+    if (projRes.error) $('projects-sub').textContent = 'Could not load projects: ' + projRes.error.message;
     $('page').setAttribute('aria-busy', 'false');
     if (location.hash === '#deals') $('deals-section').scrollIntoView();
+    if (location.hash === '#projects') $('projects-section').scrollIntoView();
     if (location.hash === '#leads') $('leads-section').scrollIntoView();
   }
   init().catch(err => { $('gate').innerHTML = `<div class="notice error">Couldn’t load this page: ${esc(err.message || err)}. Refresh to try again.</div>`; });

@@ -41,6 +41,10 @@
       "destination": "/import.html"
     },
     {
+      "source": "/import-projects",
+      "destination": "/import-projects.html"
+    },
+    {
       "source": "/home",
       "destination": "/home.html"
     },

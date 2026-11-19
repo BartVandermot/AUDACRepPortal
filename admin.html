@@ -361,6 +361,14 @@
     </div>
     <div style="overflow-x:auto;"><table class="detail" id="forecast-table"><tbody><tr><td class="empty-note">Loading…</td></tr></tbody></table></div>
 
+    <div class="dd-sub-title" style="margin-top:22px;">Projects from rep CRMs</div>
+    <div class="upload-hint">What rep firms uploaded from their own CRM on <a href="/import-projects">Import projects</a> (you can upload for a firm there too). “Registered” = linked to a Registered Project in Dynamics by name; not registered yet = only in the rep's CRM.</div>
+    <div class="result-count" id="rep-projects-count"></div>
+    <div style="overflow-x:auto;"><table class="detail">
+      <thead><tr><th>Rep Firm</th><th>Project</th><th>Location</th><th>Dealer</th><th>Stage</th><th>Status</th><th>Value ($, rep)</th><th>Expected Close</th><th>AVL</th></tr></thead>
+      <tbody id="rep-projects-results"><tr><td colspan="9" class="empty-note">Loading…</td></tr></tbody>
+    </table></div>
+
     <div class="dd-sub-title" style="margin-top:22px;">AVL U.S. dealer price list</div>
     <div class="upload-hint">Used for the approximate dealer value reps see on their deals. Upload AVL's Excel price list (columns AVL SKU, PAIR, DEALER, MSRP) when AVL publishes a new version: it replaces the current one.</div>
     <div class="result-count" id="price-list-status">Loading…</div>
@@ -1485,6 +1493,24 @@
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheet), 'Forecast');
     XLSX.writeFile(wb, `audac-product-forecast-${new Date().toISOString().slice(0, 10)}.xlsx`);
   });
+
+  async function loadRepProjects() {
+    const tbody = document.getElementById('rep-projects-results');
+    const { data, error } = await client.rpc('get_rep_projects', { p_firm_id: null });
+    if (error) { tbody.innerHTML = `<tr><td colspan="9" class="empty-note">Failed to load: ${escapeHtml(error.message)}</td></tr>`; return; }
+    const rows = (data || []).filter(r => r.in_last_import);
+    const firmName = (id) => (firmsCache.find(f => f.id === id) || {}).name || '';
+    document.getElementById('rep-projects-count').textContent = rows.length
+      ? `${rows.length} projects from ${new Set(rows.map(r => r.rep_firm_id)).size} firm(s) · ${rows.filter(r => r.status === 'Open' && !r.registered).length} open and not registered with AVL`
+      : '';
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="9" class="empty-note">No rep firm has uploaded projects yet.</td></tr>'; return; }
+    tbody.innerHTML = rows.map(r => `<tr>
+      <td>${escapeHtml(firmName(r.rep_firm_id))}</td><td>${escapeHtml(r.project_name)}</td><td>${escapeHtml(r.location || '')}</td>
+      <td>${escapeHtml(r.dealer_name || '')}</td><td>${escapeHtml(r.stage || '')}</td>
+      <td><span class="status-badge ${r.status === 'Won' ? 'won' : r.status === 'Lost' ? 'lost' : 'open'}">${r.status}</span></td>
+      <td>${fmtUsd0(r.value_usd)}</td><td>${r.expected_close_date || ''}</td>
+      <td>${r.registered ? 'Registered' + (r.crm_project_name ? ` (${escapeHtml(r.crm_project_name)})` : '') : (r.status === 'Open' ? '<b>Not registered</b>' : '')}</td></tr>`).join('');
+  }
 
   async function loadPriceListStatus() {
     const el = document.getElementById('price-list-status');
@@ -2868,7 +2894,7 @@
     document.getElementById('activity-search-to').value = nowMonth;
     document.getElementById('activity-search-from').value = trailingMonths(nowMonth, 6)[5];
     await fetchAllAttachmentCounts();
-    await Promise.all([loadActivitySearchRange(), loadAuditLog(), loadPipelineEntries(), loadForecast(), loadPriceListStatus(), loadDealUpdates(), loadLeadFollowups(), loadCrossrefVersions(), loadRepNews(), refreshImportKpis(), loadCompanyMappings(), loadEducationRecords(), loadPipelineCsvEntries(), loadSelloutRecords(), loadImportHistory()]);
+    await Promise.all([loadActivitySearchRange(), loadAuditLog(), loadPipelineEntries(), loadForecast(), loadPriceListStatus(), loadRepProjects(), loadDealUpdates(), loadLeadFollowups(), loadCrossrefVersions(), loadRepNews(), refreshImportKpis(), loadCompanyMappings(), loadEducationRecords(), loadPipelineCsvEntries(), loadSelloutRecords(), loadImportHistory()]);
     switchTab((window.location.hash || '').replace('#', ''));
     // Deep link from the dashboard work list: /admin?filter=skipped#mappings
     const mapFilter = new URLSearchParams(location.search).get('filter');

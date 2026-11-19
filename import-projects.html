@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0c0e">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="AUDAC Reps">
+<title>AUDAC Rep Portal — Import projects</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
+<link rel="stylesheet" href="/assets/audac-ui.css?v=e4e7bc94">
+<style>
+  /* Page-specific layout only -- tokens and components come from /assets/audac-ui.css */
+  .card { padding: var(--space-6); margin-bottom: var(--space-5); }
+  .card h2 { font-size: 16px; line-height: 22px; font-weight: 650; margin: 0 0 var(--space-2); }
+  .step-intro { font-size: 14px; line-height: 21px; color: var(--color-text-secondary); margin: 0 0 var(--space-5); max-width: 70ch; }
+  .row { align-items: flex-end; }
+  #firm-fixed { font-weight: 650; font-size: 16px; }
+  .map-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--space-4) var(--space-5); }
+  .map-field label .req { color: var(--color-danger); }
+  .map-field .sample { font-size: 13px; color: var(--color-text-muted); margin-top: var(--space-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .table-wrap.tall { max-height: 560px; overflow-y: auto; }
+  table.detail th { position: sticky; top: 0; z-index: 1; }
+  table.detail td.num, table.detail th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .clip { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pill { display: inline-block; font-size: 12px; font-weight: 650; padding: 3px 10px; border-radius: 999px; white-space: nowrap; border: 1px solid transparent; }
+  .pill.ok { color: var(--color-success); background: rgba(113,198,139,0.08); border-color: rgba(113,198,139,0.22); }
+  .pill.dup { color: var(--color-warning); background: rgba(232,182,91,0.08); border-color: rgba(232,182,91,0.22); }
+  .pill.err { color: var(--color-danger); background: var(--color-danger-tint); border-color: rgba(231,127,123,0.25); }
+  .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: var(--space-3); margin-bottom: var(--space-4); }
+  .summary .stat { padding: var(--space-4); border-radius: var(--radius-tile); background: var(--color-bg-raised); border: 1px solid var(--color-border); }
+  .summary .stat b { display: block; font-size: 28px; line-height: 32px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .summary .stat span { font-size: 13px; color: var(--color-text-secondary); }
+  .actions { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); flex-wrap: wrap; margin-top: var(--space-5); }
+  #result .notice a { color: var(--color-gold-light); }
+  @media (max-width: 760px) {
+    .card { padding: var(--space-5); }
+    .actions { flex-direction: column-reverse; align-items: stretch; }
+    #import-btn { width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app-shell">
+<aside class="sidebar glass-floating" id="app-sidebar" aria-label="Main menu"></aside>
+<div class="app-content">
+<header class="topbar">
+  <h1>Import projects</h1>
+  <span class="spacer"></span>
+  <button type="button" class="icon-btn mobile-only" id="mobile-signout" aria-label="Sign out" title="Sign out"></button>
+</header>
+
+<main class="page">
+  <div id="gate" class="notice info">Loading…</div>
+
+  <div id="app" hidden>
+    <div id="error-banner" class="notice error" hidden></div>
+
+    <div class="card surface-card--elevated">
+      <p class="eyebrow">Import</p>
+      <h2>Your AUDAC projects</h2>
+      <p class="step-intro">Upload the AUDAC projects from your own CRM (QuickRep, Salesforce, HubSpot, Excel…). They show up on My territory, next to the projects already registered with AVL, so AUDAC can back you up and plan stock. Upload again whenever you like: projects are updated by their CRM id, never duplicated. Uploading does not register a project: registration (and the dealer discount) only goes through AVL's website.</p>
+      <div id="firm-fixed"></div>
+      <div id="firm-pick" hidden>
+        <label for="firm-select">Import for firm</label>
+        <select id="firm-select"></select>
+      </div>
+      <p class="hint" id="ctx-line"></p>
+    </div>
+
+    <div class="card" id="step-file">
+      <h2>1. Upload your export</h2>
+      <p class="step-intro">An Excel (.xlsx) or CSV file with one project per row and column names in the first row. Every row needs a project name and the project's id in your CRM.</p>
+      <div class="row">
+        <div>
+          <label for="file-input">File</label>
+          <input type="file" id="file-input" accept=".csv,.xlsx,.xls">
+        </div>
+        <div id="sheet-pick" hidden>
+          <label for="sheet-select">Sheet</label>
+          <select id="sheet-select"></select>
+        </div>
+      </div>
+      <div class="hint" id="file-status"></div>
+    </div>
+
+    <div class="card" id="step-columns" hidden>
+      <h2>2. Match your columns</h2>
+      <p class="step-intro" id="columns-intro">Tell us which column holds each piece of information. We pre-filled what we recognised; this is saved for your firm, so next time it's already done.</p>
+      <div class="map-grid" id="map-grid"></div>
+      <div class="row" style="margin-top:16px;">
+        <div>
+          <label for="date-format">Date format in your file</label>
+          <select id="date-format">
+            <option value="auto">Auto-detect</option>
+            <option value="mdy">MM/DD/YYYY (US)</option>
+            <option value="dmy">DD/MM/YYYY</option>
+            <option value="ymd">YYYY-MM-DD</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" id="step-preview" hidden>
+      <h2>3. Check &amp; import</h2>
+      <p class="step-intro">Rows without a project name or CRM id are skipped. When your file has a brand or manufacturer column, only AUDAC rows are imported.</p>
+      <div id="preview-out"></div>
+    </div>
+
+    <div id="result" hidden></div>
+  </div>
+</main>
+</div>
+</div>
+<nav class="bottom-nav glass-floating" id="app-bottom-nav" aria-label="Main menu"></nav>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="/assets/audac-shell.js?v=2be5df8a"></script>
+<script>
+  const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
+  const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const MAX_ROWS = 2000;
+  const AVL_REGISTRATION = 'https://avlmediagroup.com/project-registration/';
+
+  // `guess` = header names we recognise, most specific first.
+  const FIELDS = [
+    { key: 'rep_crm_id', label: 'Project id in your CRM', required: true,
+      guess: ['opportunity id', 'opp id', 'project id', 'project number', 'opportunity number', 'record id', 'quote number', 'job number', 'id', 'number', 'ref', 'reference'] },
+    { key: 'project_name', label: 'Project name', required: true,
+      guess: ['project name', 'opportunity name', 'job name', 'project', 'opportunity', 'job', 'title', 'name', 'subject'] },
+    { key: 'location', label: 'Location (city, state)',
+      guess: ['project location', 'job location', 'location', 'site', 'city state', 'address'] },
+    { key: 'city', label: 'City (if separate)', guess: ['project city', 'job city', 'city'] },
+    { key: 'state', label: 'State (if separate)', guess: ['project state', 'job state', 'state', 'province', 'st'] },
+    { key: 'dealer_name', label: 'Dealer / integrator',
+      guess: ['dealer name', 'dealer', 'integrator', 'installer', 'contractor', 'account name', 'customer name', 'account', 'customer', 'company'] },
+    { key: 'stage', label: 'Stage / status',
+      guess: ['sales stage', 'stage', 'status', 'phase', 'pipeline stage'] },
+    { key: 'value_usd', label: 'Value (USD)',
+      guess: ['audac value', 'opportunity value', 'estimated value', 'est value', 'amount', 'value', 'total', 'revenue', 'price'] },
+    { key: 'expected_close_date', label: 'Expected close date',
+      guess: ['expected close date', 'expected close', 'est close date', 'estimated close', 'close date', 'decision date', 'order date', 'bid date', 'award date'] },
+    { key: 'sales_person', label: 'Sales person',
+      guess: ['sales person', 'salesperson', 'sales rep', 'assigned to', 'owner', 'rep'] },
+    { key: 'products', label: 'AUDAC products',
+      guess: ['audac products', 'products', 'product', 'models', 'model', 'bom', 'line items', 'items'] },
+    { key: 'notes', label: 'Notes',
+      guess: ['next step', 'notes', 'note', 'description', 'comments', 'comment', 'details'] },
+    { key: 'brand', label: 'Brand / manufacturer (AUDAC rows only)',
+      guess: ['manufacturer', 'brand', 'line', 'principal', 'vendor', 'mfr'] },
+  ];
+
+  const state = { session: null, profile: null, firms: [], firmId: null, ctx: null,
+    workbook: null, fileName: '', headers: [], rows: [], colMap: {}, dateFormat: 'auto', built: null };
+
+  const $ = (id) => document.getElementById(id);
+  function escapeHtml(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+  function norm(s) { return String(s ?? '').toLowerCase().replace(/[^a-z0-9&]+/g, ' ').trim(); }
+  function cellText(v) { if (v === null || v === undefined) return ''; if (v instanceof Date) return v.toISOString().slice(0, 10); return String(v).trim(); }
+  function showError(msg) { const b = $('error-banner'); b.textContent = msg; b.hidden = false; window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  function clearError() { $('error-banner').hidden = true; }
+  const fmtUsd = (n) => n == null ? '' : Number(n).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+
+  // ---------- Shell ----------
+  AudacShell.mount('import');
+  const signOut = async () => { await client.auth.signOut(); window.location.href = '/login'; };
+  AudacShell.onSignOut(signOut);
+  $('mobile-signout').innerHTML = AudacShell.icon('out');
+  $('mobile-signout').addEventListener('click', signOut);
+
+  // ---------- Access ----------
+  async function init() {
+    const { data: { session } } = await client.auth.getSession();
+    state.session = session;
+    if (!session) { $('gate').innerHTML = 'Sign in to import projects. <a href="/login">Sign in</a>, then come back here.'; return; }
+    const [{ data: profile }, { data: firms }] = await Promise.all([
+      client.from('profiles').select('*').eq('id', session.user.id).maybeSingle(),
+      client.from('rep_firms').select('id, name, territory').eq('status', 'active').order('name'),
+    ]);
+    state.profile = profile;
+    state.firms = firms || [];
+    const isManager = profile?.role === 'manager';
+    const ownFirm = state.firms.find(x => x.id === profile?.rep_firm_id);
+    AudacShell.setUser({ name: profile?.full_name || session.user.email, sub: ownFirm ? ownFirm.name : session.user.email });
+    if (isManager) {
+      AudacShell.useNav('manager');
+      AudacShell.setUser({ name: profile?.full_name || session.user.email, sub: 'AUDAC manager' });
+      $('firm-pick').hidden = false;
+      $('firm-select').innerHTML = '<option value="" disabled selected>Select a firm</option>' +
+        state.firms.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`).join('');
+      $('firm-select').addEventListener('change', () => selectFirm($('firm-select').value));
+      $('step-file').hidden = true;
+    } else if (profile?.role === 'rep' && profile.rep_firm_id) {
+      $('firm-fixed').textContent = ownFirm ? ownFirm.name : 'Your firm';
+    } else {
+      $('gate').textContent = 'Project import is available to rep firm accounts and AUDAC managers.';
+      return;
+    }
+    $('gate').hidden = true;
+    $('app').hidden = false;
+    if (!isManager) await selectFirm(profile.rep_firm_id);
+  }
+
+  async function selectFirm(firmId) {
+    clearError();
+    state.firmId = firmId;
+    const { data, error } = await client.rpc('get_project_import_context', { p_firm_id: firmId });
+    if (error) { showError('Could not load import settings: ' + error.message); return; }
+    state.ctx = data;
+    $('ctx-line').textContent = data?.existing
+      ? `${data.existing} project${data.existing === 1 ? '' : 's'} from the last import${data.last_import ? ', ' + new Date(data.last_import).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}.`
+      : 'No projects imported yet.';
+    $('step-file').hidden = false;
+    if (state.rows.length) { applyMapping(); renderColumns(); renderPreview(); }
+  }
+
+  // ---------- File ----------
+  $('file-input').addEventListener('change', async (e) => {
+    clearError();
+    const file = e.target.files[0];
+    if (!file) return;
+    state.fileName = file.name;
+    try {
+      const buf = await file.arrayBuffer();
+      state.workbook = /\.csv$/i.test(file.name)
+        ? XLSX.read(new TextDecoder('utf-8').decode(buf), { type: 'string', raw: true })
+        : XLSX.read(buf, { type: 'array' });
+    } catch (err) {
+      showError("Couldn't read that file. Save it as .xlsx or .csv and try again. (" + err.message + ')');
+      return;
+    }
+    const names = state.workbook.SheetNames;
+    $('sheet-pick').hidden = names.length < 2;
+    $('sheet-select').innerHTML = names.map(n => `<option>${escapeHtml(n)}</option>`).join('');
+    loadSheet(names[0]);
+  });
+  $('sheet-select').addEventListener('change', () => loadSheet($('sheet-select').value));
+
+  function loadSheet(name) {
+    const aoa = XLSX.utils.sheet_to_json(state.workbook.Sheets[name], { header: 1, raw: true, defval: '', blankrows: false });
+    const headerIdx = aoa.findIndex(r => r.filter(c => cellText(c) !== '').length >= 2);
+    if (headerIdx < 0) { showError('No header row found — the first row should contain column names.'); return; }
+    const seen = {};
+    state.headers = aoa[headerIdx].map((h, i) => {
+      let label = cellText(h) || `Column ${i + 1}`;
+      if (seen[label]) label = `${label} (${++seen[label]})`; else seen[label] = 1;
+      return label;
+    });
+    state.rows = aoa.slice(headerIdx + 1)
+      .map((r, i) => ({ line: headerIdx + i + 2, cells: Object.fromEntries(state.headers.map((h, j) => [h, r[j] ?? ''])) }))
+      .filter(r => Object.values(r.cells).some(v => cellText(v) !== ''));
+    const tooMany = state.rows.length > MAX_ROWS;
+    $('file-status').innerHTML = tooMany
+      ? `<span style="color:var(--color-danger)">${state.rows.length} rows found — the limit is ${MAX_ROWS} per import.</span>`
+      : `${state.rows.length} row${state.rows.length === 1 ? '' : 's'} found in “${escapeHtml(state.fileName)}”.`;
+    if (tooMany || !state.rows.length) { $('step-columns').hidden = true; $('step-preview').hidden = true; return; }
+    applyMapping();
+    renderColumns();
+    renderPreview();
+  }
+
+  // ---------- Mapping ----------
+  function applyMapping() {
+    const saved = state.ctx?.mapping || null;
+    const headerSet = new Set(state.headers);
+    state.colMap = {};
+    let fromSaved = 0;
+    if (saved?.colMap) for (const [k, h] of Object.entries(saved.colMap)) if (h && headerSet.has(h)) { state.colMap[k] = h; fromSaved++; }
+    const used = new Set(Object.values(state.colMap));
+    const normHeaders = state.headers.map(h => [h, norm(h)]);
+    for (const pass of [1, 2]) {
+      for (const f of FIELDS) {
+        if (state.colMap[f.key]) continue;
+        for (const g of f.guess) {
+          const hit = normHeaders.find(([h, n]) => !used.has(h) && (pass === 1 ? n === g : (` ${n} `).includes(` ${g} `)));
+          if (hit) { state.colMap[f.key] = hit[0]; used.add(hit[0]); break; }
+        }
+      }
+    }
+    state.dateFormat = saved?.dateFormat || 'auto';
+    $('columns-intro').textContent = fromSaved
+      ? 'We reused the column matching your firm saved last time. Check it and adjust if your export changed.'
+      : "Tell us which column holds each piece of information. We pre-filled what we recognised; this is saved for your firm, so next time it's already done.";
+  }
+
+  function sampleFor(header) {
+    if (!header) return '';
+    const vals = state.rows.map(r => cellText(r.cells[header])).filter(Boolean).slice(0, 3);
+    return vals.length ? 'e.g. ' + vals.map(v => v.length > 30 ? v.slice(0, 30) + '…' : v).join(' · ') : 'empty in this file';
+  }
+
+  function renderColumns() {
+    const opts = (sel) => `<option value="">— not in my file —</option>` +
+      state.headers.map(h => `<option value="${escapeHtml(h)}"${h === sel ? ' selected' : ''}>${escapeHtml(h)}</option>`).join('');
+    $('map-grid').innerHTML = FIELDS.map(f => `
+      <div class="map-field">
+        <label for="map-${f.key}">${escapeHtml(f.label)}${f.required ? ' <span class="req">*</span>' : ''}</label>
+        <select id="map-${f.key}" data-field="${f.key}">${opts(state.colMap[f.key])}</select>
+        <div class="sample">${escapeHtml(sampleFor(state.colMap[f.key]))}</div>
+      </div>`).join('');
+    $('date-format').value = state.dateFormat;
+    $('step-columns').hidden = false;
+  }
+  $('map-grid').addEventListener('change', (e) => {
+    const sel = e.target.closest('select[data-field]');
+    if (!sel) return;
+    state.colMap[sel.dataset.field] = sel.value || undefined;
+    sel.nextElementSibling.textContent = sampleFor(sel.value);
+    renderPreview();
+  });
+  $('date-format').addEventListener('change', () => { state.dateFormat = $('date-format').value; renderPreview(); });
+
+  // ---------- Parsing ----------
+  function detectDateFormat() {
+    const h = state.colMap.expected_close_date;
+    if (!h) return 'mdy';
+    let mdy = 0, dmy = 0;
+    for (const r of state.rows) {
+      const m = cellText(r.cells[h]).match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})/);
+      if (!m) continue;
+      if (+m[1] > 12) dmy++;
+      if (+m[2] > 12) mdy++;
+    }
+    return dmy > mdy ? 'dmy' : 'mdy';
+  }
+  function ymd(y, m, d) {
+    if (y < 100) y += 2000;
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return null;
+    return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  }
+  function parseDate(v, fmt) {
+    if (v === '' || v === null || v === undefined) return null;
+    if (typeof v === 'number') {
+      if (v < 20000 || v > 80000) return null;
+      const p = XLSX.SSF.parse_date_code(v);
+      return p ? ymd(p.y, p.m, p.d) : null;
+    }
+    if (v instanceof Date) return ymd(v.getFullYear(), v.getMonth() + 1, v.getDate());
+    const s = String(v).trim();
+    let m = s.match(/^(\d{4})[\/.-](\d{1,2})[\/.-](\d{1,2})/);
+    if (m) return ymd(+m[1], +m[2], +m[3]);
+    m = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})\b/);
+    if (m) {
+      const a = +m[1], b = +m[2], y = +m[3];
+      let order = fmt === 'auto' ? detectDateFormat() : fmt;
+      if (a > 12) order = 'dmy'; else if (b > 12) order = 'mdy';
+      return order === 'dmy' ? ymd(y, b, a) : ymd(y, a, b);
+    }
+    if (/^\d+(\.\d+)?$/.test(s)) return parseDate(Number(s), fmt);
+    const t = Date.parse(s);
+    if (!isNaN(t)) { const d = new Date(t); return ymd(d.getFullYear(), d.getMonth() + 1, d.getDate()); }
+    return null;
+  }
+  function parseMoney(v) {
+    if (typeof v === 'number') return isFinite(v) ? Math.round(v * 100) / 100 : null;
+    const s = String(v || '').replace(/[$€£\s]/g, '').replace(/,/g, '');
+    if (!s) return null;
+    const m = s.match(/^-?\d+(\.\d+)?/);
+    return m ? Number(m[0]) : null;
+  }
+  // Won / lost from the stage text; anything else is open.
+  function statusFromStage(stage) {
+    const s = norm(stage);
+    if (!s) return 'Open';
+    if (/\b(closed won|won|awarded|booked|ordered|po received|purchase order|sold|shipped|invoiced)\b/.test(s)) return 'Won';
+    if (/\b(closed lost|lost|dead|cancel+ed|cancel|no go|declined|no bid|abandoned)\b/.test(s)) return 'Lost';
+    return 'Open';
+  }
+
+  function buildRows() {
+    const c = state.colMap, get = (r, k) => c[k] ? r.cells[c[k]] : '';
+    const out = [], skipped = [];
+    let otherBrand = 0;
+    for (const r of state.rows) {
+      if (c.brand) {
+        const b = norm(get(r, 'brand'));
+        if (b && !b.includes('audac')) { otherBrand++; continue; }
+      }
+      const id = cellText(get(r, 'rep_crm_id'));
+      const name = cellText(get(r, 'project_name'));
+      if (!id || !name) { skipped.push({ line: r.line, why: !id ? 'no CRM id' : 'no project name' }); continue; }
+      const loc = cellText(get(r, 'location')) || [cellText(get(r, 'city')), cellText(get(r, 'state'))].filter(Boolean).join(', ');
+      const stage = cellText(get(r, 'stage'));
+      out.push({
+        rep_crm_id: id, project_name: name, location: loc || null,
+        dealer_name: cellText(get(r, 'dealer_name')) || null,
+        stage: stage || null, status: statusFromStage(stage),
+        value_usd: parseMoney(get(r, 'value_usd')),
+        expected_close_date: parseDate(get(r, 'expected_close_date'), state.dateFormat),
+        sales_person: cellText(get(r, 'sales_person')) || null,
+        products: cellText(get(r, 'products')) || null,
+        notes: cellText(get(r, 'notes')) || null,
+      });
+    }
+    // Same CRM id twice in one file: the last row wins.
+    const byId = new Map(out.map(x => [x.rep_crm_id, x]));
+    return { rows: [...byId.values()], skipped, otherBrand, dupIds: out.length - byId.size };
+  }
+
+  function renderPreview() {
+    const missing = FIELDS.filter(f => f.required && !state.colMap[f.key]);
+    $('step-preview').hidden = false;
+    if (missing.length) {
+      $('preview-out').innerHTML = `<div class="notice info">Choose a column for: ${missing.map(f => escapeHtml(f.label)).join(', ')}.</div>`;
+      state.built = null;
+      return;
+    }
+    const b = buildRows();
+    state.built = b;
+    const open = b.rows.filter(r => r.status === 'Open').length, won = b.rows.filter(r => r.status === 'Won').length, lost = b.rows.filter(r => r.status === 'Lost').length;
+    const value = b.rows.filter(r => r.status === 'Open').reduce((s, r) => s + Number(r.value_usd || 0), 0);
+    const sample = b.rows.slice(0, 200);
+    $('preview-out').innerHTML = `
+      <div class="summary">
+        <div class="stat"><b>${b.rows.length}</b><span>projects to import</span></div>
+        <div class="stat"><b>${open}</b><span>open${value ? ' · ' + fmtUsd(value) : ''}</span></div>
+        <div class="stat"><b>${won}</b><span>won</span></div>
+        <div class="stat"><b>${lost}</b><span>lost</span></div>
+        <div class="stat"><b>${b.skipped.length + b.otherBrand}</b><span>skipped${b.otherBrand ? ` (${b.otherBrand} other brands)` : ''}</span></div>
+      </div>
+      ${b.dupIds ? `<p class="hint">${b.dupIds} row${b.dupIds === 1 ? '' : 's'} repeated a CRM id already in this file; the last one counts.</p>` : ''}
+      <div class="table-wrap tall"><table class="detail"><thead><tr>
+        <th>CRM id</th><th>Project</th><th>Location</th><th>Dealer</th><th>Stage</th><th></th><th class="num">Value</th><th>Expected close</th>
+      </tr></thead><tbody>${sample.map(r => `<tr>
+        <td>${escapeHtml(r.rep_crm_id)}</td><td class="clip" title="${escapeHtml(r.project_name)}">${escapeHtml(r.project_name)}</td>
+        <td class="clip">${escapeHtml(r.location || '')}</td><td class="clip">${escapeHtml(r.dealer_name || '')}</td>
+        <td class="clip">${escapeHtml(r.stage || '')}</td>
+        <td><span class="pill ${r.status === 'Won' ? 'ok' : r.status === 'Lost' ? 'err' : 'dup'}">${r.status}</span></td>
+        <td class="num">${fmtUsd(r.value_usd)}</td><td>${r.expected_close_date || ''}</td></tr>`).join('')}</tbody></table></div>
+      ${b.rows.length > sample.length ? `<p class="hint">Showing the first ${sample.length} of ${b.rows.length}.</p>` : ''}
+      ${b.skipped.length ? `<p class="hint">Skipped: ${b.skipped.slice(0, 8).map(s => `row ${s.line} (${s.why})`).join(', ')}${b.skipped.length > 8 ? '…' : ''}</p>` : ''}
+      <div class="actions">
+        <span class="hint">Projects already in a previous import are updated. Projects missing from this file stay in the portal, marked “not in the last import”.</span>
+        <button type="button" class="button-primary" id="import-btn"${b.rows.length ? '' : ' disabled'}>Import ${b.rows.length} project${b.rows.length === 1 ? '' : 's'}</button>
+      </div>`;
+    const btn = $('import-btn');
+    if (btn) btn.addEventListener('click', runImport);
+  }
+
+  async function runImport() {
+    if (!state.built?.rows.length) return;
+    clearError();
+    const btn = $('import-btn');
+    btn.disabled = true; btn.textContent = 'Importing…';
+    const mapping = { colMap: state.colMap, dateFormat: state.dateFormat };
+    const { data, error } = await client.rpc('import_rep_projects', { p_firm_id: state.firmId, p_rows: state.built.rows, p_mapping: mapping });
+    if (error) { btn.disabled = false; btn.textContent = 'Import'; showError('Import failed: ' + error.message); return; }
+    const notReg = (data.total || 0) - (data.registered || 0);
+    $('result').hidden = false;
+    $('result').innerHTML = `<div class="notice success">
+      <b>Imported.</b> ${data.new} new, ${data.updated} updated${data.no_longer_listed ? `, ${data.no_longer_listed} no longer in your export` : ''}.
+      ${data.registered} of your ${data.total} projects are registered with AVL${notReg ? `; ${notReg} are not yet. <a href="${AVL_REGISTRATION}" target="_blank" rel="noopener">Register a project with AVL ↗</a>` : '.'}
+      <br><a href="/territory#projects">See your projects on My territory →</a></div>`;
+    $('result').scrollIntoView({ behavior: 'smooth' });
+    btn.textContent = 'Imported';
+    selectFirm(state.firmId);
+  }
+
+  init();
+</script>
+</body>
+</html>
