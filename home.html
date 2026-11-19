@@ -434,7 +434,7 @@
 
     // This year, only when there's something to celebrate.
     const won = deals.filter(d => d.status === 'Won' && (d.actual_close_date || '') >= yearStart);
-    const wonValue = won.reduce((s, d) => s + Number(d.value_usd || 0), 0);
+    const wonValue = won.reduce((s, d) => s + Number(d.dealer_value_usd || 0), 0);
     const converted = leads.filter(l => (l.outcome === 'meeting' || l.outcome === 'project') && String(l.outcome_at || '') >= yearStart).length;
     const bits = [];
     if (won.length) bits.push(`<b>${won.length} deal${won.length === 1 ? '' : 's'} won</b>${wonValue ? ` (${fmtMoney(wonValue)})` : ''}`);

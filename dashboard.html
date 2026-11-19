@@ -264,7 +264,7 @@
   <table class="scorecard" id="scorecard-table" style="display:none;">
     <thead>
       <tr>
-        <th data-sort="firm_name">Firm</th><th data-sort="activity_count">Activities</th><th data-sort="demo_gear_count">Demo Gear Used</th><th data-sort="open_pipeline_value_usd">Open Pipeline</th><th data-sort="new_pipeline_value_usd">New Pipeline (Month)</th>
+        <th data-sort="firm_name">Firm</th><th data-sort="activity_count">Activities</th><th data-sort="demo_gear_count">Demo Gear Used</th><th data-sort="open_pipeline_value_usd">Open Pipeline (€)</th><th data-sort="new_pipeline_value_usd">New Pipeline (Month, €)</th>
         <th data-sort="education_count">Education Certs</th><th data-sort="leads" title="Leads of the last 60 days handed to the firm that it followed up (reported in My territory, or Qualified in Dynamics)">Leads followed up</th><th>Sell-out MoM</th><th data-sort="rag">RAG</th><th data-sort="review">Review</th>
       </tr>
     </thead>
@@ -347,6 +347,10 @@
 
   function currentMonthValue() {
     return new Date().toISOString().slice(0, 7);
+  }
+  // Pipeline values are AVL's purchase value in EUR (calculated by the PVS Portal).
+  function fmtEur(n) {
+    return '€' + Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
   }
   function fmtMoney(n) {
     return '$' + Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
@@ -442,14 +446,14 @@
     const spark = (k, what, money) => {
       const v = series(k);
       if (!v.length) return '';
-      const label = `${what}, last 6 months: ${v.map((n, i) => `${monthLabel(i < 5 ? trendMonths[i] : month).split(' ')[0].slice(0, 3)} ${money ? fmtMoney(n) : n}`).join(', ')}`;
+      const label = `${what}, last 6 months: ${v.map((n, i) => `${monthLabel(i < 5 ? trendMonths[i] : month).split(' ')[0].slice(0, 3)} ${money ? (k.includes('pipeline') ? fmtEur(n) : fmtMoney(n)) : n}`).join(', ')}`;
       return sparkline(v, label);
     };
     const tile = (label, value, sub, k, money) => `<div class="dk-tile"><span class="dk-label">${label}</span><div class="dk-row"><span class="dk-value">${value}</span>${spark(k, label, money)}</div>${sub}</div>`;
     box.innerHTML = `
       ${tile('Activities logged', acts, `<span class="dk-sub">${demos} with demo gear</span>`, 'activity_count', false)}
-      ${tile('Open pipeline', fmtMoney(openV), `<span class="dk-sub">${openN} open opportunit${openN === 1 ? 'y' : 'ies'}</span>`, 'open_pipeline_value_usd', true)}
-      ${tile('New pipeline this month', fmtMoney(newV), `<span class="dk-sub">${newN} new opportunit${newN === 1 ? 'y' : 'ies'}</span>`, 'new_pipeline_value_usd', true)}
+      ${tile('Open pipeline', fmtEur(openV), `<span class="dk-sub">${openN} open opportunit${openN === 1 ? 'y' : 'ies'}</span>`, 'open_pipeline_value_usd', true)}
+      ${tile('New pipeline this month', fmtEur(newV), `<span class="dk-sub">${newN} new opportunit${newN === 1 ? 'y' : 'ies'}</span>`, 'new_pipeline_value_usd', true)}
       ${tile('Sell-out', fmtMoney(sell), momHtml, 'sellout_revenue', true)}
       <div class="dk-tile dk-rag"><span class="dk-label">Firm health</span>
         <div class="dk-bar" role="img" aria-label="${rag.Green} green, ${rag.Amber} amber, ${rag.Red} red">
@@ -594,8 +598,8 @@
         <td>${row.firm_name}</td>
         <td>${row.activity_count}</td>
         <td>${row.demo_gear_count}</td>
-        <td>${row.open_pipeline_count} (${fmtMoney(row.open_pipeline_value_usd)})</td>
-        <td>${row.new_pipeline_count} (${fmtMoney(row.new_pipeline_value_usd)})</td>
+        <td>${row.open_pipeline_count} (${fmtEur(row.open_pipeline_value_usd)})</td>
+        <td>${row.new_pipeline_count} (${fmtEur(row.new_pipeline_value_usd)})</td>
         <td>${row.education_count}</td>
         <td>${leadCell(row.rep_firm_id)}</td>
         <td>${momCell(row)}</td>
@@ -1088,7 +1092,7 @@
     ).join('');
     const summary = renderPipelineSummary(rows);
     return summary + `<table class="detail"><thead><tr>
-      <th>Account</th><th>Project</th><th>Status</th><th>Stage</th><th>Value</th><th>Expected Close</th><th>Actual Close</th><th>Linked Activity</th>
+      <th>Dealer</th><th>Project</th><th>Status</th><th>Stage</th><th title="AVL purchase value (PVS Portal)">Value (€, AVL)</th><th title="BOM x AVL U.S. dealer price list">≈ Dealer $</th><th>Expected Close</th><th>Actual Close</th><th>Linked Activity</th>
     </tr></thead><tbody>${rows.map(r => {
       const status = r.status || 'Open';
       const badgeClass = status === 'Won' ? 'rag-green' : status === 'Lost' ? 'rag-red' : 'rag-amber';
@@ -1097,7 +1101,7 @@
       <tr data-pipeline-id="${r.id}"><td>${escapeHtml(r.account_name)}</td><td>${escapeHtml(r.project_name || '')}</td>
       <td><span class="rag-badge ${badgeClass}">${escapeHtml(status)}</span></td>
       <td>${escapeHtml(r.stage || '')}</td>
-      <td>${fmtMoney(shownValue)}</td><td>${r.expected_close_date || ''}</td><td>${r.actual_close_date || ''}</td>
+      <td>${fmtEur(shownValue)}</td><td>${r.dealer_value_usd != null ? fmtMoney(r.dealer_value_usd) + (r.dealer_value_missing ? `<span class="muted" title="${r.dealer_value_missing} product(s) without a U.S. price"> *</span>` : '') : ''}</td><td>${r.expected_close_date || ''}</td><td>${r.actual_close_date || ''}</td>
       <td><select class="pipeline-link-select" data-pipeline-link="${r.id}"${locked ? ' disabled title="This month is finalized"' : ''}>
         <option value="">— none —</option>${activityOptions}
       </select></td></tr>
@@ -1114,9 +1118,9 @@
       bucket.value += Number((status === 'Won' && r.actual_value_usd != null ? r.actual_value_usd : r.value_usd) || 0);
     });
     return `<div class="upload-hint" style="margin-top:0;">
-      ${buckets.Open.count} open (${fmtMoney(buckets.Open.value)}), ` +
-      `${buckets.Won.count} won (${fmtMoney(buckets.Won.value)}), ` +
-      `${buckets.Lost.count} lost (${fmtMoney(buckets.Lost.value)})</div>`;
+      ${buckets.Open.count} open (${fmtEur(buckets.Open.value)}), ` +
+      `${buckets.Won.count} won (${fmtEur(buckets.Won.value)}), ` +
+      `${buckets.Lost.count} lost (${fmtEur(buckets.Lost.value)})</div>`;
   }
 
   // Sets each row's <select> to its current related_activity_entry_id AFTER the
@@ -1221,7 +1225,7 @@
         byCreator.map(([name, count]) => `<tr><td>${escapeHtml(name)}</td><td>${count}</td></tr>`).join('')
       }</tbody></table>` : '';
 
-    const pipelineRows = pipeline.map(p => `<tr><td>${escapeHtml(p.account_name)}</td><td>${escapeHtml(p.project_name||'')}</td><td>${escapeHtml(p.stage||'')}</td><td>${fmtMoney(p.value_usd)}</td></tr>`).join('')
+    const pipelineRows = pipeline.map(p => `<tr><td>${escapeHtml(p.account_name)}</td><td>${escapeHtml(p.project_name||'')}</td><td>${escapeHtml(p.stage||'')}</td><td>${fmtEur(p.value_usd)}</td></tr>`).join('')
       || '<tr><td colspan="4" style="color:#999;">No pipeline entries</td></tr>';
     const pipelineTotal = pipeline.reduce((s, p) => s + Number(p.value_usd || 0), 0);
 
@@ -1264,9 +1268,9 @@
       <table><thead><tr><th>Person</th><th>Company</th><th>Course</th><th>Completed</th></tr></thead><tbody>${eduRows}</tbody></table>
 
       <h2>Pipeline Summary</h2>
-      <p>Open pipeline (all-time): ${row.open_pipeline_count} deal${row.open_pipeline_count === 1 ? '' : 's'}, ${fmtMoney(row.open_pipeline_value_usd)} — New this month: ${row.new_pipeline_count} deal${row.new_pipeline_count === 1 ? '' : 's'}, ${fmtMoney(row.new_pipeline_value_usd)}</p>
+      <p>Open pipeline (all-time): ${row.open_pipeline_count} deal${row.open_pipeline_count === 1 ? '' : 's'}, ${fmtEur(row.open_pipeline_value_usd)} — New this month: ${row.new_pipeline_count} deal${row.new_pipeline_count === 1 ? '' : 's'}, ${fmtEur(row.new_pipeline_value_usd)}</p>
       <table><thead><tr><th>Account</th><th>Project</th><th>Stage</th><th>Value</th></tr></thead><tbody>${pipelineRows}</tbody></table>
-      <p>Total value of entries tagged to this reporting period: ${fmtMoney(pipelineTotal)}</p>
+      <p>Total value of entries tagged to this reporting period: ${fmtEur(pipelineTotal)}</p>
 
       <h2>Leads</h2>
       ${agendaLeads(row.rep_firm_id, month)}
@@ -1354,8 +1358,8 @@
         <td>${escapeHtml(row.firm_name)}</td>
         <td>${row.activity_count}</td>
         <td>${row.demo_gear_count}</td>
-        <td>${row.open_pipeline_count} (${fmtMoney(row.open_pipeline_value_usd)})</td>
-        <td>${row.new_pipeline_count} (${fmtMoney(row.new_pipeline_value_usd)})</td>
+        <td>${row.open_pipeline_count} (${fmtEur(row.open_pipeline_value_usd)})</td>
+        <td>${row.new_pipeline_count} (${fmtEur(row.new_pipeline_value_usd)})</td>
         <td>${row.education_count}</td>
         <td>${momCell(row)}</td>
         <td><span class="rag-badge" style="background:${ragColorBg[row.rag_status]};color:${ragColorFg[row.rag_status]};">${row.rag_status}</span></td>
@@ -1414,13 +1418,13 @@
       <div class="kpi-grid">
         <div class="kpi-tile"><div class="kpi-label">Total Activities</div><div class="kpi-value">${totalActivities}</div></div>
         <div class="kpi-tile"><div class="kpi-label">Active Reps</div><div class="kpi-value">${activeReps} / ${rows.length}</div></div>
-        <div class="kpi-tile"><div class="kpi-label">Open Pipeline</div><div class="kpi-value">${fmtMoney(totalOpenPipelineValue)}</div></div>
-        <div class="kpi-tile"><div class="kpi-label">New Pipeline (Month)</div><div class="kpi-value">${fmtMoney(totalNewPipelineValue)}</div></div>
+        <div class="kpi-tile"><div class="kpi-label">Open Pipeline (€)</div><div class="kpi-value">${fmtEur(totalOpenPipelineValue)}</div></div>
+        <div class="kpi-tile"><div class="kpi-label">New Pipeline (Month, €)</div><div class="kpi-value">${fmtEur(totalNewPipelineValue)}</div></div>
         <div class="kpi-tile"><div class="kpi-label">Sell-out MoM</div><div class="kpi-value">${momPct === null ? '—' : (momPct > 0 ? '+' : '') + momPct.toFixed(1) + '%'}</div></div>
       </div>
 
       <h2>Rep Scorecard</h2>
-      <table><thead><tr><th>Firm</th><th>Activities</th><th>Demo Gear</th><th>Open Pipeline</th><th>New Pipeline (Month)</th><th>Education</th><th>Sell-out MoM</th><th>RAG</th></tr></thead>
+      <table><thead><tr><th>Firm</th><th>Activities</th><th>Demo Gear</th><th>Open Pipeline (€)</th><th>New Pipeline (Month, €)</th><th>Education</th><th>Sell-out MoM</th><th>RAG</th></tr></thead>
       <tbody>${scorecardRows}</tbody></table>
 
       <h2>Exceptions</h2>

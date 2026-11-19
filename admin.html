@@ -299,7 +299,7 @@
     <div class="action-row" style="margin-top:0;">
       <button class="audac-btn" id="sync-opportunities-btn">Sync from CRM</button>
     </div>
-    <div class="upload-hint">Pulls Opportunities (US/Canada only, per the Opportunity's own Country Lookup field) live from Dynamics 365 — Open, Won, and Lost alike, so a deal's outcome stays visible once it closes instead of disappearing from the sync. Since almost every opportunity is filed under Intellimix as the customer, rep firm is resolved via, in order: the Involved Installer account, the CRM contact's own resolved-or-overridden firm, then the free-typed Location field. Open deals are tagged with the month they were <strong>created</strong> in CRM (a stable, one-row-ever assignment, not a fresh snapshot every sync); Won/Lost deals are tagged with the month they actually closed, so a win/loss lands on the scorecard for when it really happened. The file upload below stays available as a fallback for a specific past month.</div>
+    <div class="upload-hint">Pulls Opportunities (US/Canada only, per the Opportunity's own Country Lookup field) live from Dynamics 365 — Open, Won, and Lost alike, so a deal's outcome stays visible once it closes instead of disappearing from the sync. Since almost every opportunity is filed under Intellimix as the customer, rep firm is resolved via, in order: the Country Lookup (Canada = PAG Canada), the free-typed Location (where the project is; in a split state the dealer's or contact's firm decides between the two), the Involved Installer account, then the CRM contact's own resolved-or-overridden firm. Each deal also brings its BOM (product lines) for the dealer value and the product forecast. Open deals are tagged with the month they were <strong>created</strong> in CRM (a stable, one-row-ever assignment, not a fresh snapshot every sync); Won/Lost deals are tagged with the month they actually closed, so a win/loss lands on the scorecard for when it really happened. The file upload below stays available as a fallback for a specific past month.</div>
     <div id="status-opportunities"></div>
     <div class="admin-pointer">A contact a sync couldn't resolve to a rep firm is flagged "Blocking pipeline sync" on the <a href="/crm">Accounts &amp; Contacts</a> page — fix it there by assigning that contact a rep firm.</div>
 
@@ -340,12 +340,41 @@
     <div style="overflow-x:auto;">
       <table class="detail">
         <thead><tr>
-          <th>Project</th><th>Account</th><th>Rep Firm</th><th>Status</th><th>Stage</th>
-          <th>Est. Value</th><th>Actual Value</th><th>Created</th><th>Expected Close</th><th>Actual Close</th><th>Reporting Month</th>
+          <th>Project</th><th>Dealer</th><th>Location</th><th>Rep Firm</th><th>Type</th><th>Status</th><th>Stage</th>
+          <th title="AVL purchase value (PVS Portal)">Est. Value (€, AVL)</th><th title="BOM x AVL U.S. dealer price list">≈ Dealer $</th><th>Actual Value (€)</th><th>Created</th><th>Expected Close</th><th>Actual Close</th><th>Reporting Month</th>
         </tr></thead>
         <tbody id="opp-search-results"></tbody>
       </table>
     </div>
+
+    <div class="dd-sub-title" style="margin-top:22px;" id="product-forecast-title">Product forecast (open deals)</div>
+    <div class="upload-hint">Quantities from the BOM of every open deal, by expected close month. For stock planning with AVL. Dealer value = quantity × the AVL U.S. dealer price list below.</div>
+    <div class="toolbar" style="margin-bottom:12px;">
+      <div>
+        <label for="forecast-search">Product</label>
+        <input type="text" id="forecast-search" placeholder="e.g. MAIA, RIVEA, VEXO">
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <button type="button" class="audac-btn-outline" id="forecast-export-btn">Export to Excel</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto;"><table class="detail" id="forecast-table"><tbody><tr><td class="empty-note">Loading…</td></tr></tbody></table></div>
+
+    <div class="dd-sub-title" style="margin-top:22px;">AVL U.S. dealer price list</div>
+    <div class="upload-hint">Used for the approximate dealer value reps see on their deals. Upload AVL's Excel price list (columns AVL SKU, PAIR, DEALER, MSRP) when AVL publishes a new version: it replaces the current one.</div>
+    <div class="result-count" id="price-list-status">Loading…</div>
+    <div class="toolbar" style="margin-bottom:12px;">
+      <div>
+        <label for="price-list-version">Version</label>
+        <input type="text" id="price-list-version" placeholder="e.g. January V8.0">
+      </div>
+      <div>
+        <label for="price-list-file">Excel file</label>
+        <input type="file" accept=".xlsx,.xls" id="price-list-file">
+      </div>
+    </div>
+    <div id="price-list-result"></div>
 
     <div class="upload-hint" style="margin-top:22px;">D365 export (.xlsx or .csv) — imported for the deal's own Created Date, not necessarily the month selected above (that's only used as a fallback when a row has no created date at all).</div>
     <div class="kpi-row" id="pipeline-csv-kpi-row"></div>
@@ -1386,7 +1415,7 @@
       const run = await AudacSync.run(client, (r) => { btn.textContent = AudacSync.progressText(r); });
       statusEl.className = 'upload-status ' + (run.status === 'ok' ? 'ok' : 'err');
       statusEl.textContent = AudacSync.describe(run);
-      await loadPipelineEntries();
+      await Promise.all([loadPipelineEntries(), loadForecast()]);
     } catch (err) {
       statusEl.className = 'upload-status err';
       statusEl.textContent = 'Sync failed: ' + err.message;
@@ -1400,6 +1429,113 @@
   // Reads pipeline_entries rows that came from the CRM sync (crm_id set) --
   // the CSV-imported pipeline data below has its own workflow and isn't
   // mixed into this view.
+  // ---------- Product forecast + AVL dealer price list ----------
+  let forecastCache = [];
+  const fmtUsd0 = (v) => v == null ? '' : Number(v).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+  const monthShort = (m) => m === 'no date' ? 'No date' : new Date(m + '-01T00:00:00').toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+
+  function forecastPivot() {
+    const q = document.getElementById('forecast-search').value.trim().toLowerCase();
+    const rows = forecastCache.filter(r => !q || `${r.sku || ''} ${r.product_name || ''}`.toLowerCase().includes(q));
+    const months = [...new Set(rows.map(r => r.close_month))].sort((a, b) => a === 'no date' ? 1 : b === 'no date' ? -1 : a.localeCompare(b));
+    const bySku = new Map();
+    for (const r of rows) {
+      const k = r.sku || '(no product number)';
+      if (!bySku.has(k)) bySku.set(k, { sku: k, name: r.product_name || '', total: 0, value: 0, priced: true, cells: {} });
+      const s = bySku.get(k);
+      s.total += Number(r.quantity || 0);
+      s.cells[r.close_month] = (s.cells[r.close_month] || 0) + Number(r.quantity || 0);
+      if (r.dealer_value_usd == null) s.priced = false; else s.value += Number(r.dealer_value_usd);
+    }
+    const list = [...bySku.values()].sort((a, b) => b.total - a.total);
+    return { months, list };
+  }
+
+  function renderForecast() {
+    const table = document.getElementById('forecast-table');
+    const { months, list } = forecastPivot();
+    if (!list.length) {
+      table.innerHTML = `<tbody><tr><td class="empty-note">${forecastCache.length ? 'No product matches.' : 'No open deal has products yet. They come in with the next CRM sync.'}</td></tr></tbody>`;
+      return;
+    }
+    table.innerHTML = `<thead><tr><th>Product</th><th>Description</th><th style="text-align:right">Total</th>${months.map(m => `<th style="text-align:right">${monthShort(m)}</th>`).join('')}<th style="text-align:right">≈ Dealer $</th></tr></thead>
+      <tbody>${list.map(s => `<tr><td><b>${escapeHtml(s.sku)}</b></td><td>${escapeHtml(s.name)}</td><td style="text-align:right"><b>${s.total.toLocaleString('en-US')}</b></td>${months.map(m => `<td style="text-align:right">${s.cells[m] ? s.cells[m].toLocaleString('en-US') : ''}</td>`).join('')}<td style="text-align:right">${s.priced ? fmtUsd0(s.value) : '<span class="empty-note">no U.S. price</span>'}</td></tr>`).join('')}</tbody>`;
+  }
+
+  async function loadForecast() {
+    const { data, error } = await client.rpc('get_product_forecast');
+    if (error) {
+      document.getElementById('forecast-table').innerHTML = `<tbody><tr><td class="empty-note">Failed to load: ${escapeHtml(error.message)}</td></tr></tbody>`;
+      return;
+    }
+    forecastCache = data || [];
+    renderForecast();
+  }
+  document.getElementById('forecast-search').addEventListener('input', renderForecast);
+  document.getElementById('forecast-export-btn').addEventListener('click', () => {
+    const { months, list } = forecastPivot();
+    if (!list.length) return;
+    const sheet = list.map(s => {
+      const row = { 'Product': s.sku, 'Description': s.name, 'Total': s.total };
+      months.forEach(m => { row[monthShort(m)] = s.cells[m] || ''; });
+      row['Approx. Dealer Value (USD)'] = s.priced ? Math.round(s.value) : '';
+      return row;
+    });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheet), 'Forecast');
+    XLSX.writeFile(wb, `audac-product-forecast-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  });
+
+  async function loadPriceListStatus() {
+    const el = document.getElementById('price-list-status');
+    const { data, error } = await client.from('avl_dealer_prices').select('price_list, updated_at').eq('active', true).order('updated_at', { ascending: false }).limit(1000);
+    if (error) { el.textContent = `Failed to load: ${error.message}`; return; }
+    if (!data.length) { el.textContent = 'No price list loaded yet.'; return; }
+    el.textContent = `Current: ${data[0].price_list} · ${data.length} products · loaded ${new Date(data[0].updated_at).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+  }
+
+  // AVL's sheet: a title block, then a header row with "AVL SKU" ... "DEALER", "MSRP";
+  // section titles in between have no price. SKUs carry an "ADC-" prefix.
+  function parsePriceSheet(rows) {
+    const headerIdx = rows.findIndex(r => r.some(c => /^\s*AVL SKU\s*$/i.test(String(c || ''))));
+    if (headerIdx < 0) throw new Error('No "AVL SKU" column found in the file.');
+    const head = rows[headerIdx].map(c => String(c || '').trim().toUpperCase());
+    const iSku = head.indexOf('AVL SKU'), iDesc = head.indexOf('DESCRIPTION'), iPair = head.indexOf('PAIR'), iDealer = head.indexOf('DEALER'), iMsrp = head.indexOf('MSRP');
+    if (iDealer < 0) throw new Error('No "DEALER" column found in the file.');
+    const out = [];
+    for (const r of rows.slice(headerIdx + 1)) {
+      const sku = String(r[iSku] || '').trim().replace(/^ADC-/i, '');
+      const dealer = Number(r[iDealer]);
+      if (!sku || !isFinite(dealer) || dealer <= 0) continue;
+      const desc = String(r[iDesc] || '');
+      // "priced & sold per pair": the price is for two pieces. "priced single / sold per pair": per piece.
+      const perPair = String(r[iPair] || '').trim().toUpperCase() === 'PAIR' && /priced\s*&\s*sold\s*per\s*pair/i.test(desc);
+      out.push({ sku, dealer: Math.round(dealer * 100) / 100, msrp: iMsrp >= 0 && isFinite(Number(r[iMsrp])) ? Number(r[iMsrp]) : '', per_pair: perPair });
+    }
+    return out;
+  }
+
+  document.getElementById('price-list-file').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    const result = document.getElementById('price-list-result');
+    const version = document.getElementById('price-list-version').value.trim();
+    if (!file) return;
+    if (!version) { result.innerHTML = '<div class="empty-note">Fill in the version first (e.g. "January V8.0"), then choose the file again.</div>'; e.target.value = ''; return; }
+    result.innerHTML = '<div class="empty-note">Reading the file…</div>';
+    try {
+      const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' });
+      const parsed = parsePriceSheet(rows);
+      const { data, error } = await client.rpc('replace_avl_dealer_prices', { p_price_list: version, p_rows: parsed });
+      if (error) throw new Error(error.message);
+      result.innerHTML = `<div class="empty-note">Loaded ${data} products from “${escapeHtml(file.name)}”. Dealer values on every deal are recalculated.</div>`;
+      e.target.value = '';
+      await Promise.all([loadPriceListStatus(), loadForecast(), loadPipelineEntries()]);
+    } catch (err) {
+      result.innerHTML = `<div class="empty-note">Could not load the price list: ${escapeHtml(err.message)}</div>`;
+    }
+  });
+
   // ---------- Deal updates sent by reps (My territory) ----------
   async function loadDealUpdates() {
     const box = document.getElementById('deal-updates');
@@ -1594,7 +1730,7 @@
   async function loadPipelineEntries() {
     const { data, error } = await AudacData.all(client.from('pipeline_entries').select('*').not('crm_id', 'is', null).order('created_date', { ascending: false }).order('id'));
     if (error) {
-      document.getElementById('opp-search-results').innerHTML = `<tr><td colspan="11" class="empty-note">Failed to load: ${escapeHtml(error.message)}</td></tr>`;
+      document.getElementById('opp-search-results').innerHTML = `<tr><td colspan="14" class="empty-note">Failed to load: ${escapeHtml(error.message)}</td></tr>`;
       return;
     }
     pipelineEntriesCache = data || [];
@@ -1616,7 +1752,7 @@
     let rows = pipelineEntriesCache;
     if (firmFilter) rows = rows.filter(r => r.rep_firm_id === firmFilter);
     if (statusFilter) rows = rows.filter(r => (r.status || 'Open') === statusFilter);
-    if (q) rows = rows.filter(r => `${r.project_name || ''} ${r.account_name || ''}`.toLowerCase().includes(q));
+    if (q) rows = rows.filter(r => `${r.project_name || ''} ${r.account_name || ''} ${r.location || ''}`.toLowerCase().includes(q));
     return rows;
   }
 
@@ -1626,7 +1762,7 @@
 
     const tbody = document.getElementById('opp-search-results');
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="11" class="empty-note">No synced opportunities match the current filters.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="14" class="empty-note">No synced opportunities match the current filters.</td></tr>';
       return;
     }
     tbody.innerHTML = rows.map(r => {
@@ -1634,15 +1770,21 @@
       const badgeClass = status === 'Won' ? 'won' : status === 'Lost' ? 'lost' : 'open';
       const firmName = (firmsCache.find(f => f.id === r.rep_firm_id) || {}).name || '';
       const fmtMoney = (v) => v == null ? '' : Number(v).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+      const fmtEur = (v) => v == null ? '' : '€' + Number(v).toLocaleString('en-US', { maximumFractionDigits: 0 });
+      const dealer = r.dealer_value_usd == null ? '' : fmtMoney(r.dealer_value_usd)
+        + (r.dealer_value_missing ? `<span class="empty-note" title="${r.dealer_value_missing} product(s) without a U.S. price"> *</span>` : '');
       return `
         <tr>
           <td>${escapeHtml(r.project_name || '')}</td>
           <td>${escapeHtml(r.account_name || '')}</td>
+          <td>${escapeHtml(r.location || '')}</td>
           <td>${escapeHtml(firmName)}</td>
+          <td>${escapeHtml(r.opportunity_type === 'Registered Project' ? 'Registered' : (r.opportunity_type || ''))}</td>
           <td><span class="status-badge ${badgeClass}">${status}</span></td>
           <td>${escapeHtml(r.stage || '')}</td>
-          <td>${fmtMoney(r.value_usd)}</td>
-          <td>${fmtMoney(r.actual_value_usd)}</td>
+          <td>${fmtEur(r.value_usd)}</td>
+          <td>${dealer}</td>
+          <td>${fmtEur(r.actual_value_usd)}</td>
           <td>${r.created_date || ''}</td>
           <td>${r.expected_close_date || ''}</td>
           <td>${r.actual_close_date || ''}</td>
@@ -1669,12 +1811,16 @@
       const firmNameById = new Map(firmsCache.map(f => [f.id, f.name]));
       const sheetRows = rows.map(r => ({
         'Project': r.project_name || '',
-        'Account': r.account_name || '',
+        'Dealer': r.account_name || '',
+        'Location': r.location || '',
         'Rep Firm': firmNameById.get(r.rep_firm_id) || '',
+        'Type': r.opportunity_type || '',
         'Status': r.status || 'Open',
         'Stage': r.stage || '',
-        'Est. Value (USD)': r.value_usd ?? '',
-        'Actual Value (USD)': r.actual_value_usd ?? '',
+        'Est. Value (EUR, AVL purchase)': r.value_usd ?? '',
+        'Approx. Dealer Value (USD)': r.dealer_value_usd ?? '',
+        'Products without US price': r.dealer_value_missing || 0,
+        'Actual Value (EUR)': r.actual_value_usd ?? '',
         'Created': r.created_date || '',
         'Expected Close': r.expected_close_date || '',
         'Actual Close': r.actual_close_date || '',
@@ -2722,7 +2868,7 @@
     document.getElementById('activity-search-to').value = nowMonth;
     document.getElementById('activity-search-from').value = trailingMonths(nowMonth, 6)[5];
     await fetchAllAttachmentCounts();
-    await Promise.all([loadActivitySearchRange(), loadAuditLog(), loadPipelineEntries(), loadDealUpdates(), loadLeadFollowups(), loadCrossrefVersions(), loadRepNews(), refreshImportKpis(), loadCompanyMappings(), loadEducationRecords(), loadPipelineCsvEntries(), loadSelloutRecords(), loadImportHistory()]);
+    await Promise.all([loadActivitySearchRange(), loadAuditLog(), loadPipelineEntries(), loadForecast(), loadPriceListStatus(), loadDealUpdates(), loadLeadFollowups(), loadCrossrefVersions(), loadRepNews(), refreshImportKpis(), loadCompanyMappings(), loadEducationRecords(), loadPipelineCsvEntries(), loadSelloutRecords(), loadImportHistory()]);
     switchTab((window.location.hash || '').replace('#', ''));
     // Deep link from the dashboard work list: /admin?filter=skipped#mappings
     const mapFilter = new URLSearchParams(location.search).get('filter');

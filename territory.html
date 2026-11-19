@@ -31,6 +31,15 @@
   .group-title { margin: var(--space-5) 0 0; font-size: 12px; line-height: 16px; font-weight: 650; letter-spacing: 1px; text-transform: uppercase; color: var(--color-text-muted); }
   .empty { margin: var(--space-3) 0 0; font-size: 14px; color: var(--color-text-secondary); }
   .value { font-variant-numeric: tabular-nums; }
+  .deal-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 2px; font-size: 13.5px; line-height: 20px; color: var(--color-text-secondary); }
+  .deal-meta .chip { margin: 0; }
+  .bom { margin-top: 4px; font-size: 13.5px; line-height: 20px; }
+  .bom summary { cursor: pointer; color: var(--color-gold); width: max-content; }
+  .bom summary:focus-visible { outline: 2px solid var(--color-gold); outline-offset: 2px; }
+  .bom ul { list-style: none; margin: 4px 0 0; padding: 0; color: var(--color-text-secondary); }
+  .bom li { display: grid; grid-template-columns: 3.5em minmax(0, 1fr); gap: 8px; padding: 2px 0; border: 0; }
+  .bom .qty { text-align: right; font-variant-numeric: tabular-nums; color: var(--color-text); }
+  .bom .sku { color: var(--color-text); font-weight: 600; }
 
   .update-form { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); padding: var(--space-4); margin-top: var(--space-1); border-radius: var(--radius-tile); background: var(--well-bg); box-shadow: var(--depth-well); }
   .update-form .field { margin: 0; }
@@ -215,7 +224,7 @@
     ].filter(Boolean).join('');
     const type = [a.relationship_type, a.business_type, a.key_reason].filter(Boolean).join(' · ');
     const contacts = (a.contacts || []).map(c => `<li>${esc(c.name || '(no name)')}${c.email ? ` · <a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : ''}${c.phone ? ` · <a href="${telHref(c.phone)}">${esc(c.phone)}</a>` : ''}</li>`).join('');
-    const deals = (a.open_deals || []).map(d => `<li>${esc(d.name || '(no name)')}${d.value != null ? ` · <span class="value">${fmtMoney(d.value)}</span>` : ''}${d.close ? ` · expected ${fmtDate(d.close)}` : ''}</li>`).join('');
+    const deals = (a.open_deals || []).map(d => `<li>${esc(d.name || '(no name)')}${d.value != null ? ` · <span class="value">≈ ${fmtMoney(d.value)}</span>` : ''}${d.close ? ` · expected ${fmtDate(d.close)}` : ''}</li>`).join('');
     const logged = a.logged_count
       ? `Your firm logged ${a.logged_count} ${a.logged_count === 1 ? 'activity' : 'activities'} here, the last on ${fmtDate(a.last_logged)}.`
       : 'Nothing logged here yet.';
@@ -295,17 +304,29 @@
     const dateLine = d.status === 'Open'
       ? (d.expected_close_date ? `Expected close ${fmtDate(d.expected_close_date)}` : 'No expected close date')
       : `${d.status} ${d.actual_close_date ? fmtDate(d.actual_close_date) : ''}`;
+    const where = [d.account_name, d.location, d.stage].filter(Boolean).map(esc).join(' · ');
+    const bom = Array.isArray(d.bom) ? d.bom : [];
+    const value = d.dealer_value_usd != null
+      ? `<span class="value">≈ ${fmtMoney(d.dealer_value_usd)} at dealer price</span>${d.dealer_value_missing ? `<span>${d.dealer_value_missing} ${d.dealer_value_missing === 1 ? 'product' : 'products'} without a U.S. price</span>` : ''}`
+      : '';
+    const registered = d.opportunity_type === 'Registered Project' ? `<span class="chip">${AudacShell.icon('check')}Registered with AVL</span>` : '';
+    const bomList = bom.length
+      ? `<details class="bom"><summary>${bom.length} ${bom.length === 1 ? 'product' : 'products'}</summary><ul>${bom.map(l =>
+          `<li><span class="qty">${Number(l.qty || 0).toLocaleString('en-US')} ×</span><span><span class="sku">${esc(l.sku || '')}</span>${l.name ? ' · ' + esc(String(l.name).toLowerCase().replace(/^\w/, c => c.toUpperCase())) : ''}</span></li>`).join('')}</ul></details>`
+      : '';
     return `<li data-crm="${esc(d.crm_id)}">
       <div><b>${esc(d.project_name || '(no name)')}</b>
-        <span class="sub">${esc(d.account_name || '')}${d.stage ? ' · ' + esc(d.stage) : ''} · <span class="value">${fmtMoney(d.value_usd)}</span></span>
-        <span class="sub${overdue ? ' warn' : ''}">${dateLine}${overdue ? ' — date has passed. Still on?' : ''}</span></div>
+        <span class="sub">${where}</span>
+        ${registered || value ? `<span class="deal-meta">${registered}${value}</span>` : ''}
+        <span class="sub${overdue ? ' warn' : ''}">${dateLine}${overdue ? ' — date has passed. Still on?' : ''}</span>
+        ${bomList}</div>
       <div class="actions">${pending}${d.status === 'Open' ? `<button type="button" class="button-secondary" data-update="${esc(d.crm_id)}">${overdue ? 'Update status' : 'Update'}</button>` : ''}</div>
     </li>`;
   }
 
   function renderDeals() {
     const show = filter === 'all' || filter === 'deals';
-    const rows = dealsCache.filter(d => hit(norm([d.project_name, d.account_name, d.stage, d.status].join(' '))));
+    const rows = dealsCache.filter(d => hit(norm([d.project_name, d.account_name, d.location, d.stage, d.status, ...(d.bom || []).map(l => l.sku)].join(' '))));
     $('deals-section').hidden = !show || (!!query && !rows.length);
     if (!show) return 0;
     if (query) {
@@ -322,8 +343,8 @@
     const open = rows.filter(d => d.status === 'Open' && !needsUpdate(d));
     const yearAgo = new Date(today.getTime() - 365 * DAY).toISOString().slice(0, 10);
     const closed = rows.filter(d => d.status !== 'Open' && (d.actual_close_date || d.created_date || '') >= yearAgo);
-    const openValue = rows.filter(d => d.status === 'Open').reduce((s, d) => s + Number(d.value_usd || 0), 0);
-    $('deals-sub').textContent = `${rows.filter(d => d.status === 'Open').length} open · ${fmtMoney(openValue)}. Won, lost or moved? Tap Update and AUDAC fixes the CRM.`;
+    const openValue = rows.filter(d => d.status === 'Open').reduce((s, d) => s + Number(d.dealer_value_usd || 0), 0);
+    $('deals-sub').textContent = `${rows.filter(d => d.status === 'Open').length} open${openValue ? ` · ≈ ${fmtMoney(openValue)} at dealer price` : ''}. Won, lost or moved? Tap Update and AUDAC fixes the CRM.`;
     const group = (title, list) => list.length ? `<p class="group-title">${title}</p><ul class="list">${list.map(dealItem).join('')}</ul>` : '';
     $('deals-list').innerHTML = group('Past the close date: still on?', overdue) + group('Open', open) + group('Closed in the last 12 months', closed);
     return rows.length;

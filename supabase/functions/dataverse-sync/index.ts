@@ -13,12 +13,11 @@
 // server-side chained run of all three phases, logged in sync_runs (used by
 // the nightly pg_cron job and the "Sync now" buttons). Phase order matters:
 // "accounts" first -- "contacts" resolves rep firm via its parent account in
-// crm_accounts; "opportunities" resolves rep firm via (in priority order) its
-// Involved Installer account, the Contact's own resolved firm via
-// crm_contacts (auto-matched or manually overridden on Accounts & Contacts --
-// that's also where a manager fixes one that didn't resolve), or the free-typed
-// Location field, since almost every opportunity is filed under Intellimix
-// as the customer account.
+// crm_accounts; "opportunities" resolves rep firm via (in priority order) the
+// project's Country Lookup / free-typed Location, its Involved Installer
+// account, or the Contact's own resolved firm via crm_contacts, since almost
+// every opportunity is filed under Intellimix as the customer account. Each
+// opportunity also brings its product lines (BOM) for the dealer value.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
@@ -234,7 +233,27 @@ const OPPORTUNITIES_SELECT = [
   "actualclosedate", "createdon", "statuscode", "statecode",
   "_pvs_involvedinstallerid_value", "_parentcontactid_value",
   "pvs_opportunitylocation", "_pvs_countrylookup_value",
+  "pvs_opportunitytype", "pvs_opportunityorigincode", "rtn_verticalcode",
 ].join(",");
+
+// BOM of a page of opportunities: one request per 40 ids. Reading the lines is
+// best-effort -- if it fails (e.g. a missing privilege) the deals still sync,
+// just without products, and the error is reported in the run's output.
+async function fetchProductLines(oppIds: string[], token: string): Promise<{ lines: any[]; error: string | null }> {
+  const lines: any[] = [];
+  for (let i = 0; i < oppIds.length; i += 40) {
+    const chunk = oppIds.slice(i, i + 40);
+    const filter = chunk.map((id) => `_opportunityid_value eq ${id}`).join(" or ");
+    let url: string | null = `${DATAVERSE_ORG_URL}/api/data/v9.2/opportunityproducts?$select=opportunityproductid,_opportunityid_value,quantity,productdescription&$expand=productid($select=productnumber,name)&$filter=${encodeURIComponent(filter)}`;
+    while (url) {
+      const page = await fetchOnePage(url, token);
+      if (page.status !== 200) return { lines, error: `opportunityproducts ${page.status}: ${(page.bodyText || "").slice(0, 300)}` };
+      lines.push(...page.rows);
+      url = page.nextLink;
+    }
+  }
+  return { lines, error: null };
+}
 
 // We only care about active US/Canada accounts (rep territories are US states).
 // The Country entity's Web API relationship/attribute names aren't readable by this
@@ -608,13 +627,8 @@ async function runPage(svc: any, phase: Phase, cursor: string | null, syncStarte
       }
 
       // Almost every opportunity is filed under Intellimix as the customer
-      // account, which doesn't identify a rep firm -- rep firm is resolved in
-      // priority order instead: (1) Involved Installer, the actual dealer
-      // account, looked up in crm_accounts; (2) the Contact's own resolved
-      // firm via crm_contacts -- that contact was already synced and
-      // territory-matched to a firm by the accounts/contacts phases, or
-      // hand-corrected on Accounts & Contacts if it wasn't; (3) the free-typed
-      // Location field, parsed for a state/province. An opportunity that
+      // account, which doesn't identify a rep firm -- see the resolution order
+      // in the loop below. An opportunity that
       // resolves none of these has nowhere to go (unlike crm_contacts,
       // pipeline_entries.rep_firm_id is not-null) and is skipped -- its
       // Contact (if any) is flagged blocks_pipeline_sync so it's visible on
@@ -640,6 +654,8 @@ async function runPage(svc: any, phase: Phase, cursor: string | null, syncStarte
       const STATUS_BY_STATECODE: Record<number, "Open" | "Won" | "Lost"> = { 0: "Open", 1: "Won", 2: "Lost" };
       const syncMonth = new Date().toISOString().slice(0, 7);
       let matchedByInstaller = 0, matchedByContactAccount = 0, matchedByCountry = 0, matchedByLocation = 0, skippedNoMatch = 0, historical = 0;
+      let bomLines = 0;
+      let bomError: string | null = null;
       let openCount = 0, wonCount = 0, lostCount = 0;
       const blockingContactIds = new Set<string>();
       const resolvedContactIds = new Set<string>();
@@ -671,8 +687,35 @@ async function runPage(svc: any, phase: Phase, cursor: string | null, syncStarte
         const contactId = r._parentcontactid_value || null;
         const contactName = r["_parentcontactid_value@OData.Community.Display.V1.FormattedValue"] || null;
 
+        // Rep firm, in order (2026-11-19): where the PROJECT is comes first --
+        // the deal's Country Lookup (Canada = PAG Canada) or its Location --
+        // then the dealer (Involved Installer), then the contact. A national
+        // integrator such as AVI-SPL is tied to one firm by its HQ address,
+        // and the contact on PVS Portal registrations is AVL's own person, so
+        // neither says where the project is.
         let repFirmId: string | null = null;
-        if (installer?.repFirmId) {
+        const territory = extractLocationTerritory(r.pvs_opportunitylocation);
+        const contactFirmId = contactId ? (contactById.get(contactId)?.repFirmId || null) : null;
+        // Split states (PA, NY, CA, NV) have two firms: then the dealer's or
+        // the contact's firm decides when it is one of them, else the first.
+        const candidates: any[] = !territory || territory.country === "CA" ? []
+          : firmsCache.filter((f: any) => Array.isArray(f.states) && f.states.includes(territory.code));
+        const locationFirm = !territory ? null
+          : territory.country === "CA" ? { id: PAG_CANADA_FIRM_ID }
+          : candidates.find((f: any) => f.id === installer?.repFirmId)
+            || candidates.find((f: any) => f.id === contactFirmId)
+            || candidates[0] || null;
+        if (r._pvs_countrylookup_value === COUNTRY_GUID_CA) {
+          // PAG Canada covers the whole country ("Canada", "Montreal",
+          // "Toronto" never matched a province).
+          repFirmId = PAG_CANADA_FIRM_ID;
+          matchedByCountry++;
+        } else if (territory) {
+          // The project's state is known: that decides, even when no firm
+          // covers it (then the deal is unassigned, not given to the dealer's firm).
+          if (locationFirm) { repFirmId = locationFirm.id; matchedByLocation++; }
+          else skippedNoMatch++;
+        } else if (installer?.repFirmId) {
           repFirmId = installer.repFirmId;
           matchedByInstaller++;
         } else {
@@ -680,22 +723,7 @@ async function runPage(svc: any, phase: Phase, cursor: string | null, syncStarte
           if (contact?.repFirmId) {
             repFirmId = contact.repFirmId;
             matchedByContactAccount++;
-          } else if (r._pvs_countrylookup_value === COUNTRY_GUID_CA) {
-            // The deal's own Country Lookup says Canada -- PAG Canada covers the
-            // whole country, so no need to parse the free-typed Location
-            // ("Canada", "Montreal", "Toronto" never matched a province).
-            repFirmId = PAG_CANADA_FIRM_ID;
-            matchedByCountry++;
-          } else {
-            const territory = extractLocationTerritory(r.pvs_opportunitylocation);
-            // PAG Canada covers the whole country -- any parsed Canadian
-            // province/city goes straight there, no per-province matching.
-            const firm = !territory ? null
-              : territory.country === "CA" ? { id: PAG_CANADA_FIRM_ID }
-              : firmsCache.find((f: any) => Array.isArray(f.states) && f.states.includes(territory.code));
-            if (firm) { repFirmId = firm.id; matchedByLocation++; }
-            else skippedNoMatch++;
-          }
+          } else skippedNoMatch++;
         }
 
         // Tracks whether this opportunity's Contact record itself is the
@@ -747,9 +775,15 @@ async function runPage(svc: any, phase: Phase, cursor: string | null, syncStarte
         upserts.push({
           rep_firm_id: repFirmId,
           reporting_month: reportingMonth,
-          account_name: installer?.name || contactName || r.name || "Unknown",
+          // The dealer. Not the contact: on PVS Portal registrations that is
+          // AVL's own person (Jay Perry), which reps took for the company.
+          account_name: installer?.name || r["_pvs_involvedinstallerid_value@OData.Community.Display.V1.FormattedValue"] || "Dealer not specified",
           account_external_id: installerId,
           project_name: r.name || null,
+          location: r.pvs_opportunitylocation || null,
+          opportunity_type: r["pvs_opportunitytype@OData.Community.Display.V1.FormattedValue"] ?? null,
+          origin: r["pvs_opportunityorigincode@OData.Community.Display.V1.FormattedValue"] ?? null,
+          vertical: r["rtn_verticalcode@OData.Community.Display.V1.FormattedValue"] ?? null,
           stage: r["statuscode@OData.Community.Display.V1.FormattedValue"] ?? null,
           status,
           value_usd: r.estimatedvalue ?? null,
@@ -791,6 +825,32 @@ async function runPage(svc: any, phase: Phase, cursor: string | null, syncStarte
         // leaving a stale duplicate behind under the old month.
         const { error } = await svc.from("pipeline_entries").upsert(upserts, { onConflict: "crm_id" });
         if (error) throw new Error(`pipeline_entries upsert failed: ${error.message}`);
+
+        // BOM: replace this page's product lines, then recalculate the dealer value.
+        const oppIds = upserts.map((u) => u.crm_id);
+        const { lines, error: bomErr } = await fetchProductLines(oppIds, token);
+        if (bomErr) {
+          bomError = bomErr;
+        } else {
+          const rowsBom = lines.map((l: any) => ({
+            line_id: l.opportunityproductid,
+            crm_id: l._opportunityid_value,
+            product_number: l.productid?.productnumber || null,
+            product_name: l.productid?.name || l.productdescription || null,
+            quantity: Number(l.quantity || 0),
+            synced_at: seenAt,
+          }));
+          if (rowsBom.length) {
+            const { error: e1 } = await svc.from("pipeline_entry_products").upsert(rowsBom, { onConflict: "line_id" });
+            if (e1) throw new Error(`pipeline_entry_products upsert failed: ${e1.message}`);
+          }
+          // Lines removed from a deal in Dynamics.
+          const { error: e2 } = await svc.from("pipeline_entry_products").delete().in("crm_id", oppIds).lt("synced_at", seenAt);
+          if (e2) throw new Error(`pipeline_entry_products cleanup failed: ${e2.message}`);
+          bomLines += rowsBom.length;
+          const { error: e3 } = await svc.rpc("refresh_dealer_values", { p_crm_ids: oppIds });
+          if (e3) throw new Error(`refresh_dealer_values failed: ${e3.message}`);
+        }
       }
 
       // Last page of a logged full run: a synced deal this run didn't see is
@@ -834,6 +894,8 @@ async function runPage(svc: any, phase: Phase, cursor: string | null, syncStarte
         openCount,
         wonCount,
         lostCount,
+        bomLines,
+        bomError,
         filterLevel,
       });
     } else {

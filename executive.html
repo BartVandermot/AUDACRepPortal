@@ -112,7 +112,7 @@
     </div>
     <table class="scorecard">
       <thead><tr>
-        <th>Firm</th><th>Activities</th><th>Demo Gear Used</th><th>Open Pipeline</th><th>New Pipeline (Month)</th>
+        <th>Firm</th><th>Activities</th><th>Demo Gear Used</th><th>Open Pipeline (€)</th><th>New Pipeline (Month, €)</th>
         <th>Education Certs</th><th>Sell-out MoM</th><th>RAG</th>
       </tr></thead>
       <tbody id="scorecard-body"></tbody>
@@ -147,6 +147,8 @@
 
   function currentMonthValue() { return new Date().toISOString().slice(0, 7); }
   function fmtMoney(n) { return '$' + Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 }); }
+  // Pipeline values are AVL's purchase value in EUR (calculated by the PVS Portal).
+  function fmtEur(n) { return '€' + Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 }); }
   function ragClass(status) { return status === 'Green' ? 'rag-green' : status === 'Amber' ? 'rag-amber' : 'rag-red'; }
   function priorMonth(month, back) {
     const [y, m] = month.split('-').map(Number);
@@ -198,8 +200,8 @@
     document.getElementById('kpi-grid').innerHTML = `
       <div class="kpi-tile"><div class="kpi-label">Total Activities</div><div class="kpi-value">${totalActivities}</div><div class="kpi-sub">${month}</div></div>
       <div class="kpi-tile"><div class="kpi-label">Active Reps</div><div class="kpi-value">${activeReps} / ${rows.length}</div><div class="kpi-sub">firms with activity this month</div></div>
-      <div class="kpi-tile"><div class="kpi-label">Open Pipeline</div><div class="kpi-value">${fmtMoney(totalOpenPipelineValue)}</div><div class="kpi-sub">all currently open deals</div></div>
-      <div class="kpi-tile"><div class="kpi-label">New Pipeline (Month)</div><div class="kpi-value">${fmtMoney(totalNewPipelineValue)}</div><div class="kpi-sub">${month}</div></div>
+      <div class="kpi-tile"><div class="kpi-label">Open Pipeline (€)</div><div class="kpi-value">${fmtEur(totalOpenPipelineValue)}</div><div class="kpi-sub">all currently open deals</div></div>
+      <div class="kpi-tile"><div class="kpi-label">New Pipeline (Month, €)</div><div class="kpi-value">${fmtEur(totalNewPipelineValue)}</div><div class="kpi-sub">${month}</div></div>
       <div class="kpi-tile"><div class="kpi-label">Sell-out MoM</div><div class="kpi-value">${momPct === null ? '—' : (momPct > 0 ? '+' : '') + momPct.toFixed(1) + '%'}</div><div class="kpi-sub">${fmtMoney(curSellout)} vs ${fmtMoney(priorSellout)}</div></div>
     `;
   }
@@ -210,8 +212,8 @@
         <td>${row.firm_name}</td>
         <td>${row.activity_count}</td>
         <td>${row.demo_gear_count}</td>
-        <td>${row.open_pipeline_count} (${fmtMoney(row.open_pipeline_value_usd)})</td>
-        <td>${row.new_pipeline_count} (${fmtMoney(row.new_pipeline_value_usd)})</td>
+        <td>${row.open_pipeline_count} (${fmtEur(row.open_pipeline_value_usd)})</td>
+        <td>${row.new_pipeline_count} (${fmtEur(row.new_pipeline_value_usd)})</td>
         <td>${row.education_count}</td>
         <td>${momCell(row)}</td>
         <td><span class="rag-badge ${ragClass(row.rag_status)}">${row.rag_status}</span></td>
