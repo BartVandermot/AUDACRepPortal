@@ -1449,7 +1449,8 @@
   const nowMonth = new Date().toISOString().slice(0, 7);
   const bucketOf = (m) => m !== 'no date' && m < nowMonth ? OVERDUE : m;
   const sentenceCase = (s) => String(s || '').toLowerCase().replace(/(^|[.!?]\s+)([a-z])/g, (x, a, b) => a + b.toUpperCase())
-    .replace(/\b(\d+)w\b/gi, '$1W').replace(/\bpoe\b/gi, 'PoE').replace(/\b(rms|ip\d\d|dsp|usb|ohm)\b/gi, m => m.toUpperCase()).replace(/\bdante\b/gi, 'Dante');
+    .replace(/\b(\d+)w\b/gi, '$1W').replace(/\bpoe\b/gi, 'PoE').replace(/\b(rms|ip\d\d|dsp|usb|ohm)\b/gi, m => m.toUpperCase()).replace(/\bdante\b/gi, 'Dante')
+    .replace(/\b[a-z]+\d[a-z0-9/().-]*/g, m => m.toUpperCase());   // model names: cali424, vexo112(a)
   function forecastPivot() {
     const q = document.getElementById('forecast-search').value.trim().toLowerCase();
     const rows = forecastCache.filter(r => !q || `${r.sku || ''} ${r.product_name || ''}`.toLowerCase().includes(q))
