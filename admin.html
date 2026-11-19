@@ -135,6 +135,8 @@
   .action-row { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
   .dd-sub-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--audac-black); margin: 18px 0 8px; }
   #loading-note { font-size: 13px; color: var(--color-text-muted); padding: 20px 0; }
+  #forecast-table td.fc-desc { max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--color-text-secondary); }
+  #forecast-table th.fc-overdue { color: var(--color-warning, #e8b65b); }
   .status-badge { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; padding: 2px 8px; border-radius: 10px; }
   .status-badge.open { background: var(--amber-bg); color: var(--amber); }
   .status-badge.won { background: var(--green-bg); color: var(--green); }
@@ -538,7 +540,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/assets/audac-shell.js?v=2be5df8a"></script>
+<script src="/assets/audac-shell.js?v=17d6cf55"></script>
 <script src="/assets/audac-data.js?v=3934996a"></script>
 <script src="/assets/audac-sync.js?v=00c3dc32"></script>
 <script>
@@ -1440,12 +1442,20 @@
   // ---------- Product forecast + AVL dealer price list ----------
   let forecastCache = [];
   const fmtUsd0 = (v) => v == null ? '' : Number(v).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
-  const monthShort = (m) => m === 'no date' ? 'No date' : new Date(m + '-01T00:00:00').toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+  const monthShort = (m) => m === 'no date' ? 'No date' : m === 'overdue' ? 'Overdue' : new Date(m + '-01T00:00:00').toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
 
+  // Close months before the current one are overdue deals: one "Overdue" column.
+  const OVERDUE = 'overdue';
+  const nowMonth = new Date().toISOString().slice(0, 7);
+  const bucketOf = (m) => m !== 'no date' && m < nowMonth ? OVERDUE : m;
+  const sentenceCase = (s) => String(s || '').toLowerCase().replace(/(^|[.!?]\s+)([a-z])/g, (x, a, b) => a + b.toUpperCase())
+    .replace(/\b(\d+)w\b/gi, '$1W').replace(/\bpoe\b/gi, 'PoE').replace(/\b(rms|ip\d\d|dsp|usb|ohm)\b/gi, m => m.toUpperCase()).replace(/\bdante\b/gi, 'Dante');
   function forecastPivot() {
     const q = document.getElementById('forecast-search').value.trim().toLowerCase();
-    const rows = forecastCache.filter(r => !q || `${r.sku || ''} ${r.product_name || ''}`.toLowerCase().includes(q));
-    const months = [...new Set(rows.map(r => r.close_month))].sort((a, b) => a === 'no date' ? 1 : b === 'no date' ? -1 : a.localeCompare(b));
+    const rows = forecastCache.filter(r => !q || `${r.sku || ''} ${r.product_name || ''}`.toLowerCase().includes(q))
+      .map(r => ({ ...r, close_month: bucketOf(r.close_month) }));
+    const rank = (m) => m === OVERDUE ? '0' : m === 'no date' ? '9' : '1' + m;
+    const months = [...new Set(rows.map(r => r.close_month))].sort((a, b) => rank(a).localeCompare(rank(b)));
     const bySku = new Map();
     for (const r of rows) {
       const k = r.sku || '(no product number)';
@@ -1466,8 +1476,8 @@
       table.innerHTML = `<tbody><tr><td class="empty-note">${forecastCache.length ? 'No product matches.' : 'No open deal has products yet. They come in with the next CRM sync.'}</td></tr></tbody>`;
       return;
     }
-    table.innerHTML = `<thead><tr><th>Product</th><th>Description</th><th style="text-align:right">Total</th>${months.map(m => `<th style="text-align:right">${monthShort(m)}</th>`).join('')}<th style="text-align:right">≈ Dealer $</th></tr></thead>
-      <tbody>${list.map(s => `<tr><td><b>${escapeHtml(s.sku)}</b></td><td>${escapeHtml(s.name)}</td><td style="text-align:right"><b>${s.total.toLocaleString('en-US')}</b></td>${months.map(m => `<td style="text-align:right">${s.cells[m] ? s.cells[m].toLocaleString('en-US') : ''}</td>`).join('')}<td style="text-align:right">${s.priced ? fmtUsd0(s.value) : '<span class="empty-note">no U.S. price</span>'}</td></tr>`).join('')}</tbody>`;
+    table.innerHTML = `<thead><tr><th>Product</th><th>Description</th><th style="text-align:right">Total</th>${months.map(m => `<th style="text-align:right"${m === OVERDUE ? ' class="fc-overdue" title="Expected close date already passed"' : ''}>${monthShort(m)}</th>`).join('')}<th style="text-align:right">≈ Dealer $</th></tr></thead>
+      <tbody>${list.map(s => `<tr><td style="white-space:nowrap"><b>${escapeHtml(s.sku)}</b></td><td class="fc-desc" title="${escapeHtml(s.name)}">${escapeHtml(sentenceCase(s.name))}</td><td style="text-align:right"><b>${s.total.toLocaleString('en-US')}</b></td>${months.map(m => `<td style="text-align:right">${s.cells[m] ? s.cells[m].toLocaleString('en-US') : ''}</td>`).join('')}<td style="text-align:right">${s.priced ? fmtUsd0(s.value) : '<span class="empty-note">no U.S. price</span>'}</td></tr>`).join('')}</tbody>`;
   }
 
   async function loadForecast() {

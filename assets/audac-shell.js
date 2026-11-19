@@ -55,6 +55,7 @@
         { key: 'territories', href: '/territories', label: 'Territories', short: 'Territories', icon: 'map', desktopOnly: true },
         { key: 'admin', href: '/admin', label: 'Data Admin', short: 'Admin', icon: 'db' },
         { key: 'import', href: '/import', label: 'Activity import', short: 'Import', icon: 'upload', desktopOnly: true },
+        { key: 'import-projects', href: '/import-projects', label: 'Project import', short: 'Projects', icon: 'upload', desktopOnly: true },
       ],
     },
     executive: {

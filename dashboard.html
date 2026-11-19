@@ -219,6 +219,11 @@
     .dk-label, .dk-sub { font-size: 12.5px; }
   }
   @media (max-width: 1100px) { .dk-tile { grid-column: span 6; } }
+  /* Without sell-out data there are three KPI tiles: a third each. */
+  .dash-kpis.dk-three .dk-tile:not(.dk-rag) { grid-column: span 4; }
+  @media (max-width: 1100px) { .dash-kpis.dk-three .dk-tile:not(.dk-rag) { grid-column: span 12; } }
+  /* The running month isn't scored yet: neutral badge until the review on the 1st. */
+  .rag-badge.rag-running { background: rgba(255,255,255,0.06); color: var(--color-text-secondary); font-weight: 650; }
   @media (max-width: 560px) { .dk-tile { grid-column: span 12; } .dk-value { font-size: 24px; line-height: 30px; } }
 </style>
 </head>
@@ -314,7 +319,7 @@
 <nav class="bottom-nav glass-floating" id="app-bottom-nav" aria-label="Main menu"></nav>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0"></script>
-<script src="/assets/audac-shell.js?v=2be5df8a"></script>
+<script src="/assets/audac-shell.js?v=17d6cf55"></script>
 <script src="/assets/audac-data.js?v=3934996a"></script>
 <script src="/assets/audac-sync.js?v=00c3dc32"></script>
 <script src="/assets/audac-push.js?v=65f76408"></script>
@@ -450,16 +455,20 @@
       return sparkline(v, label);
     };
     const tile = (label, value, sub, k, money) => `<div class="dk-tile"><span class="dk-label">${label}</span><div class="dk-row"><span class="dk-value">${value}</span>${spark(k, label, money)}</div>${sub}</div>`;
+    // Sell-out only once there is sell-out data (this or any of the last months).
+    const hasSellout = sell > 0 || prior > 0 || series('sellout_revenue').some(v => v > 0);
+    const running = isRunningMonth(month);
+    box.classList.toggle('dk-three', !hasSellout);
     box.innerHTML = `
       ${tile('Activities logged', acts, `<span class="dk-sub">${demos} with demo gear</span>`, 'activity_count', false)}
       ${tile('Open pipeline', fmtEur(openV), `<span class="dk-sub">${openN} open opportunit${openN === 1 ? 'y' : 'ies'}</span>`, 'open_pipeline_value_usd', true)}
       ${tile('New pipeline this month', fmtEur(newV), `<span class="dk-sub">${newN} new opportunit${newN === 1 ? 'y' : 'ies'}</span>`, 'new_pipeline_value_usd', true)}
-      ${tile('Sell-out', fmtMoney(sell), momHtml, 'sellout_revenue', true)}
-      <div class="dk-tile dk-rag"><span class="dk-label">Firm health</span>
-        <div class="dk-bar" role="img" aria-label="${rag.Green} green, ${rag.Amber} amber, ${rag.Red} red">
+      ${hasSellout ? tile('Sell-out', fmtMoney(sell), momHtml, 'sellout_revenue', true) : ''}
+      <div class="dk-tile dk-rag"><span class="dk-label">Firm health${running ? ' so far' : ''}</span>
+        <div class="dk-bar" role="img" aria-label="${rag.Green} green, ${rag.Amber} amber, ${rag.Red} red"${running ? ' style="opacity:.45"' : ''}>
           <i class="g" style="width:${pct(rag.Green)}%"></i><i class="a" style="width:${pct(rag.Amber)}%"></i><i class="r" style="width:${pct(rag.Red)}%"></i>
         </div>
-        <span class="dk-sub"><b class="g">${rag.Green}</b> green · <b class="a">${rag.Amber}</b> amber · <b class="r">${rag.Red}</b> red</span>
+        <span class="dk-sub">${running ? 'Month still running, scored at the review on the 1st. So far: ' : ''}<b class="g">${rag.Green}</b> green · <b class="a">${rag.Amber}</b> amber · <b class="r">${rag.Red}</b> red</span>
         <details class="dk-help"><summary>How it's scored</summary>
           <div class="rag-legend">
             <span class="rl-item"><span class="rag-badge rag-red">Red</span> 0–3 activities logged this month</span>
@@ -566,6 +575,9 @@
 
   let sortKey = null, sortDir = 1;
   const RAG_ORDER = { Red: 0, Amber: 1, Green: 2 };
+  function reviewRowFor(firmId) { return reviewByFirm.get(firmId); }
+  // The month on screen is still running (the review of month M happens on the 1st of M+1).
+  function isRunningMonth(month) { return !!month && month >= currentMonthValue(); }
   function reviewState(firmId) {
     const r = reviewByFirm.get(firmId);
     if (r?.is_finalized) return { rank: 2, html: '<span class="rv-chip done">🔒 Finalized</span>' };
@@ -603,7 +615,9 @@
         <td>${row.education_count}</td>
         <td>${leadCell(row.rep_firm_id)}</td>
         <td>${momCell(row)}</td>
-        <td><span class="rag-badge ${ragClass(row.rag_status)}">${row.rag_status}</span></td>
+        <td>${isRunningMonth(monthInput.value) && !reviewRowFor(row.rep_firm_id)?.is_finalized
+          ? `<span class="rag-badge rag-running" title="So far: ${row.rag_status}. Scored at the review on the 1st.">In progress</span>`
+          : `<span class="rag-badge ${ragClass(row.rag_status)}">${row.rag_status}</span>`}</td>
         <td>${reviewState(row.rep_firm_id).html}</td>
       </tr>
     `).join('');

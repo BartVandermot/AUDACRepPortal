@@ -122,7 +122,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/assets/audac-shell.js?v=2be5df8a"></script>
+<script src="/assets/audac-shell.js?v=17d6cf55"></script>
 <script>
   const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
@@ -170,7 +170,7 @@
   const fmtUsd = (n) => n == null ? '' : Number(n).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 
   // ---------- Shell ----------
-  AudacShell.mount('import');
+  AudacShell.mount('import-projects');
   const signOut = async () => { await client.auth.signOut(); window.location.href = '/login'; };
   AudacShell.onSignOut(signOut);
   $('mobile-signout').innerHTML = AudacShell.icon('out');
