@@ -89,6 +89,7 @@ function description(p: any, firmName: string): string {
     p.value_usd != null ? `Rep value: ${usd(p.value_usd)} (USD, from the rep's CRM)` : null,
     p.dealer_name ? `Dealer: ${p.dealer_name}` : null,
     p.stage ? `Stage in the rep's CRM: ${p.stage}` : null,
+    p.entered_date ? `Entered in the rep's CRM: ${p.entered_date}` : null,
     p.sales_person ? `Sales person: ${p.sales_person}` : null,
     p.products ? `Products: ${p.products}` : null,
     p.notes ? `Notes: ${p.notes}` : null,
@@ -157,8 +158,17 @@ async function pushOne(svc: any, p: any, firm: { name: string; account: string |
     // Ours already: update it (only this record).
     r = await dv("PATCH", `opportunities(${p.dynamics_id})`, body, { "If-Match": "*" });
   } else if (firm.account) {
-    // Upsert on the alternate key Rep Firm + Rep CRM ID.
-    r = await dv("PATCH", `opportunities(pvs_repfirmid=${firm.account},pvs_repcrmid=${lit(String(p.rep_crm_id))})`, body);
+    // Find it by Rep Firm + Rep CRM ID with a plain read, then update or create.
+    // (An upsert addressed by the alternate key needs metadata privileges the
+    // role doesn't have; the key itself still blocks a duplicate on create.)
+    const filter = `_pvs_repfirmid_value eq ${firm.account} and pvs_repcrmid eq ${lit(String(p.rep_crm_id))}`;
+    const found = await dv("GET", `opportunities?$select=opportunityid&$top=1&$filter=${encodeURIComponent(filter)}`);
+    if (!found.ok) throw new Error(`Lookup failed: ${found.error}`);
+    const existing = found.data?.value?.[0]?.opportunityid;
+    r = existing
+      ? await dv("PATCH", `opportunities(${existing})`, body, { "If-Match": "*" })
+      : await dv("POST", "opportunities", body);
+    if (r.ok && existing && !r.data?.opportunityid) r.data = { ...(r.data || {}), opportunityid: existing };
   } else {
     r = await dv("POST", "opportunities", body);
   }
