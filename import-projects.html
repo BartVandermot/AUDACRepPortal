@@ -377,8 +377,10 @@
   function statusFromStage(stage) {
     const s = norm(stage);
     if (!s) return 'Open';
+    // Lost first: "Lost - awarded to competitor", "Not awarded", "Won't proceed" are not wins.
+    if (/\b(closed lost|lost|dead|cancel+ed|cancel|no go|declined|no bid|abandoned|not awarded|not won|won t|wont|awarded to (another|a competitor|competitor|other|others))\b/.test(s)) return 'Lost';
+    if (/\b(not|no)\b/.test(s)) return 'Open';
     if (/\b(closed won|won|awarded|booked|ordered|po received|purchase order|sold|shipped|invoiced)\b/.test(s)) return 'Won';
-    if (/\b(closed lost|lost|dead|cancel+ed|cancel|no go|declined|no bid|abandoned)\b/.test(s)) return 'Lost';
     return 'Open';
   }
 

@@ -155,6 +155,14 @@ async function pushOne(svc: any, p: any, firm: { name: string; account: string |
     body["pvs_involvedinstallerid@odata.bind"] = `/accounts(${p.dealer_account_external_id})`;
   }
 
+  // Open again in the rep's CRM (or in the app) after we closed it: reopen our own
+  // opportunity first; Dynamics refuses updates to a closed one.
+  if (p.dynamics_id && p.dynamics_closed_at) {
+    const re = await dv("PATCH", `opportunities(${p.dynamics_id})`, { statecode: 0 }, { "If-Match": "*" });
+    if (!re.ok) throw new Error(`Reopening failed: ${re.error}`);
+    await setRow(svc, p.id, { dynamics_closed_at: null });
+  }
+
   let r;
   if (p.dynamics_id) {
     // Ours already: update it (only this record).
@@ -172,7 +180,9 @@ async function pushOne(svc: any, p: any, firm: { name: string; account: string |
       : await dv("POST", "opportunities", body);
     if (r.ok && existing && !r.data?.opportunityid) r.data = { ...(r.data || {}), opportunityid: existing };
   } else {
-    r = await dv("POST", "opportunities", body);
+    // Without the firm's Dynamics account there's no Rep Firm + Rep CRM ID key to
+    // stop a second copy, so don't create one: the manager links the firm first.
+    throw new Error(`${firm.name} is not linked to its Dynamics account yet; link the rep firm first`);
   }
   if (!r.ok) throw new Error(r.error);
   const oppId = r.data?.opportunityid || p.dynamics_id;

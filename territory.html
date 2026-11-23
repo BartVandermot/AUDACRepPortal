@@ -494,6 +494,8 @@
     const reg = p.registered
       ? `<span class="chip">${AudacShell.icon('check')}Registered with AVL</span>${p.crm_project_name && norm(p.crm_project_name) !== norm(p.project_name) ? `<span>as “${esc(p.crm_project_name)}”</span>` : ''}`
       : p.suggested_crm_id ? `<span class="chip gold">Waiting for your answer</span>`
+      // Linked (rep said "same project") to a deal AUDAC has that isn't an AVL registration.
+      : p.crm_id ? `<span class="chip">${AudacShell.icon('check')}Same as “${esc(p.crm_project_name || '')}” in AUDAC’s CRM</span>${p.status === 'Open' ? '<span>Not registered with AVL</span>' : ''}`
       : (p.status === 'Open' ? `<span>Not registered yet</span>` : '');
     const value = p.value_usd != null ? `<span class="value">${fmtMoney(p.value_usd)}</span>` : '';
     const dateLine = p.status === 'Open'
@@ -527,7 +529,7 @@
       <div class="field"><label for="p-status">Status</label>
         <select id="p-status"><option value="Open">Open</option><option value="Won">Won</option><option value="Lost">Lost</option></select></div>
       <div class="field"><label for="p-date">Expected close date</label><input type="date" id="p-date"></div>
-      <div class="field"><label for="p-value">Value ($)</label><input type="number" id="p-value" min="0" step="100" inputmode="decimal"></div>
+      <div class="field"><label for="p-value">Value ($)</label><input type="number" id="p-value" min="0" step="any" inputmode="decimal"></div>
       <div class="field wide"><label for="p-stage">Stage</label><input type="text" id="p-stage" maxlength="100" placeholder="e.g. Quote sent, Spec'd, PO expected"></div>
       <div class="field wide"><label for="p-note">Note</label><textarea id="p-note" maxlength="2000" placeholder="e.g. Bid moved to the fall"></textarea></div>
       <p class="form-msg" id="p-msg" hidden></p>

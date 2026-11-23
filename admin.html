@@ -1522,6 +1522,7 @@
       <td>${fmtUsd0(r.value_usd)}</td><td>${r.expected_close_date || ''}</td>
       <td>${r.registered ? 'Registered' + (r.crm_project_name ? ` (${escapeHtml(r.crm_project_name)})` : '') + (r.matched_by === 'rep' ? ' · confirmed by rep' : '')
         : r.suggested_crm_id ? `Rep to confirm: same as “${escapeHtml(r.suggested_name || '')}”?`
+        : r.crm_id ? `<b>Not registered</b> · same as “${escapeHtml(r.crm_project_name || '')}” in CRM`
         : (r.status === 'Open' ? '<b>Not registered</b>' : '')}</td>
       <td title="${escapeHtml(r.crm_push_error || '')}">${r.suggested_crm_id ? 'On hold' : ({ sent: r.dynamics_closed_at ? 'Closed' : 'Sent', waiting: 'Waiting', skipped: '—', failed: 'Failed' })[r.crm_push_status] || ''}${r.crm_push_status === 'failed' && r.crm_push_error ? ': ' + escapeHtml(r.crm_push_error.slice(0, 80)) : ''}</td></tr>`).join('');
   }
