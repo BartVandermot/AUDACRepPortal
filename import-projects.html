@@ -16,6 +16,9 @@
 <link rel="stylesheet" href="/assets/audac-ui.css?v=e4e7bc94">
 <style>
   /* Page-specific layout only -- tokens and components come from /assets/audac-ui.css */
+  .match-section { margin-top: var(--space-5); display: grid; gap: var(--space-3); }
+  .match-section h2, .match-section .hint { margin: 0; }
+  .match-stack { display: grid; gap: var(--space-4); }
   .card { padding: var(--space-6); margin-bottom: var(--space-5); }
   .card h2 { font-size: 16px; line-height: 22px; font-weight: 650; margin: 0 0 var(--space-2); }
   .step-intro { font-size: 14px; line-height: 21px; color: var(--color-text-secondary); margin: 0 0 var(--space-5); max-width: 70ch; }
@@ -123,6 +126,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="/assets/audac-shell.js?v=17d6cf55"></script>
+<script src="/assets/audac-match.js?v=380dde5b"></script>
 <script>
   const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_VfFVm2fmNOwh0HV8vH_Ogw_WypqXEWn';
@@ -457,17 +461,38 @@
     const mapping = { colMap: state.colMap, dateFormat: state.dateFormat };
     const { data, error } = await client.rpc('import_rep_projects', { p_firm_id: state.firmId, p_rows: state.built.rows, p_mapping: mapping });
     if (error) { btn.disabled = false; btn.textContent = 'Import'; showError('Import failed: ' + error.message); return; }
-    const notReg = (data.total || 0) - (data.registered || 0);
+    const notReg = (data.total || 0) - (data.registered || 0) - (data.to_confirm || 0);
     $('result').hidden = false;
     $('result').innerHTML = `<div class="notice success">
       <b>Imported.</b> ${data.new} new, ${data.updated} updated${data.no_longer_listed ? `, ${data.no_longer_listed} no longer in your export` : ''}.
       ${data.kept_app_edits ? `${data.kept_app_edits} ${data.kept_app_edits === 1 ? 'project keeps the change' : 'projects keep the changes'} you made in the portal, because your CRM still has the older values.` : ''}
       ${data.registered} of your ${data.total} projects are registered with AVL${notReg ? `; ${notReg} are not yet. <a href="${AVL_REGISTRATION}" target="_blank" rel="noopener">Register a project with AVL ↗</a>` : '.'}
-      <br><a href="/territory#projects">See your projects on My territory →</a></div>`;
+      <br><a href="/territory#projects">See your projects on My territory →</a></div>
+      <div id="match-out"></div>`;
+    await renderQuestions();
     $('result').scrollIntoView({ behavior: 'smooth' });
     btn.textContent = 'Imported';
     selectFirm(state.firmId);
   }
+
+  // Projects that look like one AUDAC already has: the rep says whether it's the same.
+  async function renderQuestions() {
+    const out = $('match-out');
+    if (!out) return;
+    const { data, error } = await client.rpc('get_rep_projects', { p_firm_id: state.firmId });
+    if (error) { out.innerHTML = ''; return; }
+    const ask = (data || []).filter(p => p.suggested_crm_id && p.in_last_import);
+    if (!ask.length) {
+      out.innerHTML = out.dataset.asked ? `<div class="notice success">Thanks, all answered. Projects that are different go to AUDAC’s CRM in a few minutes.</div>` : '';
+      return;
+    }
+    out.dataset.asked = '1';
+    out.innerHTML = `<section class="match-section">
+      <h2 class="card-title">${ask.length === 1 ? 'One project needs' : `${ask.length} projects need`} your answer</h2>
+      <p class="hint">${ask.length === 1 ? 'This project looks' : 'These projects look'} like a project AUDAC already has, usually a registration through AVL. Only you can tell whether it’s the same one. We hold ${ask.length === 1 ? 'it' : 'them'} back until you answer, so nothing ends up in AUDAC’s CRM twice.</p>
+      <div class="match-stack">${ask.map(p => AudacMatch.card(p)).join('')}</div></section>`;
+  }
+  AudacMatch.bind($('result'), client, () => renderQuestions());
 
   init();
 </script>

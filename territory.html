@@ -179,6 +179,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0"></script>
 <script src="/assets/audac-shell.js?v=17d6cf55"></script>
+<script src="/assets/audac-match.js?v=380dde5b"></script>
 <script src="/assets/audac-outbox.js?v=6c442eab"></script>
 <script>
   const SUPABASE_URL = 'https://dhabmvpngjgrepyklius.supabase.co';
@@ -492,6 +493,7 @@
     const where = [p.dealer_name, p.location, p.stage].filter(Boolean).map(esc).join(' · ');
     const reg = p.registered
       ? `<span class="chip">${AudacShell.icon('check')}Registered with AVL</span>${p.crm_project_name && norm(p.crm_project_name) !== norm(p.project_name) ? `<span>as “${esc(p.crm_project_name)}”</span>` : ''}`
+      : p.suggested_crm_id ? `<span class="chip gold">Waiting for your answer</span>`
       : (p.status === 'Open' ? `<span>Not registered yet</span>` : '');
     const value = p.value_usd != null ? `<span class="value">${fmtMoney(p.value_usd)}</span>` : '';
     const dateLine = p.status === 'Open'
@@ -507,8 +509,9 @@
         <span class="sub">${dateLine}${p.in_last_import ? '' : ' · not in your last import'}</span>
         ${age}
         ${p.notes ? `<span class="sub">${esc(p.notes)}</span>` : ''}</div>
-      <div class="actions">${!p.registered && p.status === 'Open'
+      <div class="actions">${p.suggested_crm_id ? '' : !p.registered && p.status === 'Open'
         ? `<a class="button-secondary" href="${AVL_REGISTRATION}" target="_blank" rel="noopener">Register with AVL ↗</a>` : ''}<button type="button" class="button-secondary" data-edit-project="${esc(p.id)}">Update</button></div>
+      ${p.suggested_crm_id ? AudacMatch.card(p) : ''}
     </li>`;
   }
 
@@ -563,6 +566,12 @@
     const b = e.target.closest('[data-edit-project]');
     if (b) openProjectForm(b.dataset.editProject);
   });
+  // "Same project?" answered: reload, a "no" can bring up another candidate.
+  AudacMatch.bind($('projects-list'), client, async () => {
+    const { data } = await client.rpc('get_rep_projects');
+    if (data) projectsCache = data;
+    renderAll();
+  });
 
   // "Entered Mar 5, 2026 · 8 months ago"; open items older than 6 months get a nudge.
   function ageLine(iso, label, open) {
@@ -585,18 +594,20 @@
       $('projects-list').innerHTML = '';
       return 0;
     }
-    const current = rows.filter(p => p.in_last_import);
+    const ask = rows.filter(p => p.suggested_crm_id && p.in_last_import);
+    const current = rows.filter(p => p.in_last_import && !p.suggested_crm_id);
     const open = current.filter(p => p.status === 'Open');
     const notReg = open.filter(p => !p.registered);
     const last = projectsCache.reduce((m, p) => p.last_imported_at > m ? p.last_imported_at : m, '');
     $('projects-sub').innerHTML = query
       ? `${rows.length} ${rows.length === 1 ? 'project' : 'projects'} found.`
-      : `${open.length} open, ${open.length - notReg.length} registered with AVL. Last upload ${fmtDate(String(last).slice(0, 10))}. ${desktopLink}.`
+      : `${ask.length ? `<b>${ask.length} ${ask.length === 1 ? 'project needs' : 'projects need'} your answer below.</b> ` : ''}${open.length} open, ${open.length - notReg.length} registered with AVL. Last upload ${fmtDate(String(last).slice(0, 10))}. ${desktopLink}.`
         + `<br><span class="hint">No need to enter anything twice: keep your projects in your own CRM and upload, or update them here. Register with AVL only when the dealer needs the registration discount; registered projects then show up under My deals by themselves.</span>`;
     const group = (title, list) => list.length ? `<p class="group-title">${title}</p><ul class="list">${list.map(projectItem).join('')}</ul>` : '';
     $('projects-list').innerHTML = query
       ? `<ul class="list">${rows.map(projectItem).join('')}</ul>`
-      : group('Open, not registered with AVL yet', notReg)
+      : group(`Please check: ${ask.length === 1 ? 'is this' : 'are these'} the same project?`, ask)
+        + group('Open, not registered with AVL yet', notReg)
         + group('Open, registered', open.filter(p => p.registered))
         + group('Won or lost', current.filter(p => p.status !== 'Open'))
         + group('No longer in your CRM export', rows.filter(p => !p.in_last_import));

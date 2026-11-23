@@ -4,6 +4,8 @@
 // Rules:
 //   - Only open projects that are NOT registered via AVL (no matched_crm_id).
 //     A registration exists in Dynamics already (PVS Portal).
+//   - A project that looks like a registration (suggested_crm_id) waits until
+//     the rep confirms "same project" or "different project" (0074).
 //   - As a "Regular Opportunity", Origin "AUDAC Rep App", with Rep Firm and
 //     Rep CRM ID. Upsert on the alternate key (Rep Firm + Rep CRM ID), so a
 //     re-import updates the same opportunity and never duplicates.
@@ -208,6 +210,8 @@ Deno.serve(async (req) => {
     const { data: rows, error } = await svc.from("rep_projects")
       .select("*")
       .in("crm_push_status", ["waiting", "failed"]).lt("crm_push_attempts", MAX_ATTEMPTS)
+      // The rep still has to say whether it's the same project as a registration.
+      .is("suggested_crm_id", null)
       .order("last_imported_at").limit(BATCH);
     if (error) throw error;
 
