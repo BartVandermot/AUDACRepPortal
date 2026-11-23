@@ -148,6 +148,8 @@
       guess: ['audac value', 'opportunity value', 'estimated value', 'est value', 'amount', 'value', 'total', 'revenue', 'price'] },
     { key: 'expected_close_date', label: 'Expected close date',
       guess: ['expected close date', 'expected close', 'est close date', 'estimated close', 'close date', 'decision date', 'order date', 'bid date', 'award date'] },
+    { key: 'entered_date', label: 'Date created in your CRM',
+      guess: ['date created', 'created date', 'created on', 'creation date', 'create date', 'date entered', 'entered date', 'entered on', 'date opened', 'open date', 'opened on'] },
     { key: 'sales_person', label: 'Sales person',
       guess: ['sales person', 'salesperson', 'sales rep', 'assigned to', 'owner', 'rep'] },
     { key: 'products', label: 'AUDAC products',
@@ -396,6 +398,7 @@
         stage: stage || null, status: statusFromStage(stage),
         value_usd: parseMoney(get(r, 'value_usd')),
         expected_close_date: parseDate(get(r, 'expected_close_date'), state.dateFormat),
+        entered_date: parseDate(get(r, 'entered_date'), state.dateFormat),
         sales_person: cellText(get(r, 'sales_person')) || null,
         products: cellText(get(r, 'products')) || null,
         notes: cellText(get(r, 'notes')) || null,
@@ -458,6 +461,7 @@
     $('result').hidden = false;
     $('result').innerHTML = `<div class="notice success">
       <b>Imported.</b> ${data.new} new, ${data.updated} updated${data.no_longer_listed ? `, ${data.no_longer_listed} no longer in your export` : ''}.
+      ${data.kept_app_edits ? `${data.kept_app_edits} ${data.kept_app_edits === 1 ? 'project keeps the change' : 'projects keep the changes'} you made in the portal, because your CRM still has the older values.` : ''}
       ${data.registered} of your ${data.total} projects are registered with AVL${notReg ? `; ${notReg} are not yet. <a href="${AVL_REGISTRATION}" target="_blank" rel="noopener">Register a project with AVL ↗</a>` : '.'}
       <br><a href="/territory#projects">See your projects on My territory →</a></div>`;
     $('result').scrollIntoView({ behavior: 'smooth' });

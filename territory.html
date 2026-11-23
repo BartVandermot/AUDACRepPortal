@@ -329,6 +329,7 @@
         <span class="sub">${where}</span>
         ${registered || value ? `<span class="deal-meta">${registered}${value}</span>` : ''}
         <span class="sub${overdue ? ' warn' : ''}">${dateLine}${overdue ? ' — date has passed. Still on?' : ''}</span>
+        ${d.status === 'Open' ? ageLine(d.created_date, d.opportunity_type === 'Registered Project' ? 'Registered' : 'Created', !overdue) : ''}
         ${bomList}</div>
       <div class="actions">${pending}${d.status === 'Open' ? `<button type="button" class="button-secondary" data-update="${esc(d.crm_id)}">${overdue ? 'Update status' : 'Update'}</button>` : ''}</div>
     </li>`;
@@ -496,14 +497,82 @@
     const dateLine = p.status === 'Open'
       ? (p.expected_close_date ? `Expected close ${fmtDate(p.expected_close_date)}` : 'No expected close date')
       : p.status;
-    return `<li>
+    // Age: the date it was entered in the rep's CRM, else the first upload.
+    const since = p.entered_date || String(p.first_imported_at || '').slice(0, 10);
+    const age = ageLine(since, p.entered_date ? 'Entered' : 'First uploaded', p.status === 'Open');
+    return `<li data-project="${esc(p.id)}">
       <div><b>${esc(p.project_name)}</b>
         ${where ? `<span class="sub">${where}</span>` : ''}
         ${reg || value ? `<span class="deal-meta">${reg}${value}</span>` : ''}
-        <span class="sub">${dateLine}${p.in_last_import ? '' : ' · not in your last import'}</span></div>
+        <span class="sub">${dateLine}${p.in_last_import ? '' : ' · not in your last import'}</span>
+        ${age}
+        ${p.notes ? `<span class="sub">${esc(p.notes)}</span>` : ''}</div>
       <div class="actions">${!p.registered && p.status === 'Open'
-        ? `<a class="button-secondary" href="${AVL_REGISTRATION}" target="_blank" rel="noopener">Register with AVL ↗</a>` : ''}</div>
+        ? `<a class="button-secondary" href="${AVL_REGISTRATION}" target="_blank" rel="noopener">Register with AVL ↗</a>` : ''}<button type="button" class="button-secondary" data-edit-project="${esc(p.id)}">Update</button></div>
     </li>`;
+  }
+
+  // Change a project from your CRM right here (it goes to AUDAC's CRM too).
+  function openProjectForm(id) {
+    document.querySelectorAll('.update-form').forEach(f => f.remove());
+    const li = document.querySelector(`li[data-project="${CSS.escape(id)}"]`);
+    const p = projectsCache.find(x => x.id === id);
+    if (!li || !p) return;
+    const form = document.createElement('form');
+    form.className = 'update-form';
+    form.innerHTML = `
+      <div class="field"><label for="p-status">Status</label>
+        <select id="p-status"><option value="Open">Open</option><option value="Won">Won</option><option value="Lost">Lost</option></select></div>
+      <div class="field"><label for="p-date">Expected close date</label><input type="date" id="p-date"></div>
+      <div class="field"><label for="p-value">Value ($)</label><input type="number" id="p-value" min="0" step="100" inputmode="decimal"></div>
+      <div class="field wide"><label for="p-stage">Stage</label><input type="text" id="p-stage" maxlength="100" placeholder="e.g. Quote sent, Spec'd, PO expected"></div>
+      <div class="field wide"><label for="p-note">Note</label><textarea id="p-note" maxlength="2000" placeholder="e.g. Bid moved to the fall"></textarea></div>
+      <p class="form-msg" id="p-msg" hidden></p>
+      <div class="form-actions"><button type="button" class="button-secondary" id="p-cancel">Cancel</button><button type="submit" class="button-primary" id="p-save">Save</button></div>`;
+    li.appendChild(form);
+    form.querySelector('#p-status').value = p.status || 'Open';
+    form.querySelector('#p-date').value = p.expected_close_date || '';
+    form.querySelector('#p-value').value = p.value_usd != null ? Number(p.value_usd) : '';
+    form.querySelector('#p-stage').value = p.stage || '';
+    form.querySelector('#p-note').value = p.notes || '';
+    form.querySelector('#p-cancel').addEventListener('click', () => form.remove());
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const msg = form.querySelector('#p-msg');
+      const vRaw = form.querySelector('#p-value').value;
+      const vals = {
+        p_project_id: id,
+        p_status: form.querySelector('#p-status').value,
+        p_close: form.querySelector('#p-date').value || null,
+        p_value: vRaw === '' ? null : Number(vRaw),
+        p_stage: form.querySelector('#p-stage').value,
+        p_note: form.querySelector('#p-note').value,
+      };
+      if (vals.p_value != null && !(vals.p_value >= 0)) { msg.hidden = false; msg.textContent = 'Enter the value as a number, e.g. 25000.'; return; }
+      const btn = form.querySelector('#p-save');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      const { error } = await client.rpc('update_rep_project', vals);
+      if (error) { msg.hidden = false; msg.textContent = 'Could not save: ' + error.message; btn.disabled = false; btn.textContent = 'Save'; return; }
+      Object.assign(p, { status: vals.p_status, expected_close_date: vals.p_close, value_usd: vals.p_value,
+        stage: vals.p_stage.trim() || null, notes: vals.p_note.trim() || null, edited_at: new Date().toISOString() });
+      renderAll();
+    });
+    form.querySelector('#p-status').focus();
+  }
+  $('projects-list').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-edit-project]');
+    if (b) openProjectForm(b.dataset.editProject);
+  });
+
+  // "Entered Mar 5, 2026 · 8 months ago"; open items older than 6 months get a nudge.
+  function ageLine(iso, label, open) {
+    if (!iso) return '';
+    const d = new Date(iso + 'T12:00:00');
+    if (isNaN(d)) return '';
+    const months = Math.floor((today - d) / (30.44 * DAY));
+    const ago = months >= 1 ? `${months} month${months === 1 ? '' : 's'} ago` : 'this month';
+    const old = open && months >= 6;
+    return `<span class="sub${old ? ' warn' : ''}">${label} ${fmtDate(iso)} · ${ago}${old ? '. Still on?' : ''}</span>`;
   }
   function renderProjects() {
     const show = filter === 'all' || filter === 'deals';
@@ -522,7 +591,8 @@
     const last = projectsCache.reduce((m, p) => p.last_imported_at > m ? p.last_imported_at : m, '');
     $('projects-sub').innerHTML = query
       ? `${rows.length} ${rows.length === 1 ? 'project' : 'projects'} found.`
-      : `${open.length} open, ${open.length - notReg.length} registered with AVL. Last upload ${fmtDate(String(last).slice(0, 10))}. ${desktopLink}.`;
+      : `${open.length} open, ${open.length - notReg.length} registered with AVL. Last upload ${fmtDate(String(last).slice(0, 10))}. ${desktopLink}.`
+        + `<br><span class="hint">No need to enter anything twice: keep your projects in your own CRM and upload, or update them here. Register with AVL only when the dealer needs the registration discount; registered projects then show up under My deals by themselves.</span>`;
     const group = (title, list) => list.length ? `<p class="group-title">${title}</p><ul class="list">${list.map(projectItem).join('')}</ul>` : '';
     $('projects-list').innerHTML = query
       ? `<ul class="list">${rows.map(projectItem).join('')}</ul>`
